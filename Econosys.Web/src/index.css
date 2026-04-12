@@ -1,0 +1,32 @@
+
+@import "tailwindcss";
+
+
+@layer base {
+  html {
+    font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@theme {
+  --text-tiny: 0.63rem; 
+  --text-xs: 0.7rem; 
+}
+
+  input:-webkit-autofill,
+  input:-webkit-autofill:focus {
+    transition: background-color 0s 600000s, color 0s 600000s !important;
+  }
+
+.react-switch-selector-wrapper {
+  
+}
+
+.react-switch-selector-option {
+  padding: 3px;
+  color: white;
+}

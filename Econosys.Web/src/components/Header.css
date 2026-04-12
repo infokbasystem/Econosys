@@ -1,0 +1,112 @@
+@keyframes skeletonAnimate {
+  0% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.skeleton-content {
+  opacity: 0;
+  animation-name: skeletonAnimate;
+  animation-duration: 500ms;
+  animation-direction: forward;
+  animation-delay: 0;
+  animation-iteration-count: 1;
+  animation-fill-mode: forwards;
+  animation-timing-function: ease-out;
+}
+
+div#header {
+    height: 55px;
+    border-bottom: 1px solid #5a5959;
+    color: #ddd;
+}
+
+div#header a {
+    color: #ddd;
+}
+
+div#header a:hover {
+    color: #ddd;
+    text-decoration: none;
+}
+
+.header-logo {
+    margin-top: 7px;
+    margin-left: 40px;
+}
+
+.header-content {
+    padding-top: 12px;
+    text-align: center;
+    font-family: Signika;
+    font-size: 12px;
+    color: #ddd;
+}
+
+.header-search {
+    margin-top: 16px;
+    font-family: Signika;
+    font-size: 12px;
+}
+
+#header-search-form .search-query {
+    color: black;
+    padding-bottom: 2px;
+    padding-right: 3px;
+    padding-right: 4px \9;
+    padding-left: 3px;
+    padding-left: 4px \9;
+    -webkit-transition: width 0.2s ease-in-out;
+    -moz-transition: width 0.2s ease-in-out;
+    -o-transition: width 0.2s ease-in-out;
+    transition: width 0.2s ease-in-out;
+}
+
+#header-search-form button {
+    color: gray;
+    border: 0;
+    background: none;
+    padding: 2px 5px;
+    margin-top: -1px;
+    position: relative;
+    left: -28px;
+    margin-bottom: 0;
+    -webkit-border-radius: 3px;
+    -moz-border-radius: 3px;
+    border-radius: 3px;
+}
+
+.search-query:focus+button {
+    z-index: 3;
+}
+
+.search-query:focus {
+    width: 260px;
+}
+
+#superSearch {
+    font-family: Ubuntu, sans-serif;
+    line-height: 1.5;
+    color: gray;
+}
+
+#superSearch label {
+    font-weight: 400;
+    color: rgb(120, 120, 120);
+}
+
+#superSearch p {
+    font-weight: 400;
+    color: black;
+}
+
+#superSearch a {
+    color: #337ab7 !important;
+    text-decoration: none;
+}

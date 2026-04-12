@@ -1,0 +1,73 @@
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio cache/options
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# User-specific files
+*.rsuser
+
+# Test Results
+TestResults/
+*.trx
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+
+# Local Environment Variables
+.env
+.env.local
+.env.*.local
+
+# Entity Framework
+Migrations/
+*.db
+*.sqlite
+*.sqlite3
+
+# Node modules (if using npm/webpack)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# JetBrains IDEs
+.idea/
+*.iml
+
+# Rider
+.idea/
+*.sln.iml
+
+# Coverage
+opencover.coverage
+coverage/
+
+# IDEs
+*.swp
+*.swo
+*~
+.vscode/settings.json

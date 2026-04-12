@@ -1,0 +1,199 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+
+import bg from '../assets/login-bg.webp'
+
+export default function LoginPage() {
+  const { login, user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const [email, setEmail] = useState('admin@econosys.com');
+  const [password, setPassword] = useState('Admin@12345Secure!');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess(false);
+    setLoading(true);
+
+    try {
+      const result = await login(email, password);
+
+      if (result.success) {
+        setSuccess(true);
+        setEmail('');
+        setPassword('');
+        console.log('Login successful:', result.data);
+        // Redirect to home page after successful login
+        // setTimeout(() => navigate('/'), 500);
+        navigate('/');
+      } else {
+        setError(result.error);
+      }
+    } catch (err) {
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      className='[&_input]:outline-none min-h-screen bg-cover bg-no-repeat bg-center relative flex justify-center items-center
+      before:absolute before:w-full before:h-full before:backdrop-grayscale before:bg-white/5 
+      after:absolute after:w-full after:h-full after:bg-gray-900 after:opacity-80'
+      style={{ backgroundImage: `url(${bg})` }}>
+
+      <div className="relative z-10 w-100 mb-30">
+
+        <div className="mb-8 text-center">
+
+          <div className="flex h-12 mb-10 text-center justify-center">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              height="100%"
+              viewBox="0 0 152 32"
+              fill="none"
+              style={{ display: "block", maxHeight: "100%" }}
+            >
+              <path d="M45.5224 8.23987V11.1252H40.5551V13.9935H45.3131V16.8799H40.5551V19.7822H45.5224V22.6686H37.267V8.23987H45.5224Z"
+                fill="#8EABA7"></path>
+              <path d="M54.6981 19.695C55.1993 19.695 55.6859 19.6191 56.1588 19.4675C56.6306 19.3159 56.978 19.1699 57.1998 19.0308L57.5324 18.8033L58.9321 21.6015C58.8857 21.6366 58.8212 21.683 58.7397 21.7418C58.6583 21.8007 58.4682 21.9082 58.1717 22.0654C57.8742 22.2227 57.5562 22.3596 57.219 22.4762C56.8807 22.5927 56.4383 22.6979 55.8895 22.7907C55.3419 22.8835 54.7761 22.931 54.1934 22.931C52.8526 22.931 51.5819 22.6018 50.3803 21.9432C49.1798 21.2847 48.2112 20.3784 47.4769 19.2231C46.7426 18.069 46.3748 16.821 46.3748 15.4802C46.3748 14.4652 46.5909 13.4921 47.022 12.5598C47.4531 11.6274 48.0279 10.8286 48.7453 10.1633C49.4627 9.49909 50.2988 8.96842 51.2549 8.57127C52.211 8.17525 53.1909 7.9761 54.1934 7.9761C55.1258 7.9761 55.9857 8.08699 56.7732 8.30876C57.5607 8.53054 58.1174 8.75231 58.4433 8.97295L58.9332 9.30561L57.5336 12.1038C57.4521 12.0336 57.3299 11.9488 57.1658 11.8503C57.0029 11.7508 56.6759 11.6195 56.186 11.4566C55.696 11.2936 55.2004 11.2122 54.6992 11.2122C53.906 11.2122 53.1954 11.34 52.5652 11.5969C51.9361 11.8537 51.4371 12.192 51.0694 12.6118C50.7016 13.0316 50.4222 13.4831 50.2298 13.9674C50.0375 14.4516 49.9413 14.9438 49.9413 15.4451C49.9413 16.5415 50.352 17.5236 51.1746 18.3915C51.9961 19.2605 53.1717 19.695 54.6992 19.695H54.6981Z"
+                fill="#8EABA7"></path>
+              <path d="M62.0116 15.4451C62.0116 16.2032 62.1281 16.8934 62.3612 17.518C62.5943 18.1414 63.0027 18.6698 63.5855 19.1009C64.1682 19.532 64.8855 19.7481 65.7364 19.7481C66.9607 19.7481 67.8851 19.3284 68.5086 18.4888C69.132 17.6492 69.4443 16.6354 69.4443 15.4451C69.4443 14.2547 69.1264 13.2556 68.4916 12.4104C67.8557 11.5652 66.9381 11.142 65.7376 11.142C64.537 11.142 63.6296 11.5652 62.9835 12.4104C62.3363 13.2556 62.0127 14.2672 62.0127 15.4451H62.0116ZM58.4609 15.4451C58.4609 13.3575 59.1726 11.5912 60.5949 10.1463C62.0172 8.70025 63.7314 7.97723 65.7364 7.97723C67.7414 7.97723 69.4669 8.69686 70.8779 10.1372C72.2889 11.5776 72.9938 13.3462 72.9938 15.4451C72.9938 17.544 72.3002 19.3306 70.913 20.771C69.5258 22.2114 67.8003 22.931 65.7364 22.931C63.6726 22.931 61.886 22.217 60.5157 20.7891C59.1455 19.3612 58.4609 17.5802 58.4609 15.4462V15.4451Z"
+                fill="#8EABA7"></path>
+              <path d="M77.359 13.714V22.6686H74.054V8.23987H77.3421L83.0957 17.1945V8.23987H86.4019V22.6686H83.1138L77.359 13.714Z"
+                fill="#8EABA7"></path>
+              <path d="M91.0114 15.4451C91.0114 16.2032 91.1279 16.8934 91.361 17.518C91.5941 18.1414 92.0026 18.6698 92.5853 19.1009C93.168 19.532 93.8854 19.7481 94.7362 19.7481C95.9605 19.7481 96.8849 19.3284 97.5084 18.4888C98.1319 17.6492 98.4441 16.6354 98.4441 15.4451C98.4441 14.2547 98.1262 13.2556 97.4914 12.4104C96.8555 11.5652 95.9379 11.142 94.7374 11.142C93.5369 11.142 92.6294 11.5652 91.9833 12.4104C91.3361 13.2556 91.0125 14.2672 91.0125 15.4451H91.0114ZM87.4608 15.4451C87.4608 13.3575 88.1725 11.5912 89.5947 10.1463C91.017 8.70025 92.7312 7.97723 94.7362 7.97723C96.7412 7.97723 98.4668 8.69686 99.8777 10.1372C101.289 11.5776 101.994 13.3462 101.994 15.4451C101.994 17.544 101.3 19.3306 99.9128 20.771C98.5256 22.2114 96.8001 22.931 94.7362 22.931C92.6724 22.931 90.8858 22.217 89.5155 20.7891C88.1453 19.3612 87.4608 17.5802 87.4608 15.4462V15.4451Z"
+                fill="#8EABA7"></path>
+              <path d="M106.48 14.6928H107.407C108.141 14.6928 108.744 14.5445 109.217 14.2469C109.689 13.9494 109.926 13.4628 109.926 12.7862C109.926 12.1096 109.689 11.6061 109.217 11.3085C108.745 11.0109 108.141 10.8627 107.407 10.8627H106.48V14.6928ZM103.192 8.23987H108.457C109.926 8.23987 111.115 8.61892 112.024 9.37702C112.934 10.1351 113.389 11.2372 113.389 12.6821C113.389 14.127 112.928 15.2619 112.007 16.0834C111.086 16.9048 109.903 17.3167 108.457 17.3167H106.48V22.6686H103.192V8.23987Z"
+                fill="#8EABA7"></path>
+              <path d="M119.953 16.8969L118.344 12.6991H118.309L116.7 16.8969H119.953ZM119.848 8.23987L125.672 22.6686H122.139L121.072 19.7833H115.581L114.514 22.6686H110.981L116.805 8.23987H119.848Z"
+                fill="#8EABA7"></path>
+              <path d="M132.828 19.695C133.329 19.695 133.816 19.6191 134.289 19.4675C134.761 19.3159 135.108 19.1699 135.33 19.0308L135.663 18.8033L137.062 21.6015C137.016 21.6366 136.951 21.683 136.87 21.7418C136.788 21.8007 136.598 21.9082 136.302 22.0654C136.004 22.2227 135.686 22.3596 135.349 22.4762C135.011 22.5927 134.568 22.6979 134.02 22.7907C133.472 22.8835 132.906 22.931 132.323 22.931C130.983 22.931 129.712 22.6018 128.51 21.9432C127.31 21.2847 126.341 20.3784 125.607 19.2231C124.873 18.069 124.505 16.821 124.505 15.4802C124.505 14.4652 124.721 13.4921 125.152 12.5598C125.583 11.6274 126.158 10.8286 126.875 10.1633C127.593 9.49909 128.429 8.96842 129.385 8.57127C130.341 8.17525 131.321 7.9761 132.323 7.9761C133.256 7.9761 134.116 8.08699 134.903 8.30876C135.691 8.53054 136.247 8.75231 136.573 8.97295L137.063 9.30561L135.664 12.1038C135.582 12.0336 135.46 11.9488 135.296 11.8503C135.133 11.7508 134.806 11.6195 134.316 11.4566C133.826 11.2936 133.331 11.2122 132.829 11.2122C132.036 11.2122 131.326 11.34 130.695 11.5969C130.066 11.8537 129.567 12.192 129.199 12.6118C128.832 13.0316 128.552 13.4831 128.36 13.9674C128.168 14.4516 128.071 14.9438 128.071 15.4451C128.071 16.5415 128.482 17.5236 129.305 18.3915C130.126 19.2605 131.302 19.695 132.829 19.695H132.828Z"
+                fill="#8EABA7"></path>
+              <path d="M151.2 22.6686H146.671L141.354 16.5473V22.6686H138.066V8.23987H141.354V14.1338L146.303 8.23987H150.29L144.485 15.0775L151.2 22.6686Z"
+                fill="#8EABA7"></path>
+              <path d="M31.0663 10.4157L25.9905 10.4078L29.6984 3.72524L19.3169 1.01079L16.1872 5.27991L14.5726 0.396393L3.57676 3.69356L5.54556 8.74227L0.0385923 7.7409L0.00012207 19.9712L4.64263 21.493L1.12595 25.1082L10.9631 31.4128L14.5873 26.4456L18.6573 30.8177L29.2673 26.2204L25.7314 22.4729L31.0154 22.8033L31.0652 10.4169L31.0663 10.4157ZM24.8929 10.306L16.1782 13.1653C16.1782 13.1653 16.9035 9.34535 16.8129 9.43814C16.8129 9.34422 27.303 5.76532 27.303 5.76532L24.8929 10.3049V10.306ZM19.7299 2.14681L27.8914 4.43695L20.8931 6.80516L17.3006 5.71214L19.7311 2.14681H19.7299ZM13.8665 1.71458L15.1146 5.48471L6.62839 8.23762L5.11106 4.2989L13.8677 1.71458H13.8665ZM1.18253 13.0634L1.19158 9.14734L4.98321 9.81492C4.94587 9.77645 1.18253 13.0646 1.18253 13.0646V13.0634ZM1.09767 19.0694L1.19498 13.2309L5.41883 15.2947L5.28305 20.3898L1.0988 19.0694H1.09767ZM10.6554 29.8242L2.88542 24.8434L5.83635 21.6854C5.83635 21.6854 13.4535 26.0009 13.4886 26.0394C13.4535 26.0948 10.6554 29.8242 10.6554 29.8242ZM14.4131 25.1523L6.41002 20.7338L6.50167 15.8526L12.2734 18.6564L14.5138 15.8152L14.4131 25.1534V25.1523ZM11.8683 17.1719L3.01441 12.9322L6.19503 10.0514L14.9313 13.6778L11.8672 17.173L11.8683 17.1719ZM15.1587 12.4818L7.2213 9.29217L16.065 6.38311L19.1902 7.44445L15.7199 8.5816L15.1587 12.4818ZM18.6165 28.979L15.6317 25.761L15.6124 14.3398L18.715 16.9331L18.6165 28.979ZM17.1501 14.1519C17.1705 14.0965 24.532 11.5914 24.532 11.5914L24.3973 21.4614L19.7763 23.4177L19.9483 16.3923C19.9483 16.3923 17.1716 14.1904 17.1513 14.1519H17.1501ZM19.7888 28.996L19.782 24.737L24.3736 22.6822L27.2509 25.7384L19.7888 28.9948V28.996ZM29.8975 21.5813L25.5039 21.3267L25.6838 11.6479L29.8941 11.6502L29.8975 21.5824V21.5813Z"
+                fill="#8EABA7"></path>
+            </svg>
+          </div>
+
+
+          {error && (
+            <div className="mb-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700 break-words whitespace-pre-line">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit}>
+
+            <div className='text-white mb-6'>
+              <div className="relative">
+                <input
+                  id="email"
+                  type="email"
+                  className="text-sm peer py-2.5 pt-3 sm:py-3 pe-0 ps-8 block w-full bg-transparent border-t-transparent border-b-1 border-x-transparent border-b-gray-200 sm:text-sm focus:border-t-transparent focus:border-x-transparent focus:border-b-teal-200 focus:ring-0 disabled:opacity-50 disabled:pointer-events-none dark:border-b-neutral-700 dark:text-neutral-400 dark:placeholder-neutral-500 dark:focus:ring-neutral-600 dark:focus:border-b-neutral-600"
+                  placeholder="you@econopack.se"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+                <div className="absolute inset-y-0 start-0 flex items-center pointer-events-none ps-2 peer-disabled:opacity-50 peer-disabled:pointer-events-none">
+                  <svg className="shrink-0 size-4 text-gray-500 dark:text-neutral-500" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <div className='text-white mb-8'>
+              <div className="relative">
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  placeholder="••••••••"
+                  className="text-sm peer py-2.5 pt-3 sm:py-3 pe-0 ps-8 block w-full bg-transparent border-t-transparent border-b-1 border-x-transparent border-b-gray-200 sm:text-sm focus:border-t-transparent focus:border-x-transparent focus:border-b-teal-200 focus:ring-0 disabled:opacity-50 disabled:pointer-events-none dark:border-b-neutral-700 dark:text-neutral-400 dark:placeholder-neutral-500 dark:focus:ring-neutral-600 dark:focus:border-b-neutral-600"
+                />
+                <div className="absolute inset-y-0 start-0 flex items-center pointer-events-none ps-2 peer-disabled:opacity-50 peer-disabled:pointer-events-none">
+                  <svg className="shrink-0 size-4 text-gray-500 dark:text-neutral-500" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M2 18v3c0 .6.4 1 1 1h4v-3h3v-3h2l1.4-1.4a6.5 6.5 0 1 0-4-4Z"></path>
+                    <circle cx="16.5" cy="7.5" r=".5"></circle>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            {/* <div>
+            <label
+              htmlFor="email"
+              className="mb-2 block text-sm font-medium text-gray-700"
+            >
+              Email Address
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="you@example.com"
+            />
+          </div> */}
+
+            {/* <div>
+              <label
+                htmlFor="password"
+                className="mb-2 block text-sm font-medium text-gray-700"
+              >
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="••••••••"
+                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div> */}
+
+            <div className='text-end mb-6'>
+              <button
+                type="submit"
+                disabled={loading}
+                className={`${loading ? 'animate-pulse' : ''} text-sm py-2 px-16 inline-flex items-center gap-x-2 text-sm font-light rounded-none border border-transparent bg-teal-500 text-white hover:bg-teal-600 focus:outline-hidden focus:bg-teal-600 disabled:opacity-50 disabled:pointer-events-none`}
+              // onClick={() => {
+              //   setLoading(true);
+              //   setTimeout(() => { handleLogin(); }, 0);
+              // }}
+              >
+                Logga in
+              </button>
+
+            </div>
+
+            {/* <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-lg bg-blue-500 px-4 py-2 font-semibold text-white transition duration-200 hover:bg-blue-600 disabled:bg-blue-300"
+            >
+              {loading ? 'Signing in...' : 'Sign In'}
+            </button> */}
+          </form>
+
+        </div>
+
+      </div>
+    </div>
+  );
+}

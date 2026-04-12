@@ -1,0 +1,75 @@
+#menu {
+    height: 52px;
+    margin-bottom: 0px;
+    background-repeat: repeat-x;
+    display: block;
+    font-size: 14px;
+    color: #999;
+}
+
+#menu ul {
+    font-size: 10px;
+    font-weight: bold;
+    margin: 0;
+    padding: 0px;
+}
+
+#menu li {
+    float: left;
+    height: 52px;
+    width: 130px;
+    margin: 0px 2px 0px 2px;
+    display: inline;
+    list-style: none;
+    text-align: center;
+    transition: background-color 0.4s ease;
+    -moz-transition: background-color 0.4s ease;
+    -o-transition: background-color 0.4s ease;
+    -webkit-transition: background-color 0.4s ease;
+    -ms-transition: background-color 0.4s ease;
+}
+
+#menu li:hover {
+}
+
+#menu li a {
+    /*height: 50px;*/
+    background: none;
+    color: #FFF;
+    text-decoration: none;
+}
+
+#menu .div-general {
+    /*height: 20px;*/
+    background-repeat: no-repeat;
+    background-position: center 7px;
+    padding-top: 34px;
+}
+
+#menu .overview:hover, .overview-backcolor {
+    background-color: #6ba59e;
+}
+
+#menu .operations:hover, .operations-backcolor {
+    background-color: #98bf0d;
+}
+
+#menu .finance:hover, .finance-backcolor {
+    background-color: #6ba59e;
+}
+
+#menu .management:hover, .management-backcolor {
+    background-color: #98bf0d;
+}    
+
+#menu .reporting:hover, .reporting-backcolor {
+    background-color: #6ba59e;
+}
+
+#menu .registers:hover, .registers-backcolor {
+    background-color: #98bf0d;
+}
+
+#menu .settings:hover, .settings-backcolor {
+    background-color: #98bf0d;
+}
