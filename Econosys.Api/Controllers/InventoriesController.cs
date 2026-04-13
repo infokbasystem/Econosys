@@ -48,7 +48,6 @@ namespace Econosys.Api.Controllers
 
             var inventory = new Inventory
             {
-                CompanyId = request.CompanyId,
                 Name = request.Name,
                 AccountNr = request.AccountNr,
                 OldDbId = request.OldDbId,
@@ -152,7 +151,6 @@ namespace Econosys.Api.Controllers
                 ordered = field switch
                 {
                     "id" => ApplyOrder(ordered, query, x => x.Id, isDescending),
-                    "companyid" => ApplyOrder(ordered, query, x => x.CompanyId, isDescending),
                     "name" => ApplyOrder(ordered, query, x => x.Name, isDescending),
                     "accountnr" => ApplyOrder(ordered, query, x => x.AccountNr, isDescending),
                     "olddbid" => ApplyOrder(ordered, query, x => x.OldDbId, isDescending),
@@ -201,7 +199,6 @@ namespace Econosys.Api.Controllers
             return field switch
             {
                 "id" => ApplyIntCondition(query, x => x.Id, condition, op),
-                "companyid" => ApplyIntCondition(query, x => x.CompanyId, condition, op),
                 "name" => ApplyStringCondition(query, x => x.Name, condition, op),
                 "accountnr" => ApplyNullableIntCondition(query, x => x.AccountNr, condition, op),
                 "olddbid" => ApplyNullableIntCondition(query, x => x.OldDbId, condition, op),
@@ -525,7 +522,6 @@ namespace Econosys.Api.Controllers
             return new InventoryDto
             {
                 Id = inventory.Id,
-                CompanyId = inventory.CompanyId,
                 Name = inventory.Name,
                 AccountNr = inventory.AccountNr,
                 OldDbId = inventory.OldDbId,

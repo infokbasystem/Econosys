@@ -10,8 +10,6 @@ namespace Econosys.Api.Models
         [Column("lngInventoryId")]
         public int Id { get; set; }
 
-        public int CompanyId { get; set; }
-
         [Column("strName")]
         [MaxLength(100)]
         public string? Name { get; set; }
@@ -52,5 +50,7 @@ namespace Econosys.Api.Models
         [Column("AdressExtra")]
         [MaxLength(50)]
         public string? AddressExtra { get; set; }
+
+        public virtual ICollection<SupplierOrder> SupplierOrders { get; set; } = new List<SupplierOrder>();
     }
 }

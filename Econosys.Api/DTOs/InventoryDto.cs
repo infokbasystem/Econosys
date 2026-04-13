@@ -5,7 +5,6 @@ namespace Econosys.Api.DTOs
     public class InventoryDto
     {
         public int Id { get; set; }
-        public int CompanyId { get; set; }
         public string? Name { get; set; }
         public int? AccountNr { get; set; }
         public int? OldDbId { get; set; }
@@ -25,9 +24,6 @@ namespace Econosys.Api.DTOs
 
     public class CreateInventoryRequest
     {
-        [Required]
-        public int CompanyId { get; set; }
-
         [MaxLength(100)]
         public string? Name { get; set; }
 

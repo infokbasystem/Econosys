@@ -1,32 +1,29 @@
-using System.ComponentModel.DataAnnotations;
-
 namespace Econosys.Api.DTOs
 {
-
-    public class InventoryReportRequest 
+    public class InventoryReportRequestDto
     {
-        public FilterRequest? Filter { get; set; }
-        public PaginationRequest? Pagination { get; set; }
-        public List<SortRequest>? OrderBy { get; set; }
-    }       
-
-    public class InventoryReportResponse
-    {
-        public DateTime CalcDate { get; set; } = DateTime.UtcNow;
-        public string WarehouseName { get; set; } = string.Empty;
-        public int TotalRows { get; set; }
-        public decimal? TotalPurchaseValue { get; set; }
-        public int? TotalQuantity { get; set; }
-        public PagedResultDto<InventoryReportRow> PagedRows { get; set; } = new();
+        public List<int>? InventoryIds { get; set; }
+        public DateTime? CalculationDate { get; set; }
     }
 
-    public class InventoryReportRow
+    public class InventoryReportResponseDto
     {
-        public string WarehouseName { get; set; } = string.Empty;
+        public DateTime CalculationDate { get; set; }
+        public decimal CurrentInventoryValue { get; set; }
+        public IReadOnlyList<InventoryReportRowDto> Rows { get; set; } = Array.Empty<InventoryReportRowDto>();
+    }
+
+    public class InventoryReportRowDto
+    {
+        public int SupplierOrderId { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
         public string ProductName { get; set; } = string.Empty;
-        public int? Quantity { get; set; }
-        public decimal? PurchaseValue { get; set; }  
-        public decimal? Pallets { get; set; }
-        public DateTime? LastInventoried { get; set; }
+        public int InventoryId { get; set; }
+        public string InventoryName { get; set; } = string.Empty;
+        public double NrOfItems { get; set; }
+        public DateTime? LastInventoryDate { get; set; }
+        public double CurrentInventoryLevel { get; set; }
+        public int CurrentNrOfPallets { get; set; }
+        public decimal TotalSalesValue { get; set; }
     }
 }
