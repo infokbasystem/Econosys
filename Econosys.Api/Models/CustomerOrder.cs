@@ -280,9 +280,17 @@ namespace Econosys.Api.Models
         public int? CalculationId { get; set; }
 
         public virtual Customer? Customer { get; set; }
+        public virtual LegacyUser? ResponsibleUser { get; set; }
         public virtual Currency? SalesCurrency { get; set; }
         public virtual Currency? SupplierPricePerEurPalletCurrency { get; set; }
         public virtual Unit? Unit { get; set; }
         public virtual SupplierOrder? SupplierOrder { get; set; }
+        public virtual CalculationRow? SelectedCalculationRow { get; set; }
+        public virtual ICollection<DeliveryToCustomer> DeliveryToCustomers { get; set; } = new List<DeliveryToCustomer>();
+        public virtual ICollection<DeliveryFromStock> DeliveryFromStocks { get; set; } = new List<DeliveryFromStock>();
+        public virtual ICollection<OrderCost> OrderCosts { get; set; } = new List<OrderCost>();
+        public virtual ICollection<CustomerOrderEditionAdjustment> CustomerOrderEditionAdjustments { get; set; } = new List<CustomerOrderEditionAdjustment>();
+        public virtual ICollection<Deviation> Deviations { get; set; } = new List<Deviation>();
+        public virtual ICollection<DocumentFileRelation> DocumentFileRelations { get; set; } = new List<DocumentFileRelation>();
     }
 }

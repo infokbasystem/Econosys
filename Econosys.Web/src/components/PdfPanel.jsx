@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
-// import EmailModal from './EmailModal';
+import EmailModal from './EmailModal';
 
 import { usePdf } from '../contexts/PdfContext';
 
@@ -10,14 +10,12 @@ export default function PdfPanel({ onOpenFileModal = null }) {
     const {
         showPdfPanel,
         pdfUrl,
+        pdfFileName,
         closePdfPreview,
         badges,
+        emailInfo,
         openEmailModal,
         showEmailModal,
-        emailSubject,
-        emailBody,
-        setEmailSubject,
-        setEmailBody,
         closeEmailModal,
         isStale
     } = usePdf();
@@ -75,11 +73,16 @@ export default function PdfPanel({ onOpenFileModal = null }) {
         closePdfPreview?.();
     };
 
-    const handleSendEmail = () => {
-        const subject = encodeURIComponent(emailSubject || '');
-        const body = encodeURIComponent(emailBody || '');
-        window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
-        closeEmailModal();
+    const getPdfFileName = () => {
+        if (pdfFileName) return pdfFileName;
+        if (!pdfUrl) return 'document.pdf';
+        try {
+            const parsedUrl = new URL(pdfUrl, window.location.origin);
+            const segments = parsedUrl.pathname.split('/').filter(Boolean);
+            return decodeURIComponent(segments[segments.length - 1] || 'document.pdf');
+        } catch {
+            return 'document.pdf';
+        }
     };
 
     const handlePrint = () => {
@@ -136,8 +139,8 @@ export default function PdfPanel({ onOpenFileModal = null }) {
         <>
             <div
                 className={`absolute right-0 w-[560px] bg-yellow-50 shadow-xl/30 z-50 pt-3 pl-3
-                    transform transition-transform duration-300
-                    ${visible ? 'translate-x-0 opacity-100 pointer-events-auto' : 'translate-x-full opacity-0 pointer-events-none'}`}
+        transform transition-transform duration-300
+        ${visible ? 'translate-x-0 opacity-100 pointer-events-auto' : 'translate-x-full opacity-0 pointer-events-none'}`}
                 style={{ top: 0, bottom: 0 }}
             >
                 <div className="flex items-center p-3">
@@ -161,76 +164,67 @@ export default function PdfPanel({ onOpenFileModal = null }) {
                         className={`shadow-md/30 text-xs text-gray bg-blue-200 px-4 py-[5px] ml-3 w-20 ${isStale ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-300'}`}>
                         Maila
                     </button>
-                    {/* <button
-                        type="button"
-                        onClick={openExampleModal}
-                        className="shadow-md/30 text-xs text-gray bg-green-200 hover:bg-green-300 px-4 py-[5px] ml-3 w-20">
-                        Info
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setShowLocalModal(true)}
-                        className="shadow-md/30 text-xs text-gray bg-purple-200 hover:bg-purple-300 px-4 py-[5px] ml-3 w-20">
-                        Lokal
-                    </button> */}
                 </div>
 
-                {Array.isArray(badges) && badges.length > 0 && (
-                    <div className="flex items-center px-3 py-2">
-                        {badges.map((b, i) => (
-                            <span
-                                key={i}
-                                className="text-tiny px-2.5 py-1 rounded-full shadow-sm border border-gray-300"
-                                style={{
-                                    background: b?.color || '#e5e7eb',
-                                    color: b?.color ? '#fff' : '#111'
-                                }}
-                            >
-                                {b?.text ?? String(b)}
-                            </span>
-                        ))}
-                    </div>
-                )}
-
-                <div className="relative ml-3 mr-5 mt-5 mb-3 overflow-auto" style={{ height: 'calc(100% - 100px)' }}>
-                    {showPdfPanel && !pdfUrl ? null : null}
-
-                    {pdfUrl && (
-                        <Document
-                            file={pdfUrl}
-                            options={pdfOptions}
-                            onLoadSuccess={({ numPages }) => {
-                                setNumPages(numPages);
-                                // Start 100ms delay after the Document is fully ready
-                                if (delayRef.current) clearTimeout(delayRef.current);
-                                delayRef.current = setTimeout(() => setShowDoc(true), 10);
-                            }}
-                            onLoadError={(err) => console.error('PDF load error:', err)}
-                            loading={null}
-                        >
-                            {getPageNumbers().map((pageNumber) => (
-                                <div
-                                    key={`wrapper_${pageNumber}`}
-                                    className=""
+                <div className="relative">
+                    
+                    {Array.isArray(badges) && badges.length > 0 && (
+                        <div className="flex items-center px-3 py-2">
+                            {badges.map((b, i) => (
+                                <span
+                                    key={i}
+                                    className="text-tiny px-2.5 py-1 rounded-full shadow-sm border border-gray-300"
                                     style={{
-                                        background: 'transparent',
-                                        visibility: showDoc ? 'visible' : 'hidden'
+                                        background: b?.color || '#e5e7eb',
+                                        color: b?.color ? '#fff' : '#111'
                                     }}
                                 >
-                                    <Page
-                                        key={`page_${pageNumber}`}
-                                        pageNumber={pageNumber}
-                                        width={500}
-                                        renderTextLayer={false}
-                                        renderAnnotationLayer={false}
-                                    />
-                                </div>
+                                    {b?.text ?? String(b)}
+                                </span>
                             ))}
-                        </Document>
+                        </div>
                     )}
 
+                    <div className="px-3 pb-3 overflow-auto" style={{ height: 'calc(100% - 100px)' }}>
+                        {showPdfPanel && !pdfUrl ? null : null}
+
+                        {pdfUrl && (
+                            <Document
+                                file={pdfUrl}
+                                options={pdfOptions}
+                                onLoadSuccess={({ numPages }) => {
+                                    setNumPages(numPages);
+                                    // Start 100ms delay after the Document is fully ready
+                                    if (delayRef.current) clearTimeout(delayRef.current);
+                                    delayRef.current = setTimeout(() => setShowDoc(true), 10);
+                                }}
+                                onLoadError={(err) => console.error('PDF load error:', err)}
+                                loading={null}
+                            >
+                                {getPageNumbers().map((pageNumber) => (
+                                    <div
+                                        key={`wrapper_${pageNumber}`}
+                                        className="my-3"
+                                        style={{
+                                            background: 'transparent',
+                                            visibility: showDoc ? 'visible' : 'hidden'
+                                        }}
+                                    >
+                                        <Page
+                                            key={`page_${pageNumber}`}
+                                            pageNumber={pageNumber}
+                                            width={500}
+                                            renderTextLayer={false}
+                                            renderAnnotationLayer={false}
+                                        />
+                                    </div>
+                                ))}
+                            </Document>
+                        )}
+                    </div>
+
                     {isStale && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-gray-100/90 pointer-events-none">
+                        <div className="absolute inset-0 flex items-center justify-center bg-gray-100/90 pointer-events-auto">
                             <div className="text-center">
                                 <p className="text-xs text-gray-600 font-semibold">PDF är inaktuell</p>
                                 <p className="text-xs text-gray-500">Spara för att uppdatera</p>
@@ -240,16 +234,19 @@ export default function PdfPanel({ onOpenFileModal = null }) {
                 </div>
             </div>
 
-            {/* {showEmailModal && (
+            {showEmailModal && (
                 <EmailModal
-                    subject={emailSubject}
-                    body={emailBody}
-                    onSubjectChange={setEmailSubject}
-                    onBodyChange={setEmailBody}
-                    onSend={handleSendEmail}
+                    initialSubject={emailInfo?.subject || ''}
+                    initialBody={emailInfo?.body || ''}
+                    receiverList={emailInfo?.recipients || []}
+                    ccMailList={emailInfo?.ccRecipients || []}
+                    sourceAttachmentUrl={pdfUrl}
+                    sourceAttachmentName={getPdfFileName()}
+                    inquiryId={emailInfo?.inquiryId ?? null}
+                    quotationId={emailInfo?.quotationId ?? null}
                     onClose={closeEmailModal}
                 />
-            )} */}
+            )}
         </>
     );
 }

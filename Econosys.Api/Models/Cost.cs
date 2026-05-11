@@ -57,5 +57,7 @@ namespace Econosys.Api.Models
 
         [MaxLength(50)]
         public string CostTypeText { get; set; } = string.Empty;
+
+        public virtual ICollection<OrderCost> OrderCosts { get; set; } = new List<OrderCost>();
     }
 }

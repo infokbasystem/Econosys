@@ -1,6 +1,25 @@
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://localhost:5001/api';
+let unauthorizedHandler = null;
+
+export const setUnauthorizedHandler = (handler) => {
+  unauthorizedHandler = handler;
+};
+
+const shouldHandleUnauthorized = (error) => {
+  const status = error.response?.status;
+  if (status !== 401) return false;
+
+  const requestUrl = `${error.config?.baseURL || ''}${error.config?.url || ''}`;
+
+  // Do not treat failed login/logout as session-expired redirects.
+  if (requestUrl.includes('/auth/login') || requestUrl.includes('/auth/logout')) {
+    return false;
+  }
+
+  return true;
+};
 
 const apiClient = axios.create({
   baseURL: API_URL,
@@ -39,7 +58,11 @@ apiClient.interceptors.response.use(
       status: error.response?.status,
       data: error.response?.data,
     });
-    // Let the AuthContext handle 401 errors instead of auto-redirecting
+
+    if (shouldHandleUnauthorized(error) && typeof unauthorizedHandler === 'function') {
+      unauthorizedHandler(error);
+    }
+
     return Promise.reject(error);
   }
 );

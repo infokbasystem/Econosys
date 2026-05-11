@@ -200,8 +200,14 @@ namespace Econosys.Api.Models
         public string? OrderNrPrefix { get; set; }
 
         // Navigation properties
+        public virtual Language? Language { get; set; }
         public virtual Currency? Currency { get; set; }
+        public virtual LegacyUser? ResponsibleUser { get; set; }
+        public virtual LegacyUser? SupportEmployee { get; set; }
         public virtual ICollection<CustomerOrder> CustomerOrders { get; set; } = new List<CustomerOrder>();
         public virtual ICollection<SupplierOrder> SupplierOrders { get; set; } = new List<SupplierOrder>();
+        public virtual ICollection<Invoice> Invoices { get; set; } = new List<Invoice>();
+        public virtual ICollection<Calculation> Calculations { get; set; } = new List<Calculation>();
+        public virtual ICollection<Deviation> Deviations { get; set; } = new List<Deviation>();
     }
 }

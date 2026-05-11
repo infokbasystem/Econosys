@@ -116,7 +116,7 @@ namespace Econosys.Api.Controllers
         {
             IQueryable<Customer> query = _dbContext.Customers.AsNoTracking();
 
-            var pagination = request?.Pagination ?? new PaginationRequest();
+            var pagination = request?.Pagination;
 
             // Apply filters
             if (!string.IsNullOrWhiteSpace(request?.SearchTerm))
@@ -160,12 +160,30 @@ namespace Econosys.Api.Controllers
                 _ => query.OrderBy(c => c.Name)
             };
 
-            // Apply pagination
             var totalCount = await query.CountAsync();
-            var items = await query
-                .Skip((pagination.PageNumber - 1) * pagination.PageSize)
-                .Take(pagination.PageSize)
-                .ToListAsync();
+            List<Customer> items;
+            int pageNumber;
+            int pageSize;
+            int totalPages;
+
+            if (pagination is null)
+            {
+                items = await query.ToListAsync();
+                pageNumber = 1;
+                pageSize = totalCount;
+                totalPages = totalCount == 0 ? 0 : 1;
+            }
+            else
+            {
+                items = await query
+                    .Skip((pagination.PageNumber - 1) * pagination.PageSize)
+                    .Take(pagination.PageSize)
+                    .ToListAsync();
+
+                pageNumber = pagination.PageNumber;
+                pageSize = pagination.PageSize;
+                totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pagination.PageSize);
+            }
 
             var dtos = items.Select(MapToDto).ToList();
 
@@ -173,8 +191,9 @@ namespace Econosys.Api.Controllers
             {
                 Items = dtos,
                 TotalCount = totalCount,
-                PageNumber = pagination.PageNumber,
-                PageSize = pagination.PageSize
+                PageNumber = pageNumber,
+                PageSize = pageSize,
+                TotalPages = totalPages,
             });
         }
 

@@ -17,8 +17,8 @@
 #menu li {
     float: left;
     height: 52px;
-    width: 130px;
-    margin: 0px 2px 0px 2px;
+    width: 120px;
+    margin: 0px 1px 0px 1px;
     display: inline;
     list-style: none;
     text-align: center;
@@ -46,24 +46,128 @@
     padding-top: 34px;
 }
 
-#menu .overview:hover, .overview-backcolor {
-    background-color: #6ba59e;
+/* #menu .div-general.calculation-item {
+    background-image: none !important;
+    padding-top: 7px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
 }
 
-#menu .operations:hover, .operations-backcolor {
-    background-color: #98bf0d;
+#menu .div-general.calculation-item img {
+    width: 29px;
+    height: 25px;
+    display: block;
+    object-fit: contain;
+} */
+
+#menu .div-general.order-item {
+    background-image: none !important;
+    padding-top: 9px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+}
+
+#menu .div-general.order-item img {
+    width: 28px;
+    height: 24px;
+    display: block;
+    object-fit: contain;
+}
+
+#menu .div-general.logistics-item {
+    background-image: none !important;
+    padding-top: 9px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+}
+
+#menu .div-general.logistics-item img {
+    width: 28px;
+    height: 24px;
+    display: block;
+    object-fit: contain;
+}
+
+#menu .div-general.management-item {
+    background-image: none !important;
+    padding-top: 9px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+}
+
+#menu .div-general.management-item img {
+    width: 28px;
+    height: 24px;
+    display: block;
+    object-fit: contain;
+}
+
+#menu .div-general.quality-item {
+    background-image: none !important;
+    padding-top: 9px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+}
+
+#menu .div-general.quality-item img {
+    width: 28px;
+    height: 24px;
+    display: block;
+    object-fit: contain;
+}
+
+#menu .div-general.settings-item {
+    background-image: none !important;
+    padding-top: 9px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+}
+
+#menu .div-general.settings-item img {
+    width: 28px;
+    height: 24px;
+    display: block;
+    object-fit: contain;
+}
+
+#menu .overview:hover, .overview-backcolor {
+    background-color: #6D7533;
+}
+
+#menu .order:hover, .order-backcolor {
+    background-color: #717EC3;
+}
+
+#menu .logistics:hover, .logistics-backcolor {
+    background-color: #33658A;
+}
+
+#menu .logistics:hover, .logistics-backcolor {
+    background-color: #33658A;
 }
 
 #menu .finance:hover, .finance-backcolor {
-    background-color: #6ba59e;
+    background-color: #F7B801;
 }
 
 #menu .management:hover, .management-backcolor {
-    background-color: #98bf0d;
+    background-color: #7FB800;
 }    
 
 #menu .reporting:hover, .reporting-backcolor {
-    background-color: #6ba59e;
+    background-color: #EF476F;
 }
 
 #menu .registers:hover, .registers-backcolor {

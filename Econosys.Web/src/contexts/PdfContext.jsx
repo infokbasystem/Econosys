@@ -2,22 +2,35 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 
 const PdfContext = createContext(null);
 
+const DEFAULT_EMAIL_RECIPIENTS = [{ email: '', doSend: true }];
+const DEFAULT_EMAIL_CC_RECIPIENTS = [{ email: '', doSend: false }];
+
+const createDefaultEmailInfo = () => ({
+    recipients: DEFAULT_EMAIL_RECIPIENTS.map((item) => ({ ...item })),
+    ccRecipients: DEFAULT_EMAIL_CC_RECIPIENTS.map((item) => ({ ...item })),
+    subject: '',
+    body: '',
+    inquiryId: null,
+    quotationId: null,
+});
+
 export const PdfProvider = ({ children, initialBadges = [] }) => {
     const [showPdfPanel, setShowPdfPanel] = useState(false);
     const [pdfUrl, setPdfUrl] = useState('');
+    const [pdfFileName, setPdfFileName] = useState('');
     const [badges, setBadges] = useState(initialBadges);
     const [showEmailModal, setShowEmailModal] = useState(false);
-    const [emailSubject, setEmailSubject] = useState('');
-    const [emailBody, setEmailBody] = useState('');
     const [isStale, setIsStale] = useState(false);
+    const [emailInfo, setEmailInfoState] = useState(() => createDefaultEmailInfo());
 
-    const openPdfPreview = useCallback((url) => {
+    const openPdfPreview = useCallback((url, fileName = '') => {
         setPdfUrl(url);
+        setPdfFileName(fileName || '');
         setShowPdfPanel(true);
         setIsStale(false);
     }, []);
 
-    const closePdfPreview = useCallback(() => 
+    const closePdfPreview = useCallback(() =>
         setShowPdfPanel(false), []
     );
 
@@ -27,6 +40,31 @@ export const PdfProvider = ({ children, initialBadges = [] }) => {
 
     const clearStale = useCallback(() => {
         setIsStale(false);
+    }, []);
+
+    const setEmailInfo = useCallback((nextEmailInfo = {}) => {
+        setEmailInfoState({
+            recipients: Array.isArray(nextEmailInfo.recipients)
+                ? nextEmailInfo.recipients.map((item) => ({
+                    email: item?.email || '',
+                    doSend: Boolean(item?.doSend),
+                }))
+                : createDefaultEmailInfo().recipients,
+            ccRecipients: Array.isArray(nextEmailInfo.ccRecipients)
+                ? nextEmailInfo.ccRecipients.map((item) => ({
+                    email: item?.email || '',
+                    doSend: Boolean(item?.doSend),
+                }))
+                : createDefaultEmailInfo().ccRecipients,
+            subject: nextEmailInfo.subject || '',
+            body: nextEmailInfo.body || '',
+            inquiryId: Number.isInteger(nextEmailInfo.inquiryId) ? nextEmailInfo.inquiryId : null,
+            quotationId: Number.isInteger(nextEmailInfo.quotationId) ? nextEmailInfo.quotationId : null,
+        });
+    }, []);
+
+    const clearEmailInfo = useCallback(() => {
+        setEmailInfoState(createDefaultEmailInfo());
     }, []);
 
     const printPdf = () => {
@@ -40,21 +78,21 @@ export const PdfProvider = ({ children, initialBadges = [] }) => {
     const value = {
         showPdfPanel,
         pdfUrl,
+        pdfFileName,
         badges,
         showEmailModal,
-        emailSubject,
-        emailBody,
         isStale,
+        emailInfo,
         openPdfPreview,
         closePdfPreview,
         printPdf,
         openEmailModal: () => setShowEmailModal(true),
         closeEmailModal: () => setShowEmailModal(false),
-        setEmailSubject,
-        setEmailBody,
         markStale,
         clearStale,
-        setBadges
+        setBadges,
+        setEmailInfo,
+        clearEmailInfo,
     };
 
     return (

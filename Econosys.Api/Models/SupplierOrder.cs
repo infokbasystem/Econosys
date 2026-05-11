@@ -247,6 +247,13 @@ namespace Econosys.Api.Models
         public virtual Currency? PurchaseCurrency { get; set; }
         public virtual Inventory? Inventory { get; set; }
         public virtual Unit? Unit { get; set; }
+        public virtual CalculationRow? SelectedCalculationRow { get; set; }
         public virtual ICollection<CustomerOrder> CustomerOrders { get; set; } = new List<CustomerOrder>();
+        public virtual ICollection<StockTakingItem> StockTakingItems { get; set; } = new List<StockTakingItem>();
+        public virtual ICollection<DeliveryToCustomer> DeliveryToCustomers { get; set; } = new List<DeliveryToCustomer>();
+        public virtual ICollection<DeliveryToStock> DeliveryToStocks { get; set; } = new List<DeliveryToStock>();
+        public virtual ICollection<OrderCost> OrderCosts { get; set; } = new List<OrderCost>();
+        public virtual ICollection<DocumentFile> DocumentFiles { get; set; } = new List<DocumentFile>();
+        public virtual ICollection<DocumentFileRelation> DocumentFileRelations { get; set; } = new List<DocumentFileRelation>();
     }
 }

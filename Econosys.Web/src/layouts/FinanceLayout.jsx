@@ -1,4 +1,5 @@
-import { Outlet, NavLink } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Outlet, NavLink, useLocation } from "react-router-dom";
 import Header from "../components/Header";
 import Navbar from "../components/Navbar";
 import bg from "../assets/content.png";
@@ -7,30 +8,94 @@ import { PdfProvider } from "../contexts/PdfContext";
 import PdfPanel from "../components/PdfPanel";
 
 const FinanceLayout = () => {
-    return (        
-        <PdfProvider>
-            <div className="flex flex-col min-h-screen">
-                <Header />
-                <Navbar />
-                <div className="flex grow items-stretch bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50" style={{ backgroundImage: `url(${bg})` }}>
-                    <div className="flex flex-col w-60 border-r border-gray-300">
-                        <ul className="flex flex-col pt-5">
-                            <li className="text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink to="/finance">ÖVERSIKT</NavLink></li>
-                            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink to="/finance/searchinvoice">Sök faktura</NavLink></li>
-                            <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Fakturera</p>
-                            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink to="/finance/invoicestoaccount">Fakturera leveranser</NavLink></li>
-                            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink to="/order/inquiry">Skapa fristående faktura</NavLink></li>
-                            <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Bokföring</p>
-                            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink to="/finance/invoicestoaccount">Bokför fakturor</NavLink></li>
-                        </ul>
+    const location = useLocation();
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const pathSegments = location.pathname.split('/').filter(Boolean);
+    const hasIdLikeLastSegment = /^\d+$/.test(pathSegments[pathSegments.length - 1] || '');
+    const isDetailPage = pathSegments.length >= 3 || (pathSegments.length === 2 && hasIdLikeLastSegment);
+
+    const getNavLinkClass = (path) => {
+        let sub = location.pathname.split('/')[2];
+        if (!isNaN(sub))
+            sub = "overview";
+        if (!sub)
+            sub = "overview";
+        if (sub == path)
+            return "text-red-600";
+        return "text-gray-600 hover:text-gray-950";
+    };
+
+    useEffect(() => {
+        setIsMenuOpen(false);
+    }, [location.pathname]);
+
+    const menuContent = (
+        <ul className="flex flex-col pt-5">
+            <li className={"text-xs font-semibold px-6 py-1.5 " + getNavLinkClass('overview')}><NavLink to="/finance">Översikt</NavLink></li>
+            <li className={"text-xs font-semibold px-6 py-1.5 " + getNavLinkClass('searchinvoice')}><NavLink to="/finance/searchinvoice">Sök faktura</NavLink></li>
+            <li className={"text-xs font-semibold px-6 py-1.5 " + getNavLinkClass('attest')}><NavLink to="">Attestera kostnader</NavLink></li>
+            <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Fakturera</p>
+            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink to="/finance/invoicestoaccount">Fakturera leveranser</NavLink></li>
+            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink to="/order/inquiry">Skapa fristående faktura</NavLink></li>
+            <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Bokföring</p>
+            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink to="/finance/invoicestoaccount">Bokför fakturor</NavLink></li>
+            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Synka kundregister mot Jeeves</NavLink></li>
+            <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Register</p>
+            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Kostnader</NavLink></li>
+            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Valutor</NavLink></li>
+        </ul>
+    );
+
+    return (
+        <div className="flex flex-col min-h-screen overflow-x-hidden">
+            <Header />
+            <Navbar />
+            <div className="relative flex grow items-stretch bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50" style={{ backgroundImage: `url(${bg})` }}>
+                {!isDetailPage && (
+                    <div className="flex flex-col w-50 shrink-0 border-r border-gray-300">
+                        {menuContent}
                     </div>
-                    <div className="flex-grow pt-4 px-5 relative">
-                        <Outlet />
-                        <PdfPanel />
-                    </div>
+                )}
+
+                {isDetailPage && (
+                    <>
+                        <button
+                            type="button"
+                            onClick={() => setIsMenuOpen(true)}
+                            className="absolute left-4 top-5 z-20 inline-flex h-7 w-7 items-center justify-center rounded border border-gray-300 bg-white/95 text-gray-700 shadow-sm hover:bg-white"
+                            aria-label="Visa meny"
+                        >
+                            ≡
+                        </button>
+
+                        <div
+                            className={`absolute inset-0 z-30 bg-black/20 transition-opacity ${isMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+                            onClick={() => setIsMenuOpen(false)}
+                        />
+
+                        <div
+                            className={`absolute left-0 top-0 z-40 flex h-full w-50 shrink-0 flex-col border-r border-gray-300 bg-gray-50 transition-transform duration-200 ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}
+                        >
+                            <div className="flex items-center justify-end border-b border-gray-200 px-2 py-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsMenuOpen(false)}
+                                    className="inline-flex h-6 w-6 items-center justify-center rounded text-gray-600 hover:bg-gray-200"
+                                    aria-label="Dölj meny"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                            {menuContent}
+                        </div>
+                    </>
+                )}
+
+                <div className="flex-grow min-w-0 pt-4 px-0 relative">
+                    <Outlet />
                 </div>
             </div>
-        </PdfProvider>
+        </div>
     )
 }
 

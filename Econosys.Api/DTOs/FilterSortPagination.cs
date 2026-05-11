@@ -26,7 +26,7 @@ namespace Econosys.Api.DTOs
         [Range(1, int.MaxValue)]
         public int PageNumber { get; set; } = 1;
 
-        [Range(1, 200)]
+        [Range(1, 1000)]
         public int PageSize { get; set; } = 25;
     }
 
@@ -47,5 +47,15 @@ namespace Econosys.Api.DTOs
         public int TotalPages { get; set; }
         public bool HasPreviousPage => PageNumber > 1;
         public bool HasNextPage => PageNumber < TotalPages;
+    }
+
+    public class TotalsDto<T>
+    {
+        public T Values { get; set; } = default!;
+    }
+
+    public class PagedResultWithTotalsDto<TItem, TTotals> : PagedResultDto<TItem>
+    {
+        public TotalsDto<TTotals>? Totals { get; set; }
     }
 }

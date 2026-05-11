@@ -8,6 +8,7 @@ const NumberInput = ({
     decimals = 2,
     className,
     onChange,
+    ...props
 }) => {
     const [displayValue, setDisplayValue] = useState("");
     const [isFocused, setIsFocused] = useState(false);
@@ -96,6 +97,7 @@ const NumberInput = ({
             onBlur={handleBlur}
             onChange={handleChange}
             className={`text-right px-2 py-1 focus:outline-none ${className}`}
+            {...props}
         />
     );
 };

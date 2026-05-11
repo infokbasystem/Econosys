@@ -14,15 +14,18 @@ namespace Econosys.Api.Controllers
     {
         private const string AccessTokenCookieName = "access_token";
         private readonly IAuthenticationService _authService;
+        private readonly IJwtTokenService _jwtTokenService;
         private readonly ILogger<AuthController> _logger;
         private readonly IConfiguration _configuration;
 
         public AuthController(
             IAuthenticationService authService,
+            IJwtTokenService jwtTokenService,
             ILogger<AuthController> logger,
             IConfiguration configuration)
         {
             _authService = authService;
+            _jwtTokenService = jwtTokenService;
             _logger = logger;
             _configuration = configuration;
         }
@@ -113,6 +116,15 @@ namespace Econosys.Api.Controllers
 
             try
             {
+                var email = User.FindFirst(ClaimTypes.Email)?.Value;
+                var roles = User.FindAll(ClaimTypes.Role).Select(r => r.Value).ToList();
+
+                if (!string.IsNullOrWhiteSpace(email))
+                {
+                    var renewedToken = _jwtTokenService.GenerateAccessToken(userId, email, roles);
+                    SetAuthCookie(renewedToken);
+                }
+
                 var user = await _authService.GetUserByIdAsync(userId);
                 return Ok(user);
             }

@@ -256,7 +256,19 @@ app.Use(async (context, next) =>
     context.Response.Headers.Append("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
     context.Response.Headers.Remove("Server");
     context.Response.Headers.Remove("X-Powered-By");
-    await next();
+
+    try
+    {
+        await next();
+    }
+    catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+    {
+        app.Logger.LogDebug("Request was canceled by the client: {Method} {Path}", context.Request.Method, context.Request.Path);
+    }
+    catch (IOException) when (context.RequestAborted.IsCancellationRequested)
+    {
+        app.Logger.LogDebug("Request stream was reset by the client: {Method} {Path}", context.Request.Method, context.Request.Path);
+    }
 });
 
 app.UseHttpsRedirection();

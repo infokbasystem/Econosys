@@ -86,5 +86,6 @@ namespace Econosys.Api.Models
         public DeliveryFromStock? ParentDelivery { get; set; }
 
         public ICollection<DeliveryFromStock> ChildDeliveries { get; set; } = new List<DeliveryFromStock>();
+        public ICollection<InvoiceRow> InvoiceRows { get; set; } = new List<InvoiceRow>();
     }
 }

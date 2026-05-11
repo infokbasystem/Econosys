@@ -1,14 +1,39 @@
 import ToggleSwitch from '../components/ToggleSwitch';
 
-const LabeledSwitch = ({ label, labelWidth, margintop, name, value, onClick, ...props }) => {
+const LabeledSwitch = ({
+    id,
+    name,
+    rowId,
+    field,
+    value,
+    onChange,
+    label,
+    labelWidth,
+    marginTop,
+    marginLeft,
+    disabled = false,
+    containerClassName = '',
+}) => {
+    const resolvedId = id || name;
+
+
     return (
-        <div className={`flex items-center space-x-1 w-full pb-[1px] mt-${margintop} cursor-pointer`}>
-            <label className={`${labelWidth || ''} flex-none text-xs text-gray-700`}>{label}</label>
+        <div
+            className={`flex items-center space-x-1 w-auto pb-[1px] ${disabled ? 'opacity-60' : ''} ${containerClassName}`}
+            style={{
+                ...(marginTop !== undefined ? { marginTop: `${marginTop}px` } : {}),
+                ...(marginLeft !== undefined ? { marginLeft: `${marginLeft}px` } : {}),
+            }}
+        >
+            <label className={`${labelWidth || ''} pr-2 flex-none text-xs text-gray-700`}>{label}</label>
             <ToggleSwitch
-                id={name}
+                rowId={rowId}
+                field={field}
+                id={resolvedId}
                 name={name}
-                checked={value || false}
-                onChange={(e) => onClick(e)}
+                checked={value}
+                onChange={(rowId, field, checked) => onChange(rowId, field, checked)}
+                disabled={disabled}
             />
             {/* <input type="checkbox" value={value} onClick={(e) => onClick(e)} className="sr-only peer" />
             <div value={value} onClick={(e) => onClick(e)} className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full 

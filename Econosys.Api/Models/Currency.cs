@@ -43,5 +43,11 @@ namespace Econosys.Api.Models
         public virtual ICollection<SupplierOrder> PurchaseSupplierOrders { get; set; } = new List<SupplierOrder>();
         public virtual ICollection<CustomerOrder> SalesCustomerOrders { get; set; } = new List<CustomerOrder>();
         public virtual ICollection<CustomerOrder> SupplierPricePerEurPalletCustomerOrders { get; set; } = new List<CustomerOrder>();
+        public virtual ICollection<OrderCost> InPriceOrderCosts { get; set; } = new List<OrderCost>();
+        public virtual ICollection<Calculation> PurchaseCalculations { get; set; } = new List<Calculation>();
+        public virtual ICollection<Calculation> SalesCalculations { get; set; } = new List<Calculation>();
+        public virtual ICollection<Invoice> SalesInvoices { get; set; } = new List<Invoice>();
+        public virtual ICollection<Deviation> FreightCostDeviations { get; set; } = new List<Deviation>();
+
     }
 }

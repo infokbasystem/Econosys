@@ -16,14 +16,16 @@ namespace Econosys.Api.DTOs
     public class InventoryReportRowDto
     {
         public int SupplierOrderId { get; set; }
+        public string SupplierOrderNr { get; set; } = string.Empty;
         public string CustomerName { get; set; } = string.Empty;
         public string ProductName { get; set; } = string.Empty;
         public int InventoryId { get; set; }
         public string InventoryName { get; set; } = string.Empty;
-        public double NrOfItems { get; set; }
+        public double ProducedNrOfItems { get; set; }
         public DateTime? LastInventoryDate { get; set; }
-        public double CurrentInventoryLevel { get; set; }
-        public int CurrentNrOfPallets { get; set; }
+        public double CurrentInventoryNrOfItems { get; set; }
+        public int CurrentInventoryNrOfPallets { get; set; }
+        public decimal TotalStockValue { get; set; }
         public decimal TotalSalesValue { get; set; }
     }
 }

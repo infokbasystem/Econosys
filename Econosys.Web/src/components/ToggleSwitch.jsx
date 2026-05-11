@@ -3,23 +3,31 @@ import './ToggleSwitch.scss';
 
 
 const ToggleSwitch = ({
+  rowId,
+  field,
   id,
   name,
   checked,
   onChange,
   optionLabels,
   small,
-  disabled
+  disabled,
+  className,
 }) => {
+
+  const handleChange = (e) => {
+    checked = e.target.checked;
+    onChange(rowId, field, checked);
+  };
 
   function handleKeyPress(e) {
     if (e.keyCode !== 32) return;
     e.preventDefault();
-    onChange(!checked);
+    onChange(rowId, field, !checked);
   }
 
   return (
-    <div className={"toggle-switch" + (small ? " small-switch" : "")} >
+    <div className={"toggle-switch" + (small ? " small-switch" : "" + " " + className)} >
 
       <input
         type="checkbox"
@@ -27,7 +35,7 @@ const ToggleSwitch = ({
         className="toggle-switch-checkbox"
         id={id}
         checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
+        onChange={handleChange}
         disabled={disabled}
       />
       {/* <input type="checkbox" class="toggle-switch-checkbox" name="toggleSwitch" id="toggleSwitch" /> */}

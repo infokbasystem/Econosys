@@ -119,6 +119,10 @@ namespace Econosys.Api.Models
         [Column("SupplierOrderTemplateNr")]
         public int? SupplierOrderTemplateNr { get; set; }
 
+        public virtual Language? Language { get; set; }
         public virtual ICollection<SupplierOrder> SupplierOrders { get; set; } = new List<SupplierOrder>();
+        public virtual ICollection<OrderCost> OrderCosts { get; set; } = new List<OrderCost>();
+        public virtual ICollection<Calculation> Calculations { get; set; } = new List<Calculation>();
+        public virtual ICollection<Deviation> Deviations { get; set; } = new List<Deviation>();
     }
 }
