@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useLocation, useBlocker } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
@@ -13,7 +13,7 @@ import NumberInput from '../../components/NumberInput';
 import SwitchSelector from 'react-switch-selector';
 
 import apiClient from '../../config/apiClient';
-import { formatDateShort, formatDateTime } from '../../helpers/dateUtils';
+import { formatDateShort, formatDateTime, fromDateInputToSwedishIso, toSwedishDateInputValue } from '../../helpers/dateUtils';
 import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
 import { formatNumber, parseNullableInt, parseNullableNumber } from '../../helpers/numberUtils';
 import OrderSearchModal from '../../components/OrderSearchModal';
@@ -59,6 +59,7 @@ const Deviation = () => {
     const isNewDeviation = id === 'new';
     const [deviation, setDeviation] = useState(null);
     const [originalDeviation, setOriginalDeviation] = useState(null);
+    const skipUnsavedCheckRef = useRef(false);
 
     const [suppliers, setSuppliers] = useState([]);
     const [customers, setCustomers] = useState([]);
@@ -81,6 +82,7 @@ const Deviation = () => {
     };
 
     const hasUnsavedChanges = useCallback(() => {
+        if (skipUnsavedCheckRef.current) return false;
         if (!deviation || !originalDeviation) return false;
         return JSON.stringify(deviation) !== JSON.stringify(originalDeviation);
     }, [deviation, originalDeviation]);
@@ -146,6 +148,10 @@ const Deviation = () => {
             setShowUnsavedWarning(true);
         }
     }, [blocker.state]);
+
+    useEffect(() => {
+        skipUnsavedCheckRef.current = false;
+    }, [id]);
 
     const handleUnsavedWarningConfirm = () => {
         setShowUnsavedWarning(false);
@@ -235,6 +241,7 @@ const Deviation = () => {
             ]);
 
             if (isCreatingNew && savedDeviation?.id) {
+                skipUnsavedCheckRef.current = true;
                 navigate(`/management/deviations/${savedDeviation.id}`, { replace: true });
             }
         } catch (error) {
@@ -507,11 +514,11 @@ const Deviation = () => {
                 isOpen={showUnsavedWarning}
                 onClose={handleUnsavedWarningAbort}
                 onConfirm={handleUnsavedWarningConfirm}
-                title="OSPARADE ÄNDRINGAR"
+                title="Osparande ändringar"
                 message={
                     unsavedWarningReason === 'print'
-                        ? 'Du har osparade ändringar. Vänligen spara avvikelsen innan du fortsätter.'
-                        : 'Det finns ej sparade ändringar, vill du ändå fortsätta?'
+                        ? 'Du har osparande ändringar. Vänligen spara avvikelsen innan du fortsätter.'
+                        : 'Det finns ej sparande ändringar, vill du ändå fortsätta?'
                 }
                 confirmText={unsavedWarningReason === 'print' ? '' : 'Fortsätt ändå'}
                 cancelText={unsavedWarningReason === 'print' ? 'Avbryt' : 'Avbryt'}
@@ -523,7 +530,7 @@ const Deviation = () => {
             <div className="flex h-full items-stretch">
 
                 {/* Left panel */}
-                <div className="flex flex-col w-80 border-r border-gray-300 px-2 py-2 mb-5 mr-5">
+                <div className="flex flex-col w-80 shrink-0 border-r border-gray-300 px-2 py-2 mb-5 mr-5">
                     <div className="space-y-3">
                         <h2 className="text-sm text-center text-gray-700">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
@@ -764,8 +771,8 @@ const Deviation = () => {
                                         <label className={`w-20 flex-none text-xs text-gray-700`}>Öppnad</label>
                                         <input
                                             type="date"
-                                            value={deviation?.deviationOpened ? new Date(deviation.deviationOpened).toISOString().split('T')[0] : ''}
-                                            onChange={(e) => handleChange('deviationOpened', e.target.value ? new Date(e.target.value).toISOString() : null)}
+                                            value={toSwedishDateInputValue(deviation?.deviationOpened)}
+                                            onChange={(e) => handleChange('deviationOpened', fromDateInputToSwedishIso(e.target.value))}
                                             className="w-30 text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none focus:ring-1 focus:ring-green-500"
                                         />
                                     </div>
@@ -773,8 +780,8 @@ const Deviation = () => {
                                         <label className={`w-20 flex-none text-xs text-gray-700`}>Stängd</label>
                                         <input
                                             type="date"
-                                            value={deviation?.deviationClosed ? new Date(deviation.deviationClosed).toISOString().split('T')[0] : ''}
-                                            onChange={(e) => handleChange('deviationClosed', e.target.value ? new Date(e.target.value).toISOString() : null)}
+                                            value={toSwedishDateInputValue(deviation?.deviationClosed)}
+                                            onChange={(e) => handleChange('deviationClosed', fromDateInputToSwedishIso(e.target.value))}
                                             className="w-30 text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none focus:ring-1 focus:ring-green-500"
                                         />
                                     </div>
@@ -782,8 +789,8 @@ const Deviation = () => {
                                         <label className={`w-20 flex-none text-xs text-gray-700`}>Stängd mot lev.</label>
                                         <input
                                             type="date"
-                                            value={deviation?.deviationClosed ? new Date(deviation.deviationClosedToSupplier).toISOString().split('T')[0] : ''}
-                                            onChange={(e) => handleChange('deviationClosedToSupplier', e.target.value ? new Date(e.target.value).toISOString() : null)}
+                                            value={toSwedishDateInputValue(deviation?.deviationClosedToSupplier)}
+                                            onChange={(e) => handleChange('deviationClosedToSupplier', fromDateInputToSwedishIso(e.target.value))}
                                             className="w-30 text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none focus:ring-1 focus:ring-green-500"
                                         />
                                     </div>

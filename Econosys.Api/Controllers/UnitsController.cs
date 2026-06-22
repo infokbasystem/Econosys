@@ -3,6 +3,7 @@ using System.Text.Json;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -35,7 +36,8 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            return Ok(MapToDto(unit));
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, unit.TranslationCode);
+            return Ok(MapToDto(unit, translations));
         }
 
         [HttpPost]
@@ -54,14 +56,18 @@ namespace Econosys.Api.Controllers
                 IsDefault = request.IsDefault,
                 Active = request.Active,
                 NrOfCalcDecimals = request.NrOfCalcDecimals,
-                NrOfCalcDecimalsQty = request.NrOfCalcDecimalsQty,
-                OldDbId = request.OldDbId
+                NrOfCalcDecimalsQty = request.NrOfCalcDecimalsQty
             };
 
             _dbContext.Units.Add(unit);
             await _dbContext.SaveChangesAsync();
 
-            var response = MapToDto(unit);
+            unit.TranslationCode = await EntityTranslationService.UpsertTranslationsAsync(_dbContext, unit.TranslationCode, request.Translations);
+            await _dbContext.SaveChangesAsync();
+
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, unit.TranslationCode);
+
+            var response = MapToDto(unit, translations);
             return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
         }
 
@@ -80,18 +86,21 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            if (request.Name is not null) unit.Name = request.Name;
-            if (request.TranslationCode.HasValue) unit.TranslationCode = request.TranslationCode;
-            if (request.Multiplicator.HasValue) unit.Multiplicator = request.Multiplicator;
-            if (request.IsDefault.HasValue) unit.IsDefault = request.IsDefault.Value;
-            if (request.Active.HasValue) unit.Active = request.Active.Value;
-            if (request.NrOfCalcDecimals.HasValue) unit.NrOfCalcDecimals = request.NrOfCalcDecimals;
-            if (request.NrOfCalcDecimalsQty.HasValue) unit.NrOfCalcDecimalsQty = request.NrOfCalcDecimalsQty;
-            if (request.OldDbId.HasValue) unit.OldDbId = request.OldDbId;
+            unit.Name = request.Name;
+            unit.TranslationCode = request.TranslationCode;
+            unit.Multiplicator = request.Multiplicator;
+            unit.IsDefault = request.IsDefault ?? false;
+            unit.Active = request.Active ?? false;
+            unit.NrOfCalcDecimals = request.NrOfCalcDecimals;
+            unit.NrOfCalcDecimalsQty = request.NrOfCalcDecimalsQty;
+
+            unit.TranslationCode = await EntityTranslationService.UpsertTranslationsAsync(_dbContext, unit.TranslationCode, request.Translations);
 
             await _dbContext.SaveChangesAsync();
 
-            return Ok(MapToDto(unit));
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, unit.TranslationCode);
+
+            return Ok(MapToDto(unit, translations));
         }
 
         [HttpDelete("{id:int}")]
@@ -152,7 +161,7 @@ namespace Econosys.Api.Controllers
                 .Skip((pagination.PageNumber - 1) * pagination.PageSize)
                 .Take(pagination.PageSize)
                 .ToListAsync())
-                .Select(MapToDto)
+                .Select(x => MapToDto(x))
                 .ToList();
 
             return Ok(new PagedResultDto<UnitDto>
@@ -614,13 +623,14 @@ namespace Econosys.Api.Controllers
             return values;
         }
 
-        private static UnitDto MapToDto(Unit source)
+        private static UnitDto MapToDto(Unit source, List<EntityTranslationDto>? translations = null)
         {
             return new UnitDto
             {
                 Id = source.Id,
                 Name = source.Name,
                 TranslationCode = source.TranslationCode,
+            Translations = translations ?? new List<EntityTranslationDto>(),
                 Multiplicator = source.Multiplicator,
                 IsDefault = source.IsDefault,
                 Active = source.Active,

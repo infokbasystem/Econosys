@@ -41,4 +41,4 @@ Detta kommer att:
 - För att installera paket: `cd Econosys.Web && npm install`.
 
 ## 🤖 AI Context (för Claude/GitHub Copilot)
-Detta projekt är ett monorepo. Vid ändringar som rör datamodeller, se till att uppdatera både C#-klasserna i `Econosys.Api` och motsvarande API-anrop/logik i `Econosys.Web`.
+Detta projekt är ett monorepo. Vid ÄNDRINGAR som rör datamodeller, se till att uppdatera både C#-klasserna i `Econosys.Api` och motsvarande API-anrop/logik i `Econosys.Web`.

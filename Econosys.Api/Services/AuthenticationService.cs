@@ -54,7 +54,7 @@ namespace Econosys.Api.Services
                     Email = request.Email,
                     FirstName = request.FirstName,
                     LastName = request.LastName,
-                    CreatedAt = DateTime.UtcNow,
+                    CreatedAt = SwedishTime.Now,
                     IsActive = true
                 };
 
@@ -134,7 +134,7 @@ namespace Econosys.Api.Services
                 }
 
                 // Update last login
-                user.LastLoginAt = DateTime.UtcNow;
+                user.LastLoginAt = SwedishTime.Now;
                 await _userManager.UpdateAsync(user);
 
                 // Generate token

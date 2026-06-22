@@ -34,6 +34,29 @@ namespace Econosys.Api.Controllers
             return Ok(MapToDto(supplier));
         }
 
+        [HttpGet("{id:int}/details")]
+        public async Task<ActionResult<SupplierDetailsDto>> GetDetailsById(int id)
+        {
+            var supplier = await _dbContext.Suppliers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == id);
+
+            if (supplier is null)
+            {
+                return NotFound();
+            }
+
+            var contactPersons = await BuildContactPersonsAsync(id);
+            var languages = await BuildLanguagesAsync();
+
+            return Ok(new SupplierDetailsDto
+            {
+                Supplier = MapToDto(supplier),
+                ContactPersons = contactPersons,
+                Languages = languages,
+            });
+        }
+
         [HttpPost]
         public async Task<ActionResult<SupplierDto>> Create([FromBody] CreateSupplierRequest request)
         {
@@ -68,7 +91,6 @@ namespace Econosys.Api.Controllers
                 CostCenter = request.CostCenter,
                 CurrencyId = request.CurrencyId,
                 Address2 = request.Address2,
-                OldDbId = request.OldDbId,
                 EconopackTransportResponsible = request.EconopackTransportResponsible,
                 PrintForDocumentScanning = request.PrintForDocumentScanning,
                 PricePerEurPallet = request.PricePerEurPallet,
@@ -156,36 +178,35 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            if (request.Name != null) supplier.Name = request.Name;
-            if (request.SortName != null) supplier.SortName = request.SortName;
-            if (request.Reference != null) supplier.Reference = request.Reference;
-            if (request.ContactPerson != null) supplier.ContactPerson = request.ContactPerson;
-            if (request.Address != null) supplier.Address = request.Address;
-            if (request.PostalNr != null) supplier.PostalNr = request.PostalNr;
-            if (request.PostalAddress != null) supplier.PostalAddress = request.PostalAddress;
-            if (request.VisitingAddress != null) supplier.VisitingAddress = request.VisitingAddress;
-            if (request.Country != null) supplier.Country = request.Country;
-            if (request.Telephone1 != null) supplier.Telephone1 = request.Telephone1;
-            if (request.Telephone2 != null) supplier.Telephone2 = request.Telephone2;
-            if (request.Telephone3 != null) supplier.Telephone3 = request.Telephone3;
-            if (request.Fax != null) supplier.Fax = request.Fax;
-            if (request.Note != null) supplier.Note = request.Note;
-            if (request.Active.HasValue) supplier.Active = request.Active.Value;
-            if (request.LanguageId.HasValue) supplier.LanguageId = request.LanguageId;
-            if (request.TermsOfDelivery != null) supplier.TermsOfDelivery = request.TermsOfDelivery;
-            if (request.TermsOfPayment != null) supplier.TermsOfPayment = request.TermsOfPayment;
-            if (request.Email != null) supplier.Email = request.Email;
-            if (request.InquiryCommunicationTypeId.HasValue) supplier.InquiryCommunicationTypeId = request.InquiryCommunicationTypeId;
-            if (request.SupplierOrderCommunicationTypeId.HasValue) supplier.SupplierOrderCommunicationTypeId = request.SupplierOrderCommunicationTypeId;
-            if (request.CostCenter != null) supplier.CostCenter = request.CostCenter;
-            if (request.CurrencyId.HasValue) supplier.CurrencyId = request.CurrencyId;
-            if (request.Address2 != null) supplier.Address2 = request.Address2;
-            if (request.OldDbId.HasValue) supplier.OldDbId = request.OldDbId;
-            if (request.EconopackTransportResponsible.HasValue) supplier.EconopackTransportResponsible = request.EconopackTransportResponsible.Value;
-            if (request.PrintForDocumentScanning.HasValue) supplier.PrintForDocumentScanning = request.PrintForDocumentScanning.Value;
-            if (request.PricePerEurPallet.HasValue) supplier.PricePerEurPallet = request.PricePerEurPallet;
-            if (request.FscDefault.HasValue) supplier.FscDefault = request.FscDefault.Value;
-            if (request.SupplierOrderTemplateNr.HasValue) supplier.SupplierOrderTemplateNr = request.SupplierOrderTemplateNr;
+            supplier.Name = request.Name;
+            supplier.SortName = request.SortName;
+            supplier.Reference = request.Reference;
+            supplier.ContactPerson = request.ContactPerson;
+            supplier.Address = request.Address;
+            supplier.PostalNr = request.PostalNr;
+            supplier.PostalAddress = request.PostalAddress;
+            supplier.VisitingAddress = request.VisitingAddress;
+            supplier.Country = request.Country;
+            supplier.Telephone1 = request.Telephone1;
+            supplier.Telephone2 = request.Telephone2;
+            supplier.Telephone3 = request.Telephone3;
+            supplier.Fax = request.Fax;
+            supplier.Note = request.Note;
+            supplier.Active = request.Active ?? false;
+            supplier.LanguageId = request.LanguageId;
+            supplier.TermsOfDelivery = request.TermsOfDelivery;
+            supplier.TermsOfPayment = request.TermsOfPayment;
+            supplier.Email = request.Email;
+            supplier.InquiryCommunicationTypeId = request.InquiryCommunicationTypeId;
+            supplier.SupplierOrderCommunicationTypeId = request.SupplierOrderCommunicationTypeId;
+            supplier.CostCenter = request.CostCenter;
+            supplier.CurrencyId = request.CurrencyId;
+            supplier.Address2 = request.Address2;
+            supplier.EconopackTransportResponsible = request.EconopackTransportResponsible ?? false;
+            supplier.PrintForDocumentScanning = request.PrintForDocumentScanning ?? false;
+            supplier.PricePerEurPallet = request.PricePerEurPallet;
+            supplier.FscDefault = request.FscDefault ?? false;
+            supplier.SupplierOrderTemplateNr = request.SupplierOrderTemplateNr;
 
             await _dbContext.SaveChangesAsync();
 
@@ -244,6 +265,47 @@ namespace Econosys.Api.Controllers
                 FscDefault = supplier.FscDefault,
                 SupplierOrderTemplateNr = supplier.SupplierOrderTemplateNr
             };
+        }
+
+        private async Task<List<SupplierContactPersonDto>> BuildContactPersonsAsync(int supplierId)
+        {
+            return await _dbContext.SupplierContactPersons
+                .AsNoTracking()
+                .Where(x => x.SupplierId == supplierId)
+                .OrderBy(x => x.SupplierContactPersonName)
+                .ThenBy(x => x.ContactPerson)
+                .Select(x => new SupplierContactPersonDto
+                {
+                    Id = x.Id,
+                    SupplierContactPersonName = x.SupplierContactPersonName,
+                    ContactPerson = x.ContactPerson,
+                    Name = !string.IsNullOrWhiteSpace(x.SupplierContactPersonName)
+                        ? x.SupplierContactPersonName
+                        : x.ContactPerson,
+                    Email = x.Email,
+                    Telephone = x.Telephone,
+                    Cellphone = x.Cellphone,
+                    MailInquiry = x.MailInquiry,
+                    MailSupplierOrder = x.MailSupplierOrder,
+                    DoMailTransportOrder = x.DoMailTransportOrder,
+                    Title = x.Title,
+                    OldDbId = x.OldDbId,
+                })
+                .ToListAsync();
+        }
+
+        private async Task<List<FilterOptionDto<int>>> BuildLanguagesAsync()
+        {
+            return await _dbContext.Languages
+                .AsNoTracking()
+                .OrderBy(x => x.Name)
+                .Select(x => new FilterOptionDto<int>
+                {
+                    Id = x.Id,
+                    Name = x.Name ?? string.Empty,
+                    IsActive = true,
+                })
+                .ToListAsync();
         }
     }
 

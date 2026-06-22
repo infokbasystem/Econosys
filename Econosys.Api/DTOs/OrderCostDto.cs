@@ -36,6 +36,17 @@ namespace Econosys.Api.DTOs
         public decimal? InPriceAttestedSEK { get; set; }
         public decimal? OutPriceSEK { get; set; }
         public decimal? Markup { get; set; }
+        public string CreatedByName { get; set; } = string.Empty;
+        public string EditedByName { get; set; } = string.Empty;
+        public string CustomerOrderNr { get; set; } = string.Empty;
+        public string OrderSupplierName { get; set; } = string.Empty;
+        public string OrderCustomerName { get; set; } = string.Empty;
+        public string CostName { get; set; } = string.Empty;
+        public string InPriceCurrencyName { get; set; } = string.Empty;
+        public string OutPriceCurrencyName { get; set; } = string.Empty;
+        public string AttestedByName { get; set; } = string.Empty;
+        public int? InvoiceId { get; set; }
+        public int? InvoiceNumber { get; set; }
     }
 
     public class CreateOrderCostRequest
@@ -73,6 +84,13 @@ namespace Econosys.Api.DTOs
 
     public class UpdateOrderCostRequest
     {
+        /// <summary>
+        /// Optional explicit list of field names to update.
+        /// When provided, only listed fields are written (null values are valid for nullable entity fields).
+        /// When omitted, this request is handled as a full entity update for backward compatibility.
+        /// </summary>
+        public List<string>? UpdatedFields { get; set; }
+
         public int? QuotationId { get; set; }
         public int? QuotationRowId { get; set; }
         public int? CalculationRowId { get; set; }
@@ -106,6 +124,10 @@ namespace Econosys.Api.DTOs
 
     public class SearchOrderCostsRequest
     {
+        public string? Mode { get; set; }
+        public string? SearchText { get; set; }
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
         public FilterRequest? Filter { get; set; }
         public PaginationRequest? Pagination { get; set; }
         public List<SortRequest>? OrderBy { get; set; }

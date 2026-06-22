@@ -1,6 +1,21 @@
 /**
  * Returns the ISO week number (1–53) for a given date.
  */
+const SWEDISH_LOCALE = 'sv-SE';
+const SWEDISH_TIME_ZONE = 'Europe/Stockholm';
+
+const SWEDISH_DATE_FORMATTER = new Intl.DateTimeFormat(SWEDISH_LOCALE, {
+    timeZone: SWEDISH_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+});
+
+const toValidDate = (value) => {
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+};
+
 const getISOWeek = (date) => {
     const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
     d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
@@ -27,7 +42,8 @@ export const formatDeliveryWeek = (value) => {
 export const formatDeliveryDate = (value, weekMode) => {
     if (!value) return '';
     if (weekMode) return formatDeliveryWeek(value);
-    return new Date(value).toLocaleDateString('sv-SE', {
+    return new Date(value).toLocaleDateString(SWEDISH_LOCALE, {
+        timeZone: SWEDISH_TIME_ZONE,
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
@@ -36,7 +52,8 @@ export const formatDeliveryDate = (value, weekMode) => {
 
 export const formatDateShort = (value) => {
     if (!value) return '';
-    return new Date(value).toLocaleDateString('sv-SE', {
+    return new Date(value).toLocaleDateString(SWEDISH_LOCALE, {
+        timeZone: SWEDISH_TIME_ZONE,
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
@@ -45,11 +62,39 @@ export const formatDateShort = (value) => {
 
 export const formatDateTime = (value) => {
     if (!value) return '';
-    return new Date(value).toLocaleString('sv-SE', {
+    return new Date(value).toLocaleString(SWEDISH_LOCALE, {
+        timeZone: SWEDISH_TIME_ZONE,
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
         hour: '2-digit',
         minute: '2-digit',
     });
+};
+
+export const toSwedishDateInputValue = (value) => {
+    const date = toValidDate(value);
+    return date ? SWEDISH_DATE_FORMATTER.format(date) : '';
+};
+
+export const fromDateInputToSwedishIso = (value) => {
+    if (!value) return null;
+
+    const [year, month, day] = value.split('-').map((part) => Number(part));
+    if (!year || !month || !day) {
+        return null;
+    }
+
+    const paddedYear = String(year).padStart(4, '0');
+    const paddedMonth = String(month).padStart(2, '0');
+    const paddedDay = String(day).padStart(2, '0');
+    return `${paddedYear}-${paddedMonth}-${paddedDay}T00:00:00`;
+};
+
+export const getSwedishTodayDateString = () => toSwedishDateInputValue(new Date());
+
+export const toSwedishDateBoundaryIso = (value, endOfDay = false) => {
+    const datePart = toSwedishDateInputValue(value);
+    if (!datePart) return null;
+    return `${datePart}T${endOfDay ? '23:59:59' : '00:00:00'}`;
 };

@@ -32,6 +32,8 @@ namespace Econosys.Api.Models
         [Column("PalletTypeId")]
         public int? PalletTypeId { get; set; }
 
+        public PalletType? PalletType { get; set; }
+
         [Column("DebitFactor", TypeName = "decimal(10,4)")]
         public decimal? DebitFactor { get; set; }
 
@@ -45,5 +47,7 @@ namespace Econosys.Api.Models
         public bool CopyTo { get; set; }
 
         public ICollection<Calculation> Calculations { get; set; } = new List<Calculation>();
+        public ICollection<Quotation> Quotations { get; set; } = new List<Quotation>();
+        public ICollection<PalletFormatPrice> PalletFormatPrices { get; set; } = new List<PalletFormatPrice>();
     }
 }

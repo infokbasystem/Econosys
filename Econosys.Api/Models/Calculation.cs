@@ -242,5 +242,6 @@ namespace Econosys.Api.Models
         public Currency? PurchaseCurrency { get; set; }
         public Currency? SalesCurrency { get; set; }
         public ICollection<CalculationRow> CalculationRows { get; set; } = new List<CalculationRow>();
+        public ICollection<Quotation> Quotations { get; set; } = new List<Quotation>();
     }
 }

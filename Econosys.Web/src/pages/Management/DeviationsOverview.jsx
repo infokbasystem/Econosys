@@ -7,6 +7,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 
 import apiClient from '../../config/apiClient';
 import LabeledSwitch from '../../components/LabeledSwitch';
+import { getSwedishTodayDateString } from '../../helpers/dateUtils';
 
 const PAGE_SIZE = 20;
 const DEVIATIONS_OVERVIEW_CACHE_KEY = 'deviations-overview-page-state';
@@ -345,7 +346,7 @@ const DeviationsOverview = () => {
         const blob = new Blob([`\ufeff${lines.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        const datePart = new Date().toISOString().slice(0, 10);
+        const datePart = getSwedishTodayDateString();
 
         link.href = url;
         link.download = `avvikelser-soklista-${datePart}.csv`;

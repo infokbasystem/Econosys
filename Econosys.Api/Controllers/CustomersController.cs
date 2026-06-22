@@ -23,10 +23,12 @@ namespace Econosys.Api.Controllers
         }
 
         [HttpGet("{id:int}")]
-        public async Task<ActionResult<CustomerDto>> GetById(int id)
+        public async Task<ActionResult<CustomerDetailsDto>> GetById(int id)
         {
             var customer = await _dbContext.Customers
                 .AsNoTracking()
+                .Include(x => x.DeliveryAddresses)
+                .Include(x => x.CustomerContactPersons)
                 .FirstOrDefaultAsync(x => x.Id == id);
 
             if (customer is null)
@@ -34,7 +36,7 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            return Ok(MapToDto(customer));
+            return Ok(MapToDetailsDto(customer));
         }
 
         [HttpPost]
@@ -83,7 +85,6 @@ namespace Econosys.Api.Controllers
                 Address2 = request.Address2,
                 OneWayPallet = request.OneWayPallet,
                 EURPallet = request.EURPallet,
-                OldDbId = request.OldDbId,
                 SpecialUnitHandling = request.SpecialUnitHandling,
                 PrintForDocumentScanning = request.PrintForDocumentScanning,
                 PricePerEurPallet = request.PricePerEurPallet,
@@ -212,62 +213,60 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            // Update fields
-            if (request.Name != null) customer.Name = request.Name;
-            if (request.SortName != null) customer.SortName = request.SortName;
-            if (request.Address != null) customer.Address = request.Address;
-            if (request.PostalNr != null) customer.PostalNr = request.PostalNr;
-            if (request.PostalAddress != null) customer.PostalAddress = request.PostalAddress;
-            if (request.VisitingAddress != null) customer.VisitingAddress = request.VisitingAddress;
-            if (request.Reference != null) customer.Reference = request.Reference;
-            if (request.Telephone1 != null) customer.Telephone1 = request.Telephone1;
-            if (request.Telephone2 != null) customer.Telephone2 = request.Telephone2;
-            if (request.Telephone3 != null) customer.Telephone3 = request.Telephone3;
-            if (request.Fax != null) customer.Fax = request.Fax;
-            if (request.Note != null) customer.Note = request.Note;
-            if (request.LoadingInstruction != null) customer.LoadingInstruction = request.LoadingInstruction;
-            if (request.ResponsibleUserId.HasValue) customer.ResponsibleUserId = request.ResponsibleUserId;
-            if (request.VAT.HasValue) customer.VAT = request.VAT.Value;
-            if (request.Active.HasValue) customer.Active = request.Active.Value;
-            if (request.Country != null) customer.Country = request.Country;
-            if (request.TermsOfDelivery != null) customer.TermsOfDelivery = request.TermsOfDelivery;
-            if (request.TermsOfPayment != null) customer.TermsOfPayment = request.TermsOfPayment;
-            if (request.PaymentDays.HasValue) customer.PaymentDays = request.PaymentDays;
-            if (request.LanguageId.HasValue) customer.LanguageId = request.LanguageId;
-            if (request.VATNr != null) customer.VATNr = request.VATNr;
-            if (request.Email != null) customer.Email = request.Email;
-            if (request.QuotationCommunicationTypeId.HasValue) customer.QuotationCommunicationTypeId = request.QuotationCommunicationTypeId;
-            if (request.CustomerOrderCommunicationTypeId.HasValue) customer.CustomerOrderCommunicationTypeId = request.CustomerOrderCommunicationTypeId;
-            if (request.InvoiceCommunicationTypeId.HasValue) customer.InvoiceCommunicationTypeId = request.InvoiceCommunicationTypeId;
-            if (request.OrgNr != null) customer.OrgNr = request.OrgNr;
-            if (request.EU.HasValue) customer.EU = request.EU.Value;
-            if (request.Export.HasValue) customer.Export = request.Export.Value;
-            if (request.CreditLimit.HasValue) customer.CreditLimit = request.CreditLimit;
-            if (request.CurrencyId.HasValue) customer.CurrencyId = request.CurrencyId;
-            if (request.ExternalKey != null) customer.ExternalKey = request.ExternalKey;
-            if (request.VATRate.HasValue) customer.VATRate = request.VATRate;
-            if (request.Address2 != null) customer.Address2 = request.Address2;
-            if (request.OneWayPallet.HasValue) customer.OneWayPallet = request.OneWayPallet.Value;
-            if (request.EURPallet.HasValue) customer.EURPallet = request.EURPallet.Value;
-            if (request.OldDbId.HasValue) customer.OldDbId = request.OldDbId;
-            if (request.SpecialUnitHandling.HasValue) customer.SpecialUnitHandling = request.SpecialUnitHandling.Value;
-            if (request.PrintForDocumentScanning.HasValue) customer.PrintForDocumentScanning = request.PrintForDocumentScanning.Value;
-            if (request.PricePerEurPallet.HasValue) customer.PricePerEurPallet = request.PricePerEurPallet;
-            if (request.LockOrder.HasValue) customer.LockOrder = request.LockOrder.Value;
-            if (request.LastCustomerOrderDate.HasValue) customer.LastCustomerOrderDate = request.LastCustomerOrderDate;
-            if (request.AccountNrAccountsReceivable.HasValue) customer.AccountNrAccountsReceivable = request.AccountNrAccountsReceivable;
-            if (request.AccountNrEarnings.HasValue) customer.AccountNrEarnings = request.AccountNrEarnings;
-            if (request.SupportEmployeeId.HasValue) customer.SupportEmployeeId = request.SupportEmployeeId;
-            if (request.LastActivity != null) customer.LastActivity = request.LastActivity;
-            if (request.CountryId.HasValue) customer.CountryId = request.CountryId;
-            if (request.Category != null) customer.Category = request.Category;
-            if (request.IsProspect.HasValue) customer.IsProspect = request.IsProspect.Value;
-            if (request.InvoicePalletsSeparately.HasValue) customer.InvoicePalletsSeparately = request.InvoicePalletsSeparately.Value;
-            if (request.InvoiceCostsSeparately.HasValue) customer.InvoiceCostsSeparately = request.InvoiceCostsSeparately.Value;
-            if (request.InvoiceCostsSeparatelyImmediately.HasValue) customer.InvoiceCostsSeparatelyImmediately = request.InvoiceCostsSeparatelyImmediately.Value;
-            if (request.BudgetCountAsNewUntilMonth.HasValue) customer.BudgetCountAsNewUntilMonth = request.BudgetCountAsNewUntilMonth;
-            if (request.InvoiceRowsInProductNameOrder.HasValue) customer.InvoiceRowsInProductNameOrder = request.InvoiceRowsInProductNameOrder.Value;
-            if (request.OrderNrPrefix != null) customer.OrderNrPrefix = request.OrderNrPrefix;
+            customer.Name = request.Name;
+            customer.SortName = request.SortName;
+            customer.Address = request.Address;
+            customer.PostalNr = request.PostalNr;
+            customer.PostalAddress = request.PostalAddress;
+            customer.VisitingAddress = request.VisitingAddress;
+            customer.Reference = request.Reference;
+            customer.Telephone1 = request.Telephone1;
+            customer.Telephone2 = request.Telephone2;
+            customer.Telephone3 = request.Telephone3;
+            customer.Fax = request.Fax;
+            customer.Note = request.Note;
+            customer.LoadingInstruction = request.LoadingInstruction;
+            customer.ResponsibleUserId = request.ResponsibleUserId;
+            customer.VAT = request.VAT ?? false;
+            customer.Active = request.Active ?? false;
+            customer.Country = request.Country;
+            customer.TermsOfDelivery = request.TermsOfDelivery;
+            customer.TermsOfPayment = request.TermsOfPayment;
+            customer.PaymentDays = request.PaymentDays;
+            customer.LanguageId = request.LanguageId;
+            customer.VATNr = request.VATNr;
+            customer.Email = request.Email;
+            customer.QuotationCommunicationTypeId = request.QuotationCommunicationTypeId;
+            customer.CustomerOrderCommunicationTypeId = request.CustomerOrderCommunicationTypeId;
+            customer.InvoiceCommunicationTypeId = request.InvoiceCommunicationTypeId;
+            customer.OrgNr = request.OrgNr;
+            customer.EU = request.EU ?? false;
+            customer.Export = request.Export ?? false;
+            customer.CreditLimit = request.CreditLimit;
+            customer.CurrencyId = request.CurrencyId;
+            customer.ExternalKey = request.ExternalKey;
+            customer.VATRate = request.VATRate;
+            customer.Address2 = request.Address2;
+            customer.OneWayPallet = request.OneWayPallet ?? false;
+            customer.EURPallet = request.EURPallet ?? false;
+            customer.SpecialUnitHandling = request.SpecialUnitHandling ?? false;
+            customer.PrintForDocumentScanning = request.PrintForDocumentScanning ?? false;
+            customer.PricePerEurPallet = request.PricePerEurPallet;
+            customer.LockOrder = request.LockOrder ?? false;
+            customer.LastCustomerOrderDate = request.LastCustomerOrderDate;
+            customer.AccountNrAccountsReceivable = request.AccountNrAccountsReceivable;
+            customer.AccountNrEarnings = request.AccountNrEarnings;
+            customer.SupportEmployeeId = request.SupportEmployeeId;
+            customer.LastActivity = request.LastActivity;
+            customer.CountryId = request.CountryId;
+            customer.Category = request.Category;
+            customer.IsProspect = request.IsProspect ?? false;
+            customer.InvoicePalletsSeparately = request.InvoicePalletsSeparately ?? false;
+            customer.InvoiceCostsSeparately = request.InvoiceCostsSeparately ?? false;
+            customer.InvoiceCostsSeparatelyImmediately = request.InvoiceCostsSeparatelyImmediately ?? false;
+            customer.BudgetCountAsNewUntilMonth = request.BudgetCountAsNewUntilMonth;
+            customer.InvoiceRowsInProductNameOrder = request.InvoiceRowsInProductNameOrder ?? false;
+            customer.OrderNrPrefix = request.OrderNrPrefix;
 
             await _dbContext.SaveChangesAsync();
 
@@ -352,135 +351,51 @@ namespace Econosys.Api.Controllers
                 OrderNrPrefix = customer.OrderNrPrefix
             };
         }
-    }
 
-    public class CreateCustomerRequest
-    {
-        public string? Name { get; set; }
-        public string? SortName { get; set; }
-        public string? Address { get; set; }
-        public string? PostalNr { get; set; }
-        public string? PostalAddress { get; set; }
-        public string? VisitingAddress { get; set; }
-        public string? Reference { get; set; }
-        public string? Telephone1 { get; set; }
-        public string? Telephone2 { get; set; }
-        public string? Telephone3 { get; set; }
-        public string? Fax { get; set; }
-        public string? Note { get; set; }
-        public string? LoadingInstruction { get; set; }
-        public int? ResponsibleUserId { get; set; }
-        public bool VAT { get; set; }
-        public bool Active { get; set; }
-        public string? Country { get; set; }
-        public string? TermsOfDelivery { get; set; }
-        public string? TermsOfPayment { get; set; }
-        public short? PaymentDays { get; set; }
-        public int? LanguageId { get; set; }
-        public string? VATNr { get; set; }
-        public string? Email { get; set; }
-        public int? QuotationCommunicationTypeId { get; set; }
-        public int? CustomerOrderCommunicationTypeId { get; set; }
-        public int? InvoiceCommunicationTypeId { get; set; }
-        public string? OrgNr { get; set; }
-        public bool EU { get; set; }
-        public bool Export { get; set; }
-        public int? CreditLimit { get; set; }
-        public int? CurrencyId { get; set; }
-        public string? ExternalKey { get; set; }
-        public short? VATRate { get; set; }
-        public string? Address2 { get; set; }
-        public bool OneWayPallet { get; set; }
-        public bool EURPallet { get; set; }
-        public int? OldDbId { get; set; }
-        public bool SpecialUnitHandling { get; set; }
-        public bool PrintForDocumentScanning { get; set; }
-        public decimal? PricePerEurPallet { get; set; }
-        public bool LockOrder { get; set; }
-        public DateTime? LastCustomerOrderDate { get; set; }
-        public int? AccountNrAccountsReceivable { get; set; }
-        public int? AccountNrEarnings { get; set; }
-        public int? SupportEmployeeId { get; set; }
-        public string? LastActivity { get; set; }
-        public int? CountryId { get; set; }
-        public string? Category { get; set; }
-        public bool IsProspect { get; set; }
-        public bool InvoicePalletsSeparately { get; set; }
-        public bool InvoiceCostsSeparately { get; set; }
-        public bool InvoiceCostsSeparatelyImmediately { get; set; }
-        public DateOnly? BudgetCountAsNewUntilMonth { get; set; }
-        public bool InvoiceRowsInProductNameOrder { get; set; }
-        public string? OrderNrPrefix { get; set; }
-    }
+        private static CustomerDetailsDto MapToDetailsDto(Customer customer)
+        {
+            return new CustomerDetailsDto
+            {
+                Customer = MapToDto(customer),
+                DeliveryAddresses = customer.DeliveryAddresses
+                    .OrderBy(x => x.Name)
+                    .ThenBy(x => x.Address)
+                    .Select(x => new CustomerDeliveryAddressDto
+                    {
+                        Id = x.Id,
+                        Name = x.Name,
+                        Address = x.Address,
+                        PostalNr = x.PostalNr,
+                        PostalAddress = x.PostalAddress,
+                        Country = x.Country,
+                    })
+                    .ToList(),
+                ContactPersons = customer.CustomerContactPersons
+                    .OrderBy(x => x.CustomerContactPersonName)
+                    .ThenBy(x => x.ContactPerson)
+                    .Select(x => new CustomerContactPersonDto
+                    {
+                        Id = x.Id,
+                        CustomerContactPersonName = x.CustomerContactPersonName,
+                        ContactPerson = x.ContactPerson,
+                        Name = !string.IsNullOrWhiteSpace(x.CustomerContactPersonName)
+                            ? x.CustomerContactPersonName
+                            : x.ContactPerson,
+                        Email = x.Email,
+                        Telephone = x.Telephone,
+                        Cellphone = x.Cellphone,
+                        MailQuotation = x.MailQuotation,
+                        MailCustomerOrder = x.MailCustomerOrder,
+                        MailInvoice = x.MailInvoice,
+                        MailTransportOrder = x.MailTransportOrder,
+                        MailGeneralInfo = x.MailGeneralInfo,
+                        MailCallOffConfirmation = x.MailCallOffConfirmation,
+                        Title = x.Title,
+                        OldDbId = x.OldDbId,
+                    })
+                    .ToList(),
+            };
+        }
 
-    public class UpdateCustomerRequest
-    {
-        public string? Name { get; set; }
-        public string? SortName { get; set; }
-        public string? Address { get; set; }
-        public string? PostalNr { get; set; }
-        public string? PostalAddress { get; set; }
-        public string? VisitingAddress { get; set; }
-        public string? Reference { get; set; }
-        public string? Telephone1 { get; set; }
-        public string? Telephone2 { get; set; }
-        public string? Telephone3 { get; set; }
-        public string? Fax { get; set; }
-        public string? Note { get; set; }
-        public string? LoadingInstruction { get; set; }
-        public int? ResponsibleUserId { get; set; }
-        public bool? VAT { get; set; }
-        public bool? Active { get; set; }
-        public string? Country { get; set; }
-        public string? TermsOfDelivery { get; set; }
-        public string? TermsOfPayment { get; set; }
-        public short? PaymentDays { get; set; }
-        public int? LanguageId { get; set; }
-        public string? VATNr { get; set; }
-        public string? Email { get; set; }
-        public int? QuotationCommunicationTypeId { get; set; }
-        public int? CustomerOrderCommunicationTypeId { get; set; }
-        public int? InvoiceCommunicationTypeId { get; set; }
-        public string? OrgNr { get; set; }
-        public bool? EU { get; set; }
-        public bool? Export { get; set; }
-        public int? CreditLimit { get; set; }
-        public int? CurrencyId { get; set; }
-        public string? ExternalKey { get; set; }
-        public short? VATRate { get; set; }
-        public string? Address2 { get; set; }
-        public bool? OneWayPallet { get; set; }
-        public bool? EURPallet { get; set; }
-        public int? OldDbId { get; set; }
-        public bool? SpecialUnitHandling { get; set; }
-        public bool? PrintForDocumentScanning { get; set; }
-        public decimal? PricePerEurPallet { get; set; }
-        public bool? LockOrder { get; set; }
-        public DateTime? LastCustomerOrderDate { get; set; }
-        public int? AccountNrAccountsReceivable { get; set; }
-        public int? AccountNrEarnings { get; set; }
-        public int? SupportEmployeeId { get; set; }
-        public string? LastActivity { get; set; }
-        public int? CountryId { get; set; }
-        public string? Category { get; set; }
-        public bool? IsProspect { get; set; }
-        public bool? InvoicePalletsSeparately { get; set; }
-        public bool? InvoiceCostsSeparately { get; set; }
-        public bool? InvoiceCostsSeparatelyImmediately { get; set; }
-        public DateOnly? BudgetCountAsNewUntilMonth { get; set; }
-        public bool? InvoiceRowsInProductNameOrder { get; set; }
-        public string? OrderNrPrefix { get; set; }
-    }
-
-    public class SearchCustomersRequest
-    {
-        public string? SearchTerm { get; set; }
-        public bool? Active { get; set; }
-        public bool? IsProspect { get; set; }
-        public int? CountryId { get; set; }
-        public string? Category { get; set; }
-        public string? SortBy { get; set; }
-        public bool SortDescending { get; set; }
-        public PaginationRequest? Pagination { get; set; }
     }
 }

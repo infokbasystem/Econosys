@@ -33,5 +33,6 @@ namespace Econosys.Api.Models
         public virtual ICollection<Customer> Customers { get; set; } = new List<Customer>();
         public virtual ICollection<Supplier> Suppliers { get; set; } = new List<Supplier>();
         public virtual ICollection<Invoice> Invoices { get; set; } = new List<Invoice>();
+        public virtual ICollection<InquiryRecipient> InquiryRecipients { get; set; } = new List<InquiryRecipient>();
     }
 }

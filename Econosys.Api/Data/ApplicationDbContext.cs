@@ -20,6 +20,7 @@ namespace Econosys.Api.Data
         public DbSet<AccountType> AccountTypes => Set<AccountType>();
         public DbSet<PriceType> PriceTypes => Set<PriceType>();
         public DbSet<Language> Languages => Set<Language>();
+        public DbSet<TranslationItem> TranslationItems => Set<TranslationItem>();
         public DbSet<Supplier> Suppliers => Set<Supplier>();
         public DbSet<SupplierOrder> SupplierOrders => Set<SupplierOrder>();
         public DbSet<CustomerOrder> CustomerOrders => Set<CustomerOrder>();
@@ -39,20 +40,50 @@ namespace Econosys.Api.Data
         public DbSet<Material> Materials => Set<Material>();
         public DbSet<Construction> Constructions => Set<Construction>();
         public DbSet<Varnish> Varnishes => Set<Varnish>();
+        public DbSet<TermOfDelivery> TermsOfDelivery => Set<TermOfDelivery>();
+        public DbSet<TermOfPayment> TermsOfPayment => Set<TermOfPayment>();
         public DbSet<Product> Products => Set<Product>();
+        public DbSet<PalletType> PalletTypes => Set<PalletType>();
         public DbSet<PalletFormat> PalletFormats => Set<PalletFormat>();
+        public DbSet<PalletFormatPrice> PalletFormatPrices => Set<PalletFormatPrice>();
         public DbSet<Calculation> Calculations => Set<Calculation>();
+        public DbSet<Inquiry> Inquiries => Set<Inquiry>();
+        public DbSet<InquiryRecipient> InquiryRecipients => Set<InquiryRecipient>();
         public DbSet<CalculationRow> CalculationRows => Set<CalculationRow>();
+        public DbSet<CalculationRowCost> CalculationRowCosts => Set<CalculationRowCost>();
         public DbSet<Deviation> Deviations => Set<Deviation>();
         public DbSet<DeviationCost> DeviationCosts => Set<DeviationCost>();
         public DbSet<DocumentFile> DocumentFiles => Set<DocumentFile>();
         public DbSet<DocumentType> DocumentTypes => Set<DocumentType>();
         public DbSet<TransportOrder> TransportOrders => Set<TransportOrder>();
         public DbSet<CallOff> CallOffs => Set<CallOff>();
+        public DbSet<CallOffDelivery> CallOffDeliveries => Set<CallOffDelivery>();
+        public DbSet<Shipper> Shippers => Set<Shipper>();
+        public DbSet<CustomerDeliveryAddress> CustomerDeliveryAddresses => Set<CustomerDeliveryAddress>();
+        public DbSet<CustomerContactPerson> CustomerContactPersons => Set<CustomerContactPerson>();
+        public DbSet<SupplierContactPerson> SupplierContactPersons => Set<SupplierContactPerson>();
         public DbSet<DocumentFileRelation> DocumentFileRelations => Set<DocumentFileRelation>();
+        public DbSet<ImprovementProposition> ImprovementPropositions => Set<ImprovementProposition>();
+        public DbSet<CompanyInfo> CompanyInfos => Set<CompanyInfo>();
+        public DbSet<Setting> Settings => Set<Setting>();
+        public DbSet<MailSetting> MailSettings => Set<MailSetting>();
+        public DbSet<MailText> MailTexts => Set<MailText>();
+        public DbSet<CalculationVariable> CalculationVariables => Set<CalculationVariable>();
+        public DbSet<BudgetMonthDistribution> BudgetMonthDistributions => Set<BudgetMonthDistribution>();
+        public DbSet<Quotation> Quotations => Set<Quotation>();
+        public DbSet<QuotationRow> QuotationRows => Set<QuotationRow>();
+        public DbSet<InquiryRow> InquiryRows => Set<InquiryRow>();
 
         private static string ToDbString(string value) => value;
         private static string FromDbString(string? value) => value ?? string.Empty;
+        private static ImprovementPropositionAreaCode ParseImprovementPropositionAreaCode(string? value)
+            => Enum.TryParse<ImprovementPropositionAreaCode>(value, true, out var parsed)
+                ? parsed
+                : ImprovementPropositionAreaCode.SALES;
+        private static ImprovementPropositionStatusCode ParseImprovementPropositionStatus(string? value)
+            => Enum.TryParse<ImprovementPropositionStatusCode>(value, true, out var parsed)
+                ? parsed
+                : ImprovementPropositionStatusCode.NEW;
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -147,6 +178,11 @@ namespace Econosys.Api.Data
             builder.Entity<Language>(entity =>
             {
                 entity.ToTable("Lang", tableBuilder => tableBuilder.ExcludeFromMigrations());
+            });
+
+            builder.Entity<TranslationItem>(entity =>
+            {
+                entity.ToTable("TranslationItem", tableBuilder => tableBuilder.ExcludeFromMigrations());
             });
 
             builder.Entity<Supplier>(entity =>
@@ -249,6 +285,11 @@ namespace Econosys.Api.Data
                     .OnDelete(DeleteBehavior.NoAction);
             });
 
+            builder.Entity<StockTaking>(entity =>
+            {
+                entity.ToTable("StockTaking", tableBuilder => tableBuilder.ExcludeFromMigrations());
+            });
+
             builder.Entity<StockTakingItem>(entity =>
             {
                 entity.ToTable("StockTakingItem", tableBuilder => tableBuilder.ExcludeFromMigrations());
@@ -343,6 +384,11 @@ namespace Econosys.Api.Data
                     .HasForeignKey(x => x.CustomerOrderId)
                     .OnDelete(DeleteBehavior.NoAction);
 
+                entity.HasOne(x => x.CalculationRow)
+                    .WithMany(x => x.OrderCosts)
+                    .HasForeignKey(x => x.CalculationRowId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
                 entity.HasOne(x => x.Cost)
                     .WithMany(x => x.OrderCosts)
                     .HasForeignKey(x => x.CostId)
@@ -356,6 +402,16 @@ namespace Econosys.Api.Data
                 entity.HasOne(x => x.InPriceCurrency)
                     .WithMany(x => x.InPriceOrderCosts)
                     .HasForeignKey(x => x.InPriceCurrencyId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.CreatedByUser)
+                    .WithMany(x => x.CreatedOrderCosts)
+                    .HasForeignKey(x => x.CreatedById)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.EditedByUser)
+                    .WithMany(x => x.EditedOrderCosts)
+                    .HasForeignKey(x => x.EditedById)
                     .OnDelete(DeleteBehavior.NoAction);
             });
 
@@ -372,6 +428,16 @@ namespace Econosys.Api.Data
             builder.Entity<Invoice>(entity =>
             {
                 entity.ToTable("Invoice", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.CreatedByUser)
+                    .WithMany(x => x.CreatedInvoices)
+                    .HasForeignKey(x => x.CreatedBy)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.EditedByUser)
+                    .WithMany(x => x.EditedInvoices)
+                    .HasForeignKey(x => x.EditedBy)
+                    .OnDelete(DeleteBehavior.NoAction);
 
                 entity.HasOne(x => x.Customer)
                     .WithMany(x => x.Invoices)
@@ -469,6 +535,16 @@ namespace Econosys.Api.Data
                 entity.ToTable("Varnish", tableBuilder => tableBuilder.ExcludeFromMigrations());
             });
 
+            builder.Entity<TermOfDelivery>(entity =>
+            {
+                entity.ToTable("TermsOfDelivery", tableBuilder => tableBuilder.ExcludeFromMigrations());
+            });
+
+            builder.Entity<TermOfPayment>(entity =>
+            {
+                entity.ToTable("TermsOfPayment", tableBuilder => tableBuilder.ExcludeFromMigrations());
+            });
+
             builder.Entity<Product>(entity =>
             {
                 entity.ToTable("Product", tableBuilder => tableBuilder.ExcludeFromMigrations());
@@ -489,9 +565,39 @@ namespace Econosys.Api.Data
                     .OnDelete(DeleteBehavior.NoAction);
             });
 
+            builder.Entity<PalletType>(entity =>
+            {
+                entity.ToTable("PalletType", tableBuilder => tableBuilder.ExcludeFromMigrations());
+            });
+
             builder.Entity<PalletFormat>(entity =>
             {
                 entity.ToTable("PalletFormat", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.PalletType)
+                    .WithMany(x => x.PalletFormats)
+                    .HasForeignKey(x => x.PalletTypeId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<PalletFormatPrice>(entity =>
+            {
+                entity.ToTable("PalletFormatPrice", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.Customer)
+                    .WithMany(x => x.PalletFormatPrices)
+                    .HasForeignKey(x => x.CustomerId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.Supplier)
+                    .WithMany(x => x.PalletFormatPrices)
+                    .HasForeignKey(x => x.SupplierId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.PalletFormat)
+                    .WithMany(x => x.PalletFormatPrices)
+                    .HasForeignKey(x => x.PalletFormatId)
+                    .OnDelete(DeleteBehavior.NoAction);
             });
 
             builder.Entity<Calculation>(entity =>
@@ -534,6 +640,146 @@ namespace Econosys.Api.Data
                     .OnDelete(DeleteBehavior.NoAction);
             });
 
+            builder.Entity<Inquiry>(entity =>
+            {
+                entity.ToTable("Inquiry", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.Calculation)
+                    .WithMany()
+                    .HasForeignKey(x => x.CalculationId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.Customer)
+                    .WithMany()
+                    .HasForeignKey(x => x.CustomerId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.SelectedInquiryRecipient)
+                    .WithMany()
+                    .HasForeignKey(x => x.SelectedInquiryRecipientId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.CustomerDeliveryAddress)
+                    .WithMany()
+                    .HasForeignKey(x => x.CustomerDeliveryAddressId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.CreatedByUser)
+                    .WithMany(x => x.CreatedInquiries)
+                    .HasForeignKey(x => x.CreatedBy)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.EditedByUser)
+                    .WithMany(x => x.EditedInquiries)
+                    .HasForeignKey(x => x.EditedBy)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<InquiryRow>(entity =>
+            {
+                entity.ToTable("InquiryRow", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.Inquiry)
+                    .WithMany(x => x.InquiryRows)
+                    .HasForeignKey(x => x.InquiryId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.CalculationRow)
+                    .WithMany()
+                    .HasForeignKey(x => x.CalculationRowId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<InquiryRecipient>(entity =>
+            {
+                entity.ToTable("InquiryRecipient", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.Inquiry)
+                    .WithMany(x => x.InquiryRecipients)
+                    .HasForeignKey(x => x.InquiryId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.Supplier)
+                    .WithMany(x => x.InquiryRecipients)
+                    .HasForeignKey(x => x.SupplierId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.Language)
+                    .WithMany(x => x.InquiryRecipients)
+                    .HasForeignKey(x => x.LanguageId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<Quotation>(entity =>
+            {
+                entity.ToTable("Quotation", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.Calculation)
+                    .WithMany(x => x.Quotations)
+                    .HasForeignKey(x => x.CalculationId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.Inquiry)
+                    .WithMany(x => x.Quotations)
+                    .HasForeignKey(x => x.InquiryId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.Customer)
+                    .WithMany(x => x.Quotations)
+                    .HasForeignKey(x => x.CustomerId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.SalesCurrency)
+                    .WithMany(x => x.SalesQuotations)
+                    .HasForeignKey(x => x.SalesCurrencyId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.Unit)
+                    .WithMany(x => x.Quotations)
+                    .HasForeignKey(x => x.UnitId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.CreatedByUser)
+                    .WithMany(x => x.CreatedQuotations)
+                    .HasForeignKey(x => x.CreatedBy)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.EditedByUser)
+                    .WithMany(x => x.EditedQuotations)
+                    .HasForeignKey(x => x.EditedBy)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.PurchaseCurrency)
+                    .WithMany(x => x.PurchaseQuotations)
+                    .HasForeignKey(x => x.PurchaseCurrencyId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.CustomerDeliveryAddress)
+                    .WithMany(x => x.Quotations)
+                    .HasForeignKey(x => x.CustomerDeliveryAddressId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.PalletFormat)
+                    .WithMany(x => x.Quotations)
+                    .HasForeignKey(x => x.PalletFormatId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<QuotationRow>(entity =>
+            {
+                entity.ToTable("QuotationRow", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.Quotation)
+                    .WithMany(x => x.QuotationRows)
+                    .HasForeignKey(x => x.QuotationId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.CalculationRow)
+                    .WithMany(x => x.QuotationRows)
+                    .HasForeignKey(x => x.CalculationRowId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
             builder.Entity<CalculationRow>(entity =>
             {
                 entity.ToTable("CalculationRow", tableBuilder => tableBuilder.ExcludeFromMigrations());
@@ -551,6 +797,26 @@ namespace Econosys.Api.Data
                 entity.HasMany(x => x.SupplierOrders)
                     .WithOne(x => x.SelectedCalculationRow)
                     .HasForeignKey(x => x.SelectedCalculationRowId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<CalculationRowCost>(entity =>
+            {
+                entity.ToTable("CalculationRowCost", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.CalculationRow)
+                    .WithMany(x => x.CalculationRowCosts)
+                    .HasForeignKey(x => x.CalculationRowId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.Cost)
+                    .WithMany(x => x.CalculationRowCosts)
+                    .HasForeignKey(x => x.CostId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.InPriceCurrency)
+                    .WithMany(x => x.InPriceCalculationRowCosts)
+                    .HasForeignKey(x => x.InPriceCurrencyId)
                     .OnDelete(DeleteBehavior.NoAction);
             });
 
@@ -604,6 +870,52 @@ namespace Econosys.Api.Data
                     .OnDelete(DeleteBehavior.NoAction);
             });
 
+            builder.Entity<ImprovementProposition>(entity =>
+            {
+                entity.ToTable("ImprovementProposition");
+
+                entity.Property(x => x.AreaCode)
+                    .HasConversion(
+                        value => value.ToString(),
+                        value => ParseImprovementPropositionAreaCode(value))
+                    .HasMaxLength(30)
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(30)");
+
+                entity.Property(x => x.StatusCode)
+                    .HasConversion(
+                        value => value.ToString(),
+                        value => ParseImprovementPropositionStatus(value))
+                    .HasMaxLength(20)
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(20)");
+            });
+
+            builder.Entity<CompanyInfo>(entity =>
+            {
+                entity.ToTable("CompanyInfo", tableBuilder => tableBuilder.ExcludeFromMigrations());
+            });
+
+            builder.Entity<Setting>(entity =>
+            {
+                entity.ToTable("Settings", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.CompanyInfo)
+                    .WithMany(x => x.Settings)
+                    .HasForeignKey(x => x.CompanyId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<MailSetting>(entity =>
+            {
+                entity.ToTable("MailSetting", tableBuilder => tableBuilder.ExcludeFromMigrations());
+            });
+
+            builder.Entity<MailText>(entity =>
+            {
+                entity.ToTable("MailText", tableBuilder => tableBuilder.ExcludeFromMigrations());
+            });
+
             builder.Entity<DocumentType>(entity =>
             {
                 entity.ToTable("DocumentType", tableBuilder => tableBuilder.ExcludeFromMigrations());
@@ -614,9 +926,74 @@ namespace Econosys.Api.Data
                 entity.ToTable("TransportOrder", tableBuilder => tableBuilder.ExcludeFromMigrations());
             });
 
+            builder.Entity<Shipper>(entity =>
+            {
+                entity.ToTable("Shipper", tableBuilder => tableBuilder.ExcludeFromMigrations());
+            });
+
+            builder.Entity<CustomerDeliveryAddress>(entity =>
+            {
+                entity.ToTable("CustomerDeliveryAddress", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.Customer)
+                    .WithMany(x => x.DeliveryAddresses)
+                    .HasForeignKey(x => x.CustomerId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<CustomerContactPerson>(entity =>
+            {
+                entity.ToTable("CustomerContactPerson", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.Customer)
+                    .WithMany(x => x.CustomerContactPersons)
+                    .HasForeignKey(x => x.CustomerId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+                    builder.Entity<SupplierContactPerson>(entity =>
+                    {
+                    entity.ToTable("SupplierContactPerson", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                    entity.HasOne(x => x.Supplier)
+                        .WithMany(x => x.SupplierContactPersons)
+                        .HasForeignKey(x => x.SupplierId)
+                        .OnDelete(DeleteBehavior.NoAction);
+                    });
+
             builder.Entity<CallOff>(entity =>
             {
                 entity.ToTable("CallOff", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.Shipper)
+                    .WithMany(x => x.CallOffs)
+                    .HasForeignKey(x => x.ShipperId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.CreatedByUser)
+                    .WithMany(x => x.CreatedCallOffs)
+                    .HasForeignKey(x => x.CreatedByUserId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.CustomerDeliveryAddress)
+                    .WithMany(x => x.CallOffs)
+                    .HasForeignKey(x => x.CustomerDeliveryAddressId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<CallOffDelivery>(entity =>
+            {
+                entity.ToTable("CallOffDelivery", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.CallOff)
+                    .WithMany(x => x.CallOffDeliveries)
+                    .HasForeignKey(x => x.CallOffId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.DeliveryFromStock)
+                    .WithMany(x => x.CallOffDeliveries)
+                    .HasForeignKey(x => x.DeliveryFromStockId)
+                    .OnDelete(DeleteBehavior.NoAction);
             });
 
             builder.Entity<DocumentFile>(entity =>
@@ -659,6 +1036,16 @@ namespace Econosys.Api.Data
                     .OnDelete(DeleteBehavior.NoAction);
             });
 
+            builder.Entity<CalculationVariable>(entity =>
+            {
+                entity.ToTable("CalculationVariable", tableBuilder => tableBuilder.ExcludeFromMigrations());
+            });
+
+            builder.Entity<BudgetMonthDistribution>(entity =>
+            {
+                entity.ToTable("BudgetMonthDistribution", tableBuilder => tableBuilder.ExcludeFromMigrations());
+            });
+
             builder.Entity<DocumentFileRelation>(entity =>
             {
                 entity.ToTable("DocumentFileRelation", tableBuilder => tableBuilder.ExcludeFromMigrations());
@@ -690,7 +1077,7 @@ namespace Econosys.Api.Data
     {
         public string? FirstName { get; set; }
         public string? LastName { get; set; }
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = SwedishTime.Now;
         public DateTime? LastLoginAt { get; set; }
         public bool IsActive { get; set; } = true;
     }

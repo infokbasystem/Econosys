@@ -1,8 +1,10 @@
 using System.Linq.Expressions;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -35,7 +37,8 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            return Ok(MapToDto(entity));
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, entity.TranslationCode);
+            return Ok(MapToDto(entity, translations));
         }
 
         [HttpPost]
@@ -72,14 +75,18 @@ namespace Econosys.Api.Controllers
                 ThicknessMm = request.ThicknessMm,
                 WeightGr = request.WeightGr,
                 MaterialText = request.MaterialText,
-                OldDbId = request.OldDbId,
                 PackagingFeeCategoryId = request.PackagingFeeCategoryId
             };
 
             _dbContext.Materials.Add(entity);
             await _dbContext.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(entity));
+            entity.TranslationCode = await EntityTranslationService.UpsertTranslationsAsync(_dbContext, entity.TranslationCode, request.Translations);
+            await _dbContext.SaveChangesAsync();
+
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, entity.TranslationCode);
+
+            return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(entity, translations));
         }
 
         [HttpPut("{id:int}")]
@@ -97,36 +104,39 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            if (request.Name is not null) entity.Name = request.Name;
-            if (request.TranslationCode.HasValue) entity.TranslationCode = request.TranslationCode;
-            if (request.Active.HasValue) entity.Active = request.Active.Value;
-            if (request.MaterialGroup.HasValue) entity.MaterialGroup = request.MaterialGroup;
-            if (request.Color1 is not null) entity.Color1 = request.Color1;
-            if (request.Color2 is not null) entity.Color2 = request.Color2;
-            if (request.Layer1Material is not null) entity.Layer1Material = request.Layer1Material;
-            if (request.Layer1Weight.HasValue) entity.Layer1Weight = request.Layer1Weight;
-            if (request.Layer1Thickness is not null) entity.Layer1Thickness = request.Layer1Thickness;
-            if (request.Layer2Material is not null) entity.Layer2Material = request.Layer2Material;
-            if (request.Layer2Weight.HasValue) entity.Layer2Weight = request.Layer2Weight;
-            if (request.Layer2Thickness is not null) entity.Layer2Thickness = request.Layer2Thickness;
-            if (request.Layer3Material is not null) entity.Layer3Material = request.Layer3Material;
-            if (request.Layer3Weight.HasValue) entity.Layer3Weight = request.Layer3Weight;
-            if (request.Layer3Thickness is not null) entity.Layer3Thickness = request.Layer3Thickness;
-            if (request.Layer4Material is not null) entity.Layer4Material = request.Layer4Material;
-            if (request.Layer4Weight.HasValue) entity.Layer4Weight = request.Layer4Weight;
-            if (request.Layer4Thickness is not null) entity.Layer4Thickness = request.Layer4Thickness;
-            if (request.Layer5Material is not null) entity.Layer5Material = request.Layer5Material;
-            if (request.Layer5Weight.HasValue) entity.Layer5Weight = request.Layer5Weight;
-            if (request.Layer5Thickness is not null) entity.Layer5Thickness = request.Layer5Thickness;
-            if (request.ThicknessMm.HasValue) entity.ThicknessMm = request.ThicknessMm;
-            if (request.WeightGr.HasValue) entity.WeightGr = request.WeightGr;
-            if (request.MaterialText is not null) entity.MaterialText = request.MaterialText;
-            if (request.OldDbId.HasValue) entity.OldDbId = request.OldDbId;
-            if (request.PackagingFeeCategoryId.HasValue) entity.PackagingFeeCategoryId = request.PackagingFeeCategoryId;
+            entity.Name = request.Name;
+            entity.TranslationCode = request.TranslationCode;
+            entity.Active = request.Active ?? false;
+            entity.MaterialGroup = request.MaterialGroup;
+            entity.Color1 = request.Color1;
+            entity.Color2 = request.Color2;
+            entity.Layer1Material = request.Layer1Material;
+            entity.Layer1Weight = request.Layer1Weight;
+            entity.Layer1Thickness = request.Layer1Thickness;
+            entity.Layer2Material = request.Layer2Material;
+            entity.Layer2Weight = request.Layer2Weight;
+            entity.Layer2Thickness = request.Layer2Thickness;
+            entity.Layer3Material = request.Layer3Material;
+            entity.Layer3Weight = request.Layer3Weight;
+            entity.Layer3Thickness = request.Layer3Thickness;
+            entity.Layer4Material = request.Layer4Material;
+            entity.Layer4Weight = request.Layer4Weight;
+            entity.Layer4Thickness = request.Layer4Thickness;
+            entity.Layer5Material = request.Layer5Material;
+            entity.Layer5Weight = request.Layer5Weight;
+            entity.Layer5Thickness = request.Layer5Thickness;
+            entity.ThicknessMm = request.ThicknessMm;
+            entity.WeightGr = request.WeightGr;
+            entity.MaterialText = request.MaterialText;
+            entity.PackagingFeeCategoryId = request.PackagingFeeCategoryId;
+
+            entity.TranslationCode = await EntityTranslationService.UpsertTranslationsAsync(_dbContext, entity.TranslationCode, request.Translations);
 
             await _dbContext.SaveChangesAsync();
 
-            return Ok(MapToDto(entity));
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, entity.TranslationCode);
+
+            return Ok(MapToDto(entity, translations));
         }
 
         [HttpDelete("{id:int}")]
@@ -140,9 +150,61 @@ namespace Econosys.Api.Controllers
             }
 
             _dbContext.Materials.Remove(entity);
-            await _dbContext.SaveChangesAsync();
+
+            try
+            {
+                await _dbContext.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogWarning(ex, "Delete conflict for material {MaterialId}", id);
+
+                var details = new List<string>();
+                var productCount = await _dbContext.Products
+                    .AsNoTracking()
+                    .CountAsync(x => x.MaterialId == id);
+
+                if (productCount > 0)
+                {
+                    details.Add($"Anvands av {productCount} produkt(er).");
+                }
+
+                var table = TryExtractSqlConflictTable(ex);
+                if (!string.IsNullOrWhiteSpace(table))
+                {
+                    details.Add($"Konflikt i tabell {table}.");
+                }
+
+                if (details.Count == 0)
+                {
+                    details.Add("Posten ar relaterad till annan data och kan inte raderas.");
+                }
+
+                return Conflict(new
+                {
+                    message = "Materialet kan inte raderas eftersom det refereras av annan data.",
+                    details
+                });
+            }
 
             return NoContent();
+        }
+
+        private static string? TryExtractSqlConflictTable(DbUpdateException ex)
+        {
+            var fullMessage = ex.InnerException?.Message ?? ex.Message;
+            if (string.IsNullOrWhiteSpace(fullMessage))
+            {
+                return null;
+            }
+
+            var match = Regex.Match(fullMessage, "table '([^']+)'", RegexOptions.IgnoreCase);
+            if (!match.Success)
+            {
+                return null;
+            }
+
+            return match.Groups[1].Value;
         }
 
         [HttpPost("search")]
@@ -187,7 +249,7 @@ namespace Econosys.Api.Controllers
                 .Skip((pagination.PageNumber - 1) * pagination.PageSize)
                 .Take(pagination.PageSize)
                 .ToListAsync())
-                .Select(MapToDto)
+                .Select(x => MapToDto(x))
                 .ToList();
 
             return Ok(new PagedResultDto<MaterialDto>
@@ -573,11 +635,12 @@ namespace Econosys.Api.Controllers
             };
         }
 
-        private static MaterialDto MapToDto(Material entity) => new()
+        private static MaterialDto MapToDto(Material entity, List<EntityTranslationDto>? translations = null) => new()
         {
             Id = entity.Id,
             Name = entity.Name,
             TranslationCode = entity.TranslationCode,
+            Translations = translations ?? new List<EntityTranslationDto>(),
             Active = entity.Active,
             MaterialGroup = entity.MaterialGroup,
             Color1 = entity.Color1,

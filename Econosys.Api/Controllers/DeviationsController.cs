@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
+using Econosys.Api.Services;
 
 namespace Econosys.Api.Controllers
 {
@@ -15,9 +16,12 @@ namespace Econosys.Api.Controllers
     {
         private readonly ApplicationDbContext _dbContext;
 
-        public DeviationsController(ApplicationDbContext dbContext)
+        private readonly ILegacyUserResolutionService _legacyUserResolution;
+
+        public DeviationsController(ApplicationDbContext dbContext, ILegacyUserResolutionService legacyUserResolution)
         {
             _dbContext = dbContext;
+            _legacyUserResolution = legacyUserResolution;
         }
 
         [HttpGet("form-options")]
@@ -151,7 +155,7 @@ namespace Econosys.Api.Controllers
         [HttpGet("overview")]
         public async Task<ActionResult<DeviationOverviewDto>> GetOverview([FromQuery] int? year = null)
         {
-            var selectedYear = year ?? DateTime.Today.Year;
+            var selectedYear = year ?? SwedishTime.Today.Year;
             var startOfYear = new DateTime(selectedYear, 1, 1);
             var endOfYear = new DateTime(selectedYear, 12, 31, 23, 59, 59);
 
@@ -167,7 +171,7 @@ namespace Econosys.Api.Controllers
                     CustomerName = x.Customer != null ? x.Customer.Name : null,
                     SupplierName = x.Supplier != null ? x.Supplier.Name : null,
                     OpenDays = x.DeviationOpened.HasValue
-                        ? EF.Functions.DateDiffDay(x.DeviationOpened.Value, DateTime.Today)
+                        ? EF.Functions.DateDiffDay(x.DeviationOpened.Value, SwedishTime.Today)
                         : 0
                 })
                 .ToListAsync();
@@ -341,11 +345,17 @@ namespace Econosys.Api.Controllers
                 return BadRequest(ModelState);
             }
 
-            DateTime From = DateTime.Today;
+            var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+            if (legacyUser is null)
+            {
+                return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+            }
+
+            DateTime From = SwedishTime.Today;
             DateTime To = From.AddDays(1);
             const string Letters = "ABCDEFGHIJKLMNOPQRSTUVWXZYÅÄÖ";
             var nrOfCreatedToday = _dbContext.Deviations.Where(p => p.CreatedTimeStamp >= From && p.CreatedTimeStamp < To).Count();
-            string newNr = DateTime.Today.Year.ToString() + DateTime.Today.Month.ToString() + DateTime.Today.ToString("dd") + "-" + Letters[nrOfCreatedToday];
+            string newNr = SwedishTime.Today.Year.ToString() + SwedishTime.Today.Month.ToString() + SwedishTime.Today.ToString("dd") + "-" + Letters[nrOfCreatedToday];
 
             var deviation = new Deviation
             {
@@ -353,10 +363,6 @@ namespace Econosys.Api.Controllers
                 IsInternal = request.IsInternal,
                 Status = request.Status,
                 DeviationNr = newNr,
-                CreatedByUserId = request.CreatedByUserId,
-                CreatedTimeStamp = request.CreatedTimeStamp,
-                EditedByUserId = request.EditedByUserId,
-                EditedTimeStamp = request.EditedTimeStamp,
                 ResponsibleUserId = request.ResponsibleUserId,
                 DeviationOpened = request.DeviationOpened,
                 DeviationClosed = request.DeviationClosed,
@@ -388,6 +394,11 @@ namespace Econosys.Api.Controllers
                     .ToList()
             };
 
+            deviation.CreatedTimeStamp ??= SwedishTime.Now;
+            deviation.CreatedByUserId = legacyUser.Id;
+            deviation.EditedTimeStamp = SwedishTime.Now;
+            deviation.EditedByUserId = legacyUser.Id;
+
             _dbContext.Deviations.Add(deviation);
             await _dbContext.SaveChangesAsync();
 
@@ -409,6 +420,12 @@ namespace Econosys.Api.Controllers
                 return BadRequest(ModelState);
             }
 
+            var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+            if (legacyUser is null)
+            {
+                return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+            }
+
             var deviation = await _dbContext.Deviations
                 .Include(x => x.DeviationCosts)
                 .FirstOrDefaultAsync(x => x.Id == id);
@@ -418,49 +435,47 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            if (request.CustomerOrderId.HasValue) deviation.CustomerOrderId = request.CustomerOrderId;
-            if (request.IsInternal.HasValue) deviation.IsInternal = request.IsInternal.Value;
-            if (request.Status != null) deviation.Status = request.Status;
-            if (request.DeviationNr != null) deviation.DeviationNr = request.DeviationNr;
-            if (request.CreatedByUserId.HasValue) deviation.CreatedByUserId = request.CreatedByUserId;
-            if (request.CreatedTimeStamp.HasValue) deviation.CreatedTimeStamp = request.CreatedTimeStamp;
-            if (request.EditedByUserId.HasValue) deviation.EditedByUserId = request.EditedByUserId;
-            if (request.EditedTimeStamp.HasValue) deviation.EditedTimeStamp = request.EditedTimeStamp;
-            if (request.ResponsibleUserId.HasValue) deviation.ResponsibleUserId = request.ResponsibleUserId;
-            if (request.DeviationOpened.HasValue) deviation.DeviationOpened = request.DeviationOpened;
-            if (request.DeviationClosed.HasValue) deviation.DeviationClosed = request.DeviationClosed;
-            if (request.DeviationProcessCode != null) deviation.DeviationProcessCode = request.DeviationProcessCode;
-            if (request.SupplierId.HasValue) deviation.SupplierId = request.SupplierId;
-            if (request.CustomerId.HasValue) deviation.CustomerId = request.CustomerId;
-            if (request.DeviationTypeCode != null) deviation.DeviationTypeCode = request.DeviationTypeCode;
-            if (request.Description != null) deviation.Description = request.Description;
-            if (request.RootCause != null) deviation.RootCause = request.RootCause;
-            if (request.MeasureTaken != null) deviation.MeasureTaken = request.MeasureTaken;
-            if (request.EstimatedInternalCostSEK.HasValue) deviation.EstimatedInternalCostSEK = request.EstimatedInternalCostSEK;
-            if (request.EstimatedInternalCostPercentageOfOrder.HasValue) deviation.EstimatedInternalCostPercentageOfOrder = request.EstimatedInternalCostPercentageOfOrder;
-            if (request.SupplierDecisionCode != null) deviation.SupplierDecisionCode = request.SupplierDecisionCode;
-            if (request.CompanyDecisionCode != null) deviation.CompanyDecisionCode = request.CompanyDecisionCode;
-            if (request.ActualInternalCostSEK.HasValue) deviation.ActualInternalCostSEK = request.ActualInternalCostSEK;
-            if (request.NrOfProduced.HasValue) deviation.NrOfProduced = request.NrOfProduced;
-            if (request.NrOfClaimed.HasValue) deviation.NrOfClaimed = request.NrOfClaimed;
-            if (request.FreightCostPer1000.HasValue) deviation.FreightCostPer1000 = request.FreightCostPer1000;
-            if (request.FreightCostCurrencyId.HasValue) deviation.FreightCostCurrencyId = request.FreightCostCurrencyId;
-            if (request.ClaimReason != null) deviation.ClaimReason = request.ClaimReason;
-            if (request.FollowupInfo != null) deviation.FollowupInfo = request.FollowupInfo;
-            if (request.DeviationClosedToSupplier.HasValue) deviation.DeviationClosedToSupplier = request.DeviationClosedToSupplier;
+            deviation.CustomerOrderId = request.CustomerOrderId;
+            deviation.IsInternal = request.IsInternal ?? false;
+            deviation.Status = request.Status ?? string.Empty;
+            deviation.DeviationNr = request.DeviationNr;
+            deviation.ResponsibleUserId = request.ResponsibleUserId;
+            deviation.DeviationOpened = request.DeviationOpened;
+            deviation.DeviationClosed = request.DeviationClosed;
+            deviation.DeviationProcessCode = request.DeviationProcessCode;
+            deviation.SupplierId = request.SupplierId;
+            deviation.CustomerId = request.CustomerId;
+            deviation.DeviationTypeCode = request.DeviationTypeCode;
+            deviation.Description = request.Description;
+            deviation.RootCause = request.RootCause;
+            deviation.MeasureTaken = request.MeasureTaken;
+            deviation.EstimatedInternalCostSEK = request.EstimatedInternalCostSEK;
+            deviation.EstimatedInternalCostPercentageOfOrder = request.EstimatedInternalCostPercentageOfOrder;
+            deviation.SupplierDecisionCode = request.SupplierDecisionCode;
+            deviation.CompanyDecisionCode = request.CompanyDecisionCode;
+            deviation.ActualInternalCostSEK = request.ActualInternalCostSEK;
+            deviation.NrOfProduced = request.NrOfProduced;
+            deviation.NrOfClaimed = request.NrOfClaimed;
+            deviation.FreightCostPer1000 = request.FreightCostPer1000;
+            deviation.FreightCostCurrencyId = request.FreightCostCurrencyId;
+            deviation.ClaimReason = request.ClaimReason;
+            deviation.FollowupInfo = request.FollowupInfo;
+            deviation.DeviationClosedToSupplier = request.DeviationClosedToSupplier;
 
-            if (request.Costs is not null)
-            {
-                _dbContext.DeviationCosts.RemoveRange(deviation.DeviationCosts);
-                deviation.DeviationCosts = request.Costs
-                    .Select(cost => new DeviationCost
-                    {
-                        DeviationId = deviation.Id,
-                        Text = cost.Text,
-                        CostSEK = cost.CostSEK
-                    })
-                    .ToList();
-            }
+            deviation.CreatedTimeStamp ??= SwedishTime.Now;
+            deviation.CreatedByUserId = legacyUser.Id;
+            deviation.EditedTimeStamp = SwedishTime.Now;
+            deviation.EditedByUserId = legacyUser.Id;
+
+            _dbContext.DeviationCosts.RemoveRange(deviation.DeviationCosts);
+            deviation.DeviationCosts = (request.Costs ?? new List<CreateDeviationCostRequest>())
+                .Select(cost => new DeviationCost
+                {
+                    DeviationId = deviation.Id,
+                    Text = cost.Text,
+                    CostSEK = cost.CostSEK
+                })
+                .ToList();
 
             await _dbContext.SaveChangesAsync();
 
@@ -734,7 +749,7 @@ namespace Econosys.Api.Controllers
                 return null;
             }
 
-            var endDate = entity.DeviationClosed?.Date ?? DateTime.Today;
+            var endDate = entity.DeviationClosed?.Date ?? SwedishTime.Today;
             return Math.Max(0, (endDate - entity.DeviationOpened.Value.Date).Days);
         }
     }

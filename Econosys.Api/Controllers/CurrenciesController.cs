@@ -3,6 +3,7 @@ using System.Text.Json;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -35,7 +36,8 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            return Ok(MapToDto(currency));
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, currency.TranslationCode);
+            return Ok(MapToDto(currency, translations));
         }
 
         [HttpPost]
@@ -54,7 +56,6 @@ namespace Econosys.Api.Controllers
                 RateToSek = request.RateToSek,
                 Active = request.Active,
                 RateStockValue = request.RateStockValue,
-                OldDbId = request.OldDbId,
                 SpcsKey = request.SpcsKey,
                 WarningTolerancePercent = request.WarningTolerancePercent
             };
@@ -62,7 +63,12 @@ namespace Econosys.Api.Controllers
             _dbContext.Currencies.Add(currency);
             await _dbContext.SaveChangesAsync();
 
-            var response = MapToDto(currency);
+            currency.TranslationCode = await EntityTranslationService.UpsertTranslationsAsync(_dbContext, currency.TranslationCode, request.Translations);
+            await _dbContext.SaveChangesAsync();
+
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, currency.TranslationCode);
+
+            var response = MapToDto(currency, translations);
             return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
         }
 
@@ -81,19 +87,22 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            if (request.Name is not null) currency.Name = request.Name;
-            if (request.TranslationCode.HasValue) currency.TranslationCode = request.TranslationCode;
-            if (request.IsDefault.HasValue) currency.IsDefault = request.IsDefault.Value;
-            if (request.RateToSek.HasValue) currency.RateToSek = request.RateToSek;
-            if (request.Active.HasValue) currency.Active = request.Active.Value;
-            if (request.RateStockValue.HasValue) currency.RateStockValue = request.RateStockValue;
-            if (request.OldDbId.HasValue) currency.OldDbId = request.OldDbId;
-            if (request.SpcsKey is not null) currency.SpcsKey = request.SpcsKey;
-            if (request.WarningTolerancePercent.HasValue) currency.WarningTolerancePercent = request.WarningTolerancePercent;
+            currency.Name = request.Name;
+            currency.TranslationCode = request.TranslationCode;
+            currency.IsDefault = request.IsDefault ?? false;
+            currency.RateToSek = request.RateToSek;
+            currency.Active = request.Active ?? false;
+            currency.RateStockValue = request.RateStockValue;
+            currency.SpcsKey = request.SpcsKey;
+            currency.WarningTolerancePercent = request.WarningTolerancePercent;
+
+            currency.TranslationCode = await EntityTranslationService.UpsertTranslationsAsync(_dbContext, currency.TranslationCode, request.Translations);
 
             await _dbContext.SaveChangesAsync();
 
-            return Ok(MapToDto(currency));
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, currency.TranslationCode);
+
+            return Ok(MapToDto(currency, translations));
         }
 
         [HttpDelete("{id:int}")]
@@ -154,7 +163,7 @@ namespace Econosys.Api.Controllers
                 .Skip((pagination.PageNumber - 1) * pagination.PageSize)
                 .Take(pagination.PageSize)
                 .ToListAsync())
-                .Select(MapToDto)
+                .Select(x => MapToDto(x))
                 .ToList();
 
             return Ok(new PagedResultDto<CurrencyDto>
@@ -618,13 +627,14 @@ namespace Econosys.Api.Controllers
             return values;
         }
 
-        private static CurrencyDto MapToDto(Currency source)
+        private static CurrencyDto MapToDto(Currency source, List<EntityTranslationDto>? translations = null)
         {
             return new CurrencyDto
             {
                 Id = source.Id,
                 Name = source.Name,
                 TranslationCode = source.TranslationCode,
+            Translations = translations ?? new List<EntityTranslationDto>(),
                 IsDefault = source.IsDefault,
                 RateToSek = source.RateToSek,
                 Active = source.Active,

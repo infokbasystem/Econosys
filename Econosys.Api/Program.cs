@@ -103,7 +103,17 @@ builder.Services.AddCors(options =>
     {
         options.AddPolicy("ActivePolicy", corsBuilder =>
         {
-            var allowedOrigins = builder.Configuration["Cors:AllowedOrigins"]?.Split(";") ?? Array.Empty<string>();
+            // var allowedOrigins = builder.Configuration["Cors:AllowedOrigins"]?.Split(";") ?? Array.Empty<string>();
+            var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
+                    ?? new[] {
+                        "http://localhost:4200",
+                        "http://localhost:5173",
+                        "https://localhost:5173",
+                        "http://localhost:5174",
+                        "https://localhost:5174",
+                        "http://localhost:5175",
+                        "https://localhost:5175",
+                        "https://econosys.abloyd.se" };
             corsBuilder.SetIsOriginAllowed(origin => allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
                .AllowAnyMethod()
                .AllowAnyHeader()
@@ -128,6 +138,8 @@ builder.Services.AddRateLimiter(options =>
 // Services
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
+builder.Services.AddScoped<ILegacyUserResolutionService, LegacyUserResolutionService>();
+builder.Services.AddScoped<IPalletFormatOptionsService, PalletFormatOptionsService>();
 
 // Swagger/OpenAPI
 builder.Services.AddEndpointsApiExplorer();
@@ -211,7 +223,7 @@ using (var scope = app.Services.CreateScope())
                     LastName = seedUser.LastName,
                     EmailConfirmed = true,
                     IsActive = true,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = SwedishTime.Now
                 };
 
                 var createResult = await userManager.CreateAsync(newUser, seedUser.Password);
@@ -232,19 +244,27 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Configure the HTTP request pipeline
-if (app.Environment.IsDevelopment())
+// if (app.Environment.IsDevelopment())
+// {
+//     app.UseSwagger();
+//     app.UseSwaggerUI(options =>
+//     {
+//         options.SwaggerEndpoint("/swagger/v1/swagger.json", "Econosys API v1");
+//         options.RoutePrefix = string.Empty;
+//     });
+// }
+// else
+// {
+//     app.UseHsts();
+// }
+app.UseSwagger();
+app.UseSwaggerUI(options =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(options =>
-    {
-        options.SwaggerEndpoint("/swagger/v1/swagger.json", "Econosys API v1");
-        options.RoutePrefix = string.Empty;
-    });
-}
-else
-{
-    app.UseHsts();
-}
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "Econosys API v1");
+    options.RoutePrefix = string.Empty;
+});
+app.UseHttpsRedirection();
+
 
 // Security headers
 app.Use(async (context, next) =>
@@ -285,7 +305,7 @@ app.UseAuthorization();
 app.MapControllers();
 
 // Health check endpoint
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = SwedishTime.Now }))
     .WithName("Health")
     .WithOpenApi();
 

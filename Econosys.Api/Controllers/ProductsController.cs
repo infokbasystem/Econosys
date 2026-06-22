@@ -48,7 +48,7 @@ namespace Econosys.Api.Controllers
             }
 
             var entity = new Product
-            {
+            {                
                 Name = request.Name,
                 NoteInternal = request.NoteInternal,
                 NoteExternal = request.NoteExternal,
@@ -69,7 +69,6 @@ namespace Econosys.Api.Controllers
                 CreatedBy = request.CreatedBy,
                 EditedBy = request.EditedBy,
                 ProductCode = request.ProductCode,
-                OldDbId = request.OldDbId,
                 MaterialGroup = request.MaterialGroup,
                 Active = request.Active,
                 IsServicePackaging = request.IsServicePackaging,
@@ -82,7 +81,6 @@ namespace Econosys.Api.Controllers
 
             return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(entity));
         }
-
         [HttpPut("{id:int}")]
         public async Task<ActionResult<ProductDto>> Update(int id, [FromBody] UpdateProductRequest request)
         {
@@ -98,32 +96,31 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            if (request.Name is not null) entity.Name = request.Name;
-            if (request.NoteInternal is not null) entity.NoteInternal = request.NoteInternal;
-            if (request.NoteExternal is not null) entity.NoteExternal = request.NoteExternal;
-            if (request.NoteExtra is not null) entity.NoteExtra = request.NoteExtra;
-            if (request.MaterialId.HasValue) entity.MaterialId = request.MaterialId;
-            if (request.MaterialThickness is not null) entity.MaterialThickness = request.MaterialThickness;
-            if (request.LengthMm.HasValue) entity.LengthMm = request.LengthMm;
-            if (request.WidthMm.HasValue) entity.WidthMm = request.WidthMm;
-            if (request.HeightMm.HasValue) entity.HeightMm = request.HeightMm;
-            if (request.Format is not null) entity.Format = request.Format;
-            if (request.NrOfColors is not null) entity.NrOfColors = request.NrOfColors;
-            if (request.ConstructionId.HasValue) entity.ConstructionId = request.ConstructionId;
-            if (request.VarnishId.HasValue) entity.VarnishId = request.VarnishId;
-            if (request.VarnishOther is not null) entity.VarnishOther = request.VarnishOther;
-            if (request.NetWeightPer1000.HasValue) entity.NetWeightPer1000 = request.NetWeightPer1000;
-            if (request.CreatedAt.HasValue) entity.CreatedAt = request.CreatedAt;
-            if (request.EditedAt.HasValue) entity.EditedAt = request.EditedAt;
-            if (request.CreatedBy.HasValue) entity.CreatedBy = request.CreatedBy;
-            if (request.EditedBy.HasValue) entity.EditedBy = request.EditedBy;
-            if (request.ProductCode is not null) entity.ProductCode = request.ProductCode;
-            if (request.OldDbId.HasValue) entity.OldDbId = request.OldDbId;
-            if (request.MaterialGroup.HasValue) entity.MaterialGroup = request.MaterialGroup;
-            if (request.Active.HasValue) entity.Active = request.Active.Value;
-            if (request.IsServicePackaging.HasValue) entity.IsServicePackaging = request.IsServicePackaging;
-            if (request.LastSupplierOrderCreated.HasValue) entity.LastSupplierOrderCreated = request.LastSupplierOrderCreated;
-            if (request.LastCustomerOrderCreated.HasValue) entity.LastCustomerOrderCreated = request.LastCustomerOrderCreated;
+            entity.Name = request.Name;
+            entity.NoteInternal = request.NoteInternal;
+            entity.NoteExternal = request.NoteExternal;
+            entity.NoteExtra = request.NoteExtra;
+            entity.MaterialId = request.MaterialId;
+            entity.MaterialThickness = request.MaterialThickness;
+            entity.LengthMm = request.LengthMm;
+            entity.WidthMm = request.WidthMm;
+            entity.HeightMm = request.HeightMm;
+            entity.Format = request.Format;
+            entity.NrOfColors = request.NrOfColors;
+            entity.ConstructionId = request.ConstructionId;
+            entity.VarnishId = request.VarnishId;
+            entity.VarnishOther = request.VarnishOther;
+            entity.NetWeightPer1000 = request.NetWeightPer1000;
+            entity.CreatedAt = request.CreatedAt;
+            entity.EditedAt = request.EditedAt;
+            entity.CreatedBy = request.CreatedBy;
+            entity.EditedBy = request.EditedBy;
+            entity.ProductCode = request.ProductCode;
+            entity.MaterialGroup = request.MaterialGroup;
+            entity.Active = request.Active ?? false;
+            entity.IsServicePackaging = request.IsServicePackaging;
+            entity.LastSupplierOrderCreated = request.LastSupplierOrderCreated;
+            entity.LastCustomerOrderCreated = request.LastCustomerOrderCreated;
 
             await _dbContext.SaveChangesAsync();
 

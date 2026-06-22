@@ -50,7 +50,6 @@ namespace Econosys.Api.Controllers
             {
                 Name = request.Name,
                 AccountNr = request.AccountNr,
-                OldDbId = request.OldDbId,
                 IsInventory = request.IsInventory,
                 Email = request.Email,
                 IsOmlast = request.IsOmlast,
@@ -70,6 +69,40 @@ namespace Econosys.Api.Controllers
 
             var response = MapToDto(inventory);
             return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
+        }
+
+        [HttpPut("{id:int}")]
+        public async Task<ActionResult<InventoryDto>> Update(int id, [FromBody] CreateInventoryRequest request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var inventory = await _dbContext.Inventories.FirstOrDefaultAsync(x => x.Id == id);
+            if (inventory is null)
+            {
+                return NotFound();
+            }
+
+            inventory.Name = request.Name;
+            inventory.AccountNr = request.AccountNr;
+            inventory.IsInventory = request.IsInventory;
+            inventory.Email = request.Email;
+            inventory.IsOmlast = request.IsOmlast;
+            inventory.Address = request.Address;
+            inventory.PostalNr = request.PostalNr;
+            inventory.PostalAddress = request.PostalAddress;
+            inventory.CountryCode = request.CountryCode;
+            inventory.Country = request.Country;
+            inventory.PostalNrText = request.PostalNrText;
+            inventory.NoInventoryValue = request.NoInventoryValue;
+            // inventory.PositionId = request.PositionId;
+            inventory.AddressExtra = request.AddressExtra;
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(MapToDto(inventory));
         }
 
         [HttpPost("search")]

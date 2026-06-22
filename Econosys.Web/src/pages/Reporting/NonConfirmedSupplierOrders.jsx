@@ -255,7 +255,7 @@ const NonConfirmedSupplierOrders = () => {
                     <span className="mr-3 text-xs text-gray-700">
                         Sida {pageNumber} av {Math.max(1, totalPages)}
                     </span>
-                    <div className="flex gap-1 mr-10">
+                    <div className="flex gap-1 mr-0">
                         <button
                             type="button"
                             onClick={() => handlePageChange(pageNumber - 1)}
@@ -276,7 +276,7 @@ const NonConfirmedSupplierOrders = () => {
                 </div>
             </div>
 
-            <div className="border-t border-gray-300 py-1 mt-2 flex-1 overflow-auto">
+            <div className="border-t border-gray-300 py-1 mt-4 flex-1 overflow-auto">
                 <table className="w-full border-collapse text-xs">
                     <thead>
                         <tr>

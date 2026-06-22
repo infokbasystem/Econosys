@@ -1,6 +1,7 @@
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,10 +14,12 @@ namespace Econosys.Api.Controllers
     public class PalletFormatsController : ControllerBase
     {
         private readonly ApplicationDbContext _dbContext;
+        private readonly IPalletFormatOptionsService _palletFormatOptionsService;
 
-        public PalletFormatsController(ApplicationDbContext dbContext)
+        public PalletFormatsController(ApplicationDbContext dbContext, IPalletFormatOptionsService palletFormatOptionsService)
         {
             _dbContext = dbContext;
+            _palletFormatOptionsService = palletFormatOptionsService;
         }
 
         [HttpGet("{id:int}")]
@@ -31,18 +34,32 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            return Ok(MapToDto(entity));
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, entity.TranslationCode);
+            return Ok(MapToDto(entity, translations));
         }
 
         [HttpGet("search")]
         public async Task<ActionResult<List<PalletFormatDto>>> Search()
         {
-            var items = await _dbContext.PalletFormats
+
+            var result = await _dbContext.PalletFormats
                 .AsNoTracking()
                 .OrderBy(x => x.Id)
                 .ToListAsync();
 
-            return Ok(items.Select(MapToDto).ToList());
+            return Ok(result.Select(x => MapToDto(x)).ToList());
+        }
+
+        [HttpGet("searchwithprices")]
+        public async Task<ActionResult<List<PalletFormatDto>>> SearchWithPrices([FromQuery] int? customerId, [FromQuery] int? supplierId)
+        {
+            if (!customerId.HasValue && !supplierId.HasValue)
+            {
+                return BadRequest("At least one of customerId or supplierId must be provided.");
+            }
+
+            var items = await _palletFormatOptionsService.GetOptionsAsync(customerId, supplierId);
+            return Ok(items);
         }
 
         [HttpPost]
@@ -58,7 +75,6 @@ namespace Econosys.Api.Controllers
                 Name = request.Name,
                 M2 = request.M2,
                 Active = request.Active,
-                OldDbId = request.OldDbId,
                 Width = request.Width,
                 Height = request.Height,
                 PalletTypeId = request.PalletTypeId,
@@ -71,7 +87,12 @@ namespace Econosys.Api.Controllers
             _dbContext.PalletFormats.Add(entity);
             await _dbContext.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(entity));
+            entity.TranslationCode = await EntityTranslationService.UpsertTranslationsAsync(_dbContext, entity.TranslationCode, request.Translations);
+            await _dbContext.SaveChangesAsync();
+
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, entity.TranslationCode);
+
+            return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(entity, translations));
         }
 
         [HttpPut("{id:int}")]
@@ -89,21 +110,24 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            if (request.Name is not null) entity.Name = request.Name;
-            if (request.M2.HasValue) entity.M2 = request.M2;
-            if (request.Active.HasValue) entity.Active = request.Active.Value;
-            if (request.OldDbId.HasValue) entity.OldDbId = request.OldDbId;
-            if (request.Width.HasValue) entity.Width = request.Width;
-            if (request.Height.HasValue) entity.Height = request.Height;
-            if (request.PalletTypeId.HasValue) entity.PalletTypeId = request.PalletTypeId;
-            if (request.DebitFactor.HasValue) entity.DebitFactor = request.DebitFactor;
-            if (request.TranslationCode.HasValue) entity.TranslationCode = request.TranslationCode;
-            if (request.SortNr.HasValue) entity.SortNr = request.SortNr;
-            if (request.CopyTo.HasValue) entity.CopyTo = request.CopyTo.Value;
+            entity.Name = request.Name;
+            entity.M2 = request.M2;
+            entity.Active = request.Active ?? false;
+            entity.Width = request.Width;
+            entity.Height = request.Height;
+            entity.PalletTypeId = request.PalletTypeId;
+            entity.DebitFactor = request.DebitFactor;
+            entity.TranslationCode = request.TranslationCode;
+            entity.SortNr = request.SortNr;
+            entity.CopyTo = request.CopyTo ?? false;
+
+            entity.TranslationCode = await EntityTranslationService.UpsertTranslationsAsync(_dbContext, entity.TranslationCode, request.Translations);
 
             await _dbContext.SaveChangesAsync();
 
-            return Ok(MapToDto(entity));
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, entity.TranslationCode);
+
+            return Ok(MapToDto(entity, translations));
         }
 
         [HttpDelete("{id:int}")]
@@ -122,11 +146,13 @@ namespace Econosys.Api.Controllers
             return NoContent();
         }
 
-        private static PalletFormatDto MapToDto(PalletFormat entity) => new()
+        private static PalletFormatDto MapToDto(PalletFormat entity, List<EntityTranslationDto>? translations = null, decimal? supplierPrice = null, decimal? customerPrice = null) => new()
         {
             Id = entity.Id,
             Name = entity.Name,
             M2 = entity.M2,
+            SupplierPrice = supplierPrice,
+            CustomerPrice = customerPrice,
             Active = entity.Active,
             OldDbId = entity.OldDbId,
             Width = entity.Width,
@@ -134,6 +160,7 @@ namespace Econosys.Api.Controllers
             PalletTypeId = entity.PalletTypeId,
             DebitFactor = entity.DebitFactor,
             TranslationCode = entity.TranslationCode,
+            Translations = translations ?? new List<EntityTranslationDto>(),
             SortNr = entity.SortNr,
             CopyTo = entity.CopyTo
         };

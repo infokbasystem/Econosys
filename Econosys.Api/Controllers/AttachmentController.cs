@@ -103,7 +103,7 @@ namespace Netpack.Api.Controllers
         //         {
         //             attachmentInDb = new Attachment();
         //             attachmentInDb.CreatedByUserId = userId;
-        //             attachmentInDb.CreatedDate = DateTime.UtcNow;
+        //             attachmentInDb.CreatedDate = SwedishTime.Now;
         //             _context.Attachments.Add(attachmentInDb);
         //         }
         //         else
@@ -116,7 +116,7 @@ namespace Netpack.Api.Controllers
         //         attachmentInDb.ContentType = file.ContentType;
         //         attachmentInDb.Description = description ?? string.Empty;
         //         attachmentInDb.EditedByUserId = userId;
-        //         attachmentInDb.EditedDate = DateTime.UtcNow;
+        //         attachmentInDb.EditedDate = SwedishTime.Now;
         //         attachmentInDb.FileName = file.FileName;
         //         attachmentInDb.InquiryId = inquiryId;
         //         attachmentInDb.Name = name;

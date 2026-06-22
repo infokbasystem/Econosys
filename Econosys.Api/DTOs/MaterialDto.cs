@@ -7,6 +7,7 @@ namespace Econosys.Api.DTOs
         public int Id { get; set; }
         public string? Name { get; set; }
         public int? TranslationCode { get; set; }
+        public List<EntityTranslationDto> Translations { get; set; } = new();
         public bool Active { get; set; }
         public int? MaterialGroup { get; set; }
         public string? Color1 { get; set; }
@@ -39,6 +40,7 @@ namespace Econosys.Api.DTOs
         public string? Name { get; set; }
 
         public int? TranslationCode { get; set; }
+        public List<EntityTranslationRequest>? Translations { get; set; }
         public bool Active { get; set; }
         public int? MaterialGroup { get; set; }
 
@@ -104,6 +106,7 @@ namespace Econosys.Api.DTOs
         public string? Name { get; set; }
 
         public int? TranslationCode { get; set; }
+        public List<EntityTranslationRequest>? Translations { get; set; }
         public bool? Active { get; set; }
         public int? MaterialGroup { get; set; }
 

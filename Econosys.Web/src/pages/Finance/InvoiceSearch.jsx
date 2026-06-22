@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import Skeleton from 'react-loading-skeleton';
@@ -10,6 +10,7 @@ import LabeledInput from '../../components/LabeledInput';
 import apiClient from '../../config/apiClient';
 
 const PAGE_SIZE = 100;
+const INVOICE_SEARCH_CACHE_KEY = 'invoice-search-page-state';
 
 const columns = [
     { key: 'invoiceNumber', label: 'Fakturanr', align: 'left', width: 'w-[5%]', sortable: true, sortField: 'invoiceNumber' },
@@ -27,49 +28,71 @@ const columns = [
 const toDateString = (date) =>
     `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
+const readCachedInvoiceSearchState = () => {
+    if (typeof window === 'undefined') return null;
+
+    try {
+        const raw = window.sessionStorage.getItem(INVOICE_SEARCH_CACHE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
+};
+
 const InvoiceSearch = () => {
     const navigate = useNavigate();
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     const yearStart = new Date(now.getFullYear(), 0, 1);
 
-    const [rows, setRows] = useState([]);
-    const [loading, setLoading] = useState(false);
+    const cachedState = readCachedInvoiceSearchState();
+    const cachedFilters = cachedState?.filters
+        ? {
+            ...cachedState.filters,
+            startDate: cachedState.filters.startDate ? new Date(cachedState.filters.startDate) : yearStart,
+            endDate: cachedState.filters.endDate ? new Date(cachedState.filters.endDate) : now,
+        }
+        : null;
+
+    const [rows, setRows] = useState(cachedState?.rows ?? []);
+    const [loading, setLoading] = useState(!cachedState?.searchLoaded);
     const [showSkeleton, setShowSkeleton] = useState(false);
     const skeletonTimerRef = useRef(null);
 
     const [filters, setFilters] = useState({
-        startDate: yearStart,
-        endDate: now,
-        invoiceNumber: '',
-        customerName: '',
+        startDate: cachedFilters?.startDate ?? yearStart,
+        endDate: cachedFilters?.endDate ?? now,
+        invoiceNumber: cachedFilters?.invoiceNumber ?? '',
+        customerName: cachedFilters?.customerName ?? '',
     });
 
     const [pagination, setPagination] = useState({
-        pageNumber: 1,
-        pageSize: PAGE_SIZE,
-        totalCount: 0,
-        totalPages: 0,
-        hasPreviousPage: false,
-        hasNextPage: false,
+        pageNumber: cachedState?.pagination?.pageNumber ?? 1,
+        pageSize: cachedState?.pagination?.pageSize ?? PAGE_SIZE,
+        totalCount: cachedState?.pagination?.totalCount ?? 0,
+        totalPages: cachedState?.pagination?.totalPages ?? 0,
+        hasPreviousPage: Boolean(cachedState?.pagination?.hasPreviousPage),
+        hasNextPage: Boolean(cachedState?.pagination?.hasNextPage),
     });
 
     const [totals, setTotals] = useState({
-        totalInvoices: 0,
-        paidInvoices: 0,
-        unpaidInvoices: 0,
-        sumExVat: 0,
-        sumInclVat: 0,
-        sumInclVatSek: 0,
+        totalInvoices: Number(cachedState?.totals?.totalInvoices) || 0,
+        paidInvoices: Number(cachedState?.totals?.paidInvoices) || 0,
+        unpaidInvoices: Number(cachedState?.totals?.unpaidInvoices) || 0,
+        sumExVat: Number(cachedState?.totals?.sumExVat) || 0,
+        sumInclVat: Number(cachedState?.totals?.sumInclVat) || 0,
+        sumInclVatSek: Number(cachedState?.totals?.sumInclVatSek) || 0,
     });
 
     const [sortConfig, setSortConfig] = useState({
-        key: 'invoiceDate',
-        direction: 'desc',
+        key: cachedState?.sortConfig?.key ?? 'invoiceDate',
+        direction: cachedState?.sortConfig?.direction ?? 'desc',
     });
 
-    const [initialLoadCompleted, setInitialLoadCompleted] = useState(false);
+    const [initialLoadCompleted, setInitialLoadCompleted] = useState(Boolean(cachedState?.searchLoaded));
     const [selectedRowId, setSelectedRowId] = useState(null);
+    const [hasSearchSnapshot, setHasSearchSnapshot] = useState(Boolean(cachedState?.searchLoaded));
     const listRef = useRef(null);
 
     const didMountRef = useRef(false);
@@ -84,6 +107,19 @@ const InvoiceSearch = () => {
         document.addEventListener('pointerdown', handlePointerDown);
         return () => document.removeEventListener('pointerdown', handlePointerDown);
     }, []);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        window.sessionStorage.setItem(INVOICE_SEARCH_CACHE_KEY, JSON.stringify({
+            rows,
+            filters,
+            pagination,
+            totals,
+            sortConfig,
+            searchLoaded: hasSearchSnapshot,
+        }));
+    }, [rows, filters, pagination, totals, sortConfig, hasSearchSnapshot]);
 
     const buildRequestBody = (pageNumber, pageSize, activeFilters, activeSort = sortConfig) => {
         const parsedInvoiceNumber = activeFilters.invoiceNumber.trim() === ''
@@ -111,16 +147,19 @@ const InvoiceSearch = () => {
         };
     };
 
-    const loadRows = async (pageNumber = 1, activeFilters = filters, signal = null) => {
+    const loadRows = async (pageNumber = 1, activeFilters = filters, signal = null, keepExistingRows = false) => {
         setLoading(true);
-        setRows([]);
-        skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 200);
+
+        if (!keepExistingRows) {
+            setRows([]);
+            skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 200);
+        }
 
         try {
             const requestBody = buildRequestBody(pageNumber, pagination.pageSize, activeFilters, sortConfig);
 
             const response = await apiClient.post(
-                '/invoices/search-list',
+                '/invoices/search',
                 requestBody,
                 signal ? { signal } : {}
             );
@@ -147,24 +186,27 @@ const InvoiceSearch = () => {
         } catch (error) {
             if (error.code === 'ERR_CANCELED') return;
             console.error('Failed to load invoices:', error);
-            setRows([]);
-            setPagination((prev) => ({
-                ...prev,
-                totalCount: 0,
-                totalPages: 0,
-                hasPreviousPage: false,
-                hasNextPage: false,
-            }));
-            setTotals({
-                totalInvoices: 0,
-                paidInvoices: 0,
-                unpaidInvoices: 0,
-                sumExVat: 0,
-                sumInclVat: 0,
-                sumInclVatSek: 0,
-            });
+            if (!hasSearchSnapshot) {
+                setRows([]);
+                setPagination((prev) => ({
+                    ...prev,
+                    totalCount: 0,
+                    totalPages: 0,
+                    hasPreviousPage: false,
+                    hasNextPage: false,
+                }));
+                setTotals({
+                    totalInvoices: 0,
+                    paidInvoices: 0,
+                    unpaidInvoices: 0,
+                    sumExVat: 0,
+                    sumInclVat: 0,
+                    sumInclVatSek: 0,
+                });
+            }
         } finally {
             clearTimeout(skeletonTimerRef.current);
+            setHasSearchSnapshot(true);
             setLoading(false);
             setShowSkeleton(false);
         }
@@ -174,7 +216,7 @@ const InvoiceSearch = () => {
         const controller = new AbortController();
 
         const timer = setTimeout(async () => {
-            await loadRows(pagination.pageNumber, filters, controller.signal);
+            await loadRows(pagination.pageNumber, filters, controller.signal, hasSearchSnapshot);
             if (!didMountRef.current) {
                 didMountRef.current = true;
                 setInitialLoadCompleted(true);
@@ -306,10 +348,10 @@ const InvoiceSearch = () => {
     };
 
     return (
-        <div className="flex flex-col h-full p-2">
+        <div className="flex flex-col h-full py-2 px-7">
             <div className="ml-5 text-sm text-gray-500">Sök faktura</div>
 
-            <div className={`flex flex-wrap items-center gap-8 mt-3 ml-5 ${loading ? 'opacity-70 pointer-events-none' : ''}`}>
+            <div className={`flex flex-wrap items-center gap-8 mt-3 ml-5 ${loading && !hasSearchSnapshot ? 'opacity-70 pointer-events-none' : ''}`}>
                 <div>
                     <DateRangePicker
                         placeholder="Valj period"
@@ -356,13 +398,13 @@ const InvoiceSearch = () => {
                     >
                         Exportera till EXCEL
                     </a>
-                    <button
+                    {/* <button
                         type="button"
                         onClick={() => navigate('/finance/invoice/new')}
                         className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-4 py-[5px] ml-10"
                     >
                         Ny faktura
-                    </button>
+                    </button> */}
                 </div>
 
                 <div className="ml-auto flex items-center mr-4" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
@@ -458,13 +500,13 @@ const InvoiceSearch = () => {
                                     onClick={() => setSelectedRowId((prev) => (prev === row.id ? null : row.id))}
                                 >
                                     <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">
-                                        <button
-                                            type="button"
-                                            onClick={(event) => handleOpenInvoice(event, row.id)}
+                                        <Link
+                                            to={`/finance/invoice/${row.id}`}
+                                            onClick={(event) => event.stopPropagation()}
                                             className="underline-offset-2 hover:underline"
                                         >
                                             {row.invoiceNumber ?? row.id}
-                                        </button>
+                                        </Link>
                                     </td>
                                     <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">{row.customerName}</td>
                                     <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">{formatDate(row.invoiceDate)}</td>

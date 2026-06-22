@@ -391,7 +391,7 @@ const RevenuePerOrder = () => {
                     <span className="mr-3 text-xs text-gray-700">
                         Sida {pagination.pageNumber} av {Math.max(1, pagination.totalPages)}
                     </span>
-                    <div className="flex gap-1 mr-10">
+                    <div className="flex gap-1 mr-0">
                         <button
                             type="button"
                             onClick={() => handlePageChange(pagination.pageNumber - 1)}
@@ -412,14 +412,14 @@ const RevenuePerOrder = () => {
                 </div>
             </div>
 
-            <div className="border-t border-gray-300 py-1 mt-2 flex-1 overflow-auto">
+            <div className="border-t border-gray-300 py-1 mt-4 flex-1 overflow-auto">
                 <table className="w-full border-collapse text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                     <thead>
                         <tr>
                             {columns.map((col) => (
                                 <th
                                     key={col.key}
-                                    className={`px-2 py-1.5 text-[10px] font-medium text-gray-500 cursor-pointer whitespace-nowrap ${col.align === 'right' ? 'text-right' : 'text-left'}`}
+                                    className={`px-2 py-1.5 text-[10px] font-medium text-gray-400 cursor-pointer whitespace-nowrap ${col.align === 'right' ? 'text-right' : 'text-left'}`}
                                     onClick={() => handleSort(col.key)}
                                 >
                                     {col.label}

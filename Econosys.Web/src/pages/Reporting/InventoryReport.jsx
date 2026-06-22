@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import apiClient from '../../config/apiClient';
+import { getSwedishTodayDateString } from '../../helpers/dateUtils';
 
 const InventoryReport = () => {
     const [loading, setLoading] = useState(false);
@@ -251,7 +252,7 @@ const InventoryReport = () => {
             to: { row: tableLastRow, column: header.length },
         };
 
-        const dateSuffix = new Date().toISOString().slice(0, 10);
+        const dateSuffix = getSwedishTodayDateString();
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], {
             type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

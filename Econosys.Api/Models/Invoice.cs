@@ -188,6 +188,12 @@ namespace Econosys.Api.Models
         [ForeignKey(nameof(LanguageId))]
         public Language? Language { get; set; }
 
+        [ForeignKey(nameof(CreatedBy))]
+        public virtual LegacyUser? CreatedByUser { get; set; }
+
+        [ForeignKey(nameof(EditedBy))]
+        public virtual LegacyUser? EditedByUser { get; set; }
+
         public ICollection<InvoiceRow> InvoiceRows { get; set; } = new List<InvoiceRow>();
         public ICollection<InvoiceAccountRow> InvoiceAccountRows { get; set; } = new List<InvoiceAccountRow>();
     }

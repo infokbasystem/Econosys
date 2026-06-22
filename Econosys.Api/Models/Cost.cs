@@ -52,6 +52,15 @@ namespace Econosys.Api.Models
 
         public bool DoPrintScrapToolsTextOnCustomerOrder { get; set; }
 
+        [Column("AddAutomaicIfEconopackIsTransportResonsible")]
+        public bool AddAutomaicIfEconopackIsTransportReponsible { get; set; }
+
+        [Column(TypeName = "decimal(5,2)")]
+        public decimal? DmtPercent { get; set; }
+
+        [Column(TypeName = "decimal(5,2)")]
+        public decimal? DmtFixed { get; set; }
+
         [Column(TypeName = "decimal(5,2)")]
         public decimal? ProvisionPercent { get; set; }
 
@@ -59,5 +68,6 @@ namespace Econosys.Api.Models
         public string CostTypeText { get; set; } = string.Empty;
 
         public virtual ICollection<OrderCost> OrderCosts { get; set; } = new List<OrderCost>();
+        public virtual ICollection<CalculationRowCost> CalculationRowCosts { get; set; } = new List<CalculationRowCost>();
     }
 }

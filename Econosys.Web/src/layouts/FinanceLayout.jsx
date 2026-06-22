@@ -33,10 +33,10 @@ const FinanceLayout = () => {
         <ul className="flex flex-col pt-5">
             <li className={"text-xs font-semibold px-6 py-1.5 " + getNavLinkClass('overview')}><NavLink to="/finance">Översikt</NavLink></li>
             <li className={"text-xs font-semibold px-6 py-1.5 " + getNavLinkClass('searchinvoice')}><NavLink to="/finance/searchinvoice">Sök faktura</NavLink></li>
-            <li className={"text-xs font-semibold px-6 py-1.5 " + getNavLinkClass('attest')}><NavLink to="">Attestera kostnader</NavLink></li>
+            <li className={"text-xs font-semibold px-6 py-1.5 " + getNavLinkClass('attest')}><NavLink to="/finance/attest">Attestera kostnader</NavLink></li>
             <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Fakturera</p>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink to="/finance/invoicestoaccount">Fakturera leveranser</NavLink></li>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink to="/order/inquiry">Skapa fristående faktura</NavLink></li>
+            <li className={"text-xs font-semibold px-6 py-1.5 " + getNavLinkClass('invoicedeliveriesandordercosts')}><NavLink to="/finance/invoicedeliveriesandordercosts">Fakturera leveranser och orderkostnader</NavLink></li>
+            <li className={"text-xs font-semibold px-6 py-1.5 " + getNavLinkClass('invoice')}><NavLink to="/finance/invoice/new">Skapa fristående faktura</NavLink></li>
             <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Bokföring</p>
             <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink to="/finance/invoicestoaccount">Bokför fakturor</NavLink></li>
             <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Synka kundregister mot Jeeves</NavLink></li>
@@ -47,12 +47,14 @@ const FinanceLayout = () => {
     );
 
     return (
-        <div className="flex flex-col min-h-screen overflow-x-hidden">
+        <div className="flex flex-col min-h-screen">
             <Header />
-            <Navbar />
+            <div className="sticky top-0 z-50">
+                <Navbar />
+            </div>
             <div className="relative flex grow items-stretch bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50" style={{ backgroundImage: `url(${bg})` }}>
                 {!isDetailPage && (
-                    <div className="flex flex-col w-50 shrink-0 border-r border-gray-300">
+                    <div className="sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto flex flex-col w-50 shrink-0 border-r border-gray-300">
                         {menuContent}
                     </div>
                 )}
@@ -91,7 +93,7 @@ const FinanceLayout = () => {
                     </>
                 )}
 
-                <div className="flex-grow min-w-0 pt-4 px-0 relative">
+                <div className="flex-grow min-w-0 pt-4 px-0 relative overflow-hidden">
                     <Outlet />
                 </div>
             </div>

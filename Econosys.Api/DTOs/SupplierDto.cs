@@ -34,4 +34,27 @@ namespace Econosys.Api.DTOs
         public bool FscDefault { get; set; }
         public int? SupplierOrderTemplateNr { get; set; }
     }
+
+    public class SupplierDetailsDto
+    {
+        public SupplierDto Supplier { get; set; } = new();
+        public List<SupplierContactPersonDto> ContactPersons { get; set; } = new();
+        public List<FilterOptionDto<int>> Languages { get; set; } = new();
+    }
+
+    public class SupplierContactPersonDto
+    {
+        public int Id { get; set; }
+        public string? SupplierContactPersonName { get; set; }
+        public string? ContactPerson { get; set; }
+        public string? Name { get; set; }
+        public string? Email { get; set; }
+        public string? Telephone { get; set; }
+        public string? Cellphone { get; set; }
+        public bool MailInquiry { get; set; }
+        public bool MailSupplierOrder { get; set; }
+        public bool DoMailTransportOrder { get; set; }
+        public string? Title { get; set; }
+        public int? OldDbId { get; set; }
+    }
 }

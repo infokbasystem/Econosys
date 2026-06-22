@@ -5,6 +5,7 @@ import ExcelJS from 'exceljs';
 
 import apiClient from '../../config/apiClient';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
+import { getSwedishTodayDateString } from '../../helpers/dateUtils';
 
 const SlowMoversReport = () => {
     const [loading, setLoading] = useState(false);
@@ -234,7 +235,7 @@ const SlowMoversReport = () => {
             to: { row: tableLastRow, column: header.length },
         };
 
-        const dateSuffix = new Date().toISOString().slice(0, 10);
+        const dateSuffix = getSwedishTodayDateString();
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], {
             type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

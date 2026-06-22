@@ -20,3 +20,5 @@ export const parseNullableInt = (value) => {
     const parsed = parseInt(String(value), 10);
     return Number.isNaN(parsed) ? null : parsed;
 };
+
+export const roundTo2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;

@@ -80,8 +80,8 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            if (request.CategoryCode is not null) entity.CategoryCode = request.CategoryCode;
-            if (request.Description is not null) entity.Description = request.Description;
+            entity.CategoryCode = request.CategoryCode;
+            entity.Description = request.Description;
 
             await _dbContext.SaveChangesAsync();
 

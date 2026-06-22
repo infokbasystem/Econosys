@@ -333,5 +333,8 @@ namespace Econosys.Api.Models
         public Calculation? Calculation { get; set; }
         public virtual ICollection<CustomerOrder> CustomerOrders { get; set; } = new List<CustomerOrder>();
         public virtual ICollection<SupplierOrder> SupplierOrders { get; set; } = new List<SupplierOrder>();
+        public virtual ICollection<QuotationRow> QuotationRows { get; set; } = new List<QuotationRow>();
+        public virtual ICollection<OrderCost> OrderCosts { get; set; } = new List<OrderCost>();
+        public virtual ICollection<CalculationRowCost> CalculationRowCosts { get; set; } = new List<CalculationRowCost>();
     }
 }

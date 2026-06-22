@@ -1,8 +1,10 @@
 import Select, { components } from 'react-select';
 
 
-const LabeledReactSelect = ({ label, labelWidth, margintop, name, value, items, onChange, disableInactive, ...props }) => {
-    const options = items
+const LabeledReactSelect = ({ label, labelWidth, margintop, name, value, items, onChange, disableInactive, allowRawValueLabel = false, ...props }) => {
+    const normalizedItems = Array.isArray(items) ? items : [];
+
+    const options = normalizedItems
         .filter(i => !disableInactive || i.isActive !== false)
         .map(i => ({
             value: i.id,
@@ -12,16 +14,17 @@ const LabeledReactSelect = ({ label, labelWidth, margintop, name, value, items, 
     const isMultiSelect = Boolean(props.isMulti);
 
     const selectedValue = isMultiSelect
-        ? options.filter(opt => Array.isArray(value) && value.includes(opt.value))
-        : (options.find(opt => opt.value === value) || null);
+        ? options.filter(opt => Array.isArray(value) && value.some(v => String(v) === String(opt.value)))
+        : (options.find(opt => String(opt.value) === String(value))
+            || (allowRawValueLabel && value ? { value, label: String(value) } : null));
 
     const handleChange = (selected) => {
         if (isMultiSelect) {
-            onChange((selected || []).map(opt => opt.value));
+            onChange?.((selected || []).map(opt => opt.value));
             return;
         }
 
-        onChange(selected?.value || '');
+        onChange?.(selected?.value || '');
     };
 
     const CheckboxOption = (optionProps) => (

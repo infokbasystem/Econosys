@@ -206,8 +206,12 @@ namespace Econosys.Api.Models
         public virtual LegacyUser? SupportEmployee { get; set; }
         public virtual ICollection<CustomerOrder> CustomerOrders { get; set; } = new List<CustomerOrder>();
         public virtual ICollection<SupplierOrder> SupplierOrders { get; set; } = new List<SupplierOrder>();
+        public virtual ICollection<CustomerContactPerson> CustomerContactPersons { get; set; } = new List<CustomerContactPerson>();
         public virtual ICollection<Invoice> Invoices { get; set; } = new List<Invoice>();
         public virtual ICollection<Calculation> Calculations { get; set; } = new List<Calculation>();
         public virtual ICollection<Deviation> Deviations { get; set; } = new List<Deviation>();
+        public virtual ICollection<Quotation> Quotations { get; set; } = new List<Quotation>();
+        public virtual ICollection<CustomerDeliveryAddress> DeliveryAddresses { get; set; } = new List<CustomerDeliveryAddress>();
+        public virtual ICollection<PalletFormatPrice> PalletFormatPrices { get; set; } = new List<PalletFormatPrice>();
     }
 }

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -6,6 +7,7 @@ using System.Text.Json;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -17,15 +19,21 @@ namespace Econosys.Api.Controllers
     [Route("api/[controller]")]
     public class OrderCostsController : ControllerBase
     {
+        private const string SearchCollation = "Finnish_Swedish_CI_AS";
         private static readonly Dictionary<string, PropertyInfo> FieldMap = BuildFieldMap();
 
         private readonly ApplicationDbContext _dbContext;
         private readonly ILogger<OrderCostsController> _logger;
+        private readonly ILegacyUserResolutionService _legacyUserResolution;
 
-        public OrderCostsController(ApplicationDbContext dbContext, ILogger<OrderCostsController> logger)
+        public OrderCostsController(
+            ApplicationDbContext dbContext,
+            ILogger<OrderCostsController> logger,
+            ILegacyUserResolutionService legacyUserResolution)
         {
             _dbContext = dbContext;
             _logger = logger;
+            _legacyUserResolution = legacyUserResolution;
         }
 
         [HttpGet("{id:int}")]
@@ -33,8 +41,16 @@ namespace Econosys.Api.Controllers
         {
             var orderCost = await _dbContext.OrderCosts
                 .AsNoTracking()
-                .Include(x => x.SupplierOrder)
-                .Include(x => x.CustomerOrder)
+                .Include(x => x.SupplierOrder!)
+                    .ThenInclude(x => x.PurchaseCurrency)
+                .Include(x => x.CustomerOrder!)
+                    .ThenInclude(x => x.SalesCurrency)
+                .Include(x => x.Cost)
+                .Include(x => x.InPriceCurrency)
+                .Include(x => x.CreatedByUser)
+                .Include(x => x.EditedByUser)
+                .Include(x => x.InvoiceRows)
+                    .ThenInclude(x => x.Invoice)
                 .FirstOrDefaultAsync(x => x.Id == id);
 
             if (orderCost is null)
@@ -53,8 +69,20 @@ namespace Econosys.Api.Controllers
                 return BadRequest(ModelState);
             }
 
+            var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+            if (legacyUser is null)
+            {
+                return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+            }
+
+            var nowUtc = SwedishTime.Now;
+
             var orderCost = new OrderCost
             {
+                CreatedById = legacyUser.Id,
+                CreatedDateTime = nowUtc,
+                EditedById = legacyUser.Id,
+                EditedDateTime = nowUtc,
                 QuotationId = request.QuotationId,
                 QuotationRowId = request.QuotationRowId,
                 CalculationRowId = request.CalculationRowId,
@@ -73,10 +101,6 @@ namespace Econosys.Api.Controllers
                 DoPrintOnQuotation = request.DoPrintOnQuotation,
                 SupplierName = request.SupplierName,
                 InPriceAttested = request.InPriceAttested,
-                CreatedById = request.CreatedById,
-                CreatedDateTime = request.CreatedDateTime,
-                EditedById = request.EditedById,
-                EditedDateTime = request.EditedDateTime,
                 AttestedInPriceCurrencyRate = request.AttestedInPriceCurrencyRate,
                 AttestedOutPriceCurrencyRate = request.AttestedOutPriceCurrencyRate,
                 AtttestedBySignature = request.AtttestedBySignature,
@@ -102,8 +126,16 @@ namespace Econosys.Api.Controllers
             }
 
             var orderCost = await _dbContext.OrderCosts
-                .Include(x => x.SupplierOrder)
-                .Include(x => x.CustomerOrder)
+                .Include(x => x.SupplierOrder!)
+                    .ThenInclude(x => x.PurchaseCurrency)
+                .Include(x => x.CustomerOrder!)
+                    .ThenInclude(x => x.SalesCurrency)
+                .Include(x => x.Cost)
+                .Include(x => x.InPriceCurrency)
+                .Include(x => x.CreatedByUser)
+                .Include(x => x.EditedByUser)
+                .Include(x => x.InvoiceRows)
+                    .ThenInclude(x => x.Invoice)
                 .FirstOrDefaultAsync(x => x.Id == id);
 
             if (orderCost is null)
@@ -111,35 +143,124 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            if (request.QuotationId.HasValue) orderCost.QuotationId = request.QuotationId;
-            if (request.QuotationRowId.HasValue) orderCost.QuotationRowId = request.QuotationRowId;
-            if (request.CalculationRowId.HasValue) orderCost.CalculationRowId = request.CalculationRowId;
-            if (request.CustomerOrderId.HasValue) orderCost.CustomerOrderId = request.CustomerOrderId;
-            if (request.SupplierOrderId.HasValue) orderCost.SupplierOrderId = request.SupplierOrderId;
-            if (request.CostId.HasValue) orderCost.CostId = request.CostId;
-            if (request.NrOf.HasValue) orderCost.NrOf = request.NrOf;
-            if (request.InPrice.HasValue) orderCost.InPrice = request.InPrice;
-            if (request.InPriceCurrencyId.HasValue) orderCost.InPriceCurrencyId = request.InPriceCurrencyId;
-            if (request.OutPrice.HasValue) orderCost.OutPrice = request.OutPrice;
-            if (request.DoDebit.HasValue) orderCost.DoDebit = request.DoDebit.Value;
-            if (request.Note != null) orderCost.Note = request.Note;
-            if (request.SupplierId.HasValue) orderCost.SupplierId = request.SupplierId;
-            if (request.DoPrintOnCustomerOrder.HasValue) orderCost.DoPrintOnCustomerOrder = request.DoPrintOnCustomerOrder.Value;
-            if (request.DoPrintOnSupplierOrder.HasValue) orderCost.DoPrintOnSupplierOrder = request.DoPrintOnSupplierOrder.Value;
-            if (request.DoPrintOnQuotation.HasValue) orderCost.DoPrintOnQuotation = request.DoPrintOnQuotation.Value;
-            if (request.SupplierName != null) orderCost.SupplierName = request.SupplierName;
-            if (request.InPriceAttested.HasValue) orderCost.InPriceAttested = request.InPriceAttested;
-            if (request.CreatedById.HasValue) orderCost.CreatedById = request.CreatedById;
-            if (request.CreatedDateTime.HasValue) orderCost.CreatedDateTime = request.CreatedDateTime;
-            if (request.EditedById.HasValue) orderCost.EditedById = request.EditedById;
-            if (request.EditedDateTime.HasValue) orderCost.EditedDateTime = request.EditedDateTime;
-            if (request.AttestedInPriceCurrencyRate.HasValue) orderCost.AttestedInPriceCurrencyRate = request.AttestedInPriceCurrencyRate;
-            if (request.AttestedOutPriceCurrencyRate.HasValue) orderCost.AttestedOutPriceCurrencyRate = request.AttestedOutPriceCurrencyRate;
-            if (request.AtttestedBySignature != null) orderCost.AtttestedBySignature = request.AtttestedBySignature;
-            if (request.AttestedDateTime.HasValue) orderCost.AttestedDateTime = request.AttestedDateTime;
-            if (request.DoInvoiceSeparately.HasValue) orderCost.DoInvoiceSeparately = request.DoInvoiceSeparately.Value;
-            if (request.DoInvoiceSeparatelyImmediately.HasValue) orderCost.DoInvoiceSeparatelyImmediately = request.DoInvoiceSeparatelyImmediately.Value;
-            if (request.IsCostInvoicedSeparately.HasValue) orderCost.IsCostInvoicedSeparately = request.IsCostInvoicedSeparately.Value;
+            var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+            if (legacyUser is null)
+            {
+                return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+            }
+
+            var nowUtc = SwedishTime.Now;
+            orderCost.EditedById = legacyUser.Id;
+            orderCost.EditedDateTime = nowUtc;
+
+            var updatedFields = BuildUpdatedFieldSet(request.UpdatedFields);
+            var useExplicitFieldUpdates = updatedFields.Count > 0;
+
+            if (useExplicitFieldUpdates)
+            {
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.QuotationId))) orderCost.QuotationId = request.QuotationId;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.QuotationRowId))) orderCost.QuotationRowId = request.QuotationRowId;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.CalculationRowId))) orderCost.CalculationRowId = request.CalculationRowId;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.CustomerOrderId))) orderCost.CustomerOrderId = request.CustomerOrderId;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.SupplierOrderId))) orderCost.SupplierOrderId = request.SupplierOrderId;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.CostId))) orderCost.CostId = request.CostId;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.NrOf))) orderCost.NrOf = request.NrOf;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.InPrice))) orderCost.InPrice = request.InPrice;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.InPriceCurrencyId))) orderCost.InPriceCurrencyId = request.InPriceCurrencyId;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.OutPrice))) orderCost.OutPrice = request.OutPrice;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.DoDebit))) orderCost.DoDebit = request.DoDebit ?? false;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.Note))) orderCost.Note = request.Note;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.SupplierId))) orderCost.SupplierId = request.SupplierId;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.DoPrintOnCustomerOrder))) orderCost.DoPrintOnCustomerOrder = request.DoPrintOnCustomerOrder ?? false;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.DoPrintOnSupplierOrder))) orderCost.DoPrintOnSupplierOrder = request.DoPrintOnSupplierOrder ?? false;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.DoPrintOnQuotation))) orderCost.DoPrintOnQuotation = request.DoPrintOnQuotation ?? false;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.SupplierName))) orderCost.SupplierName = request.SupplierName;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.InPriceAttested))) orderCost.InPriceAttested = request.InPriceAttested;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.DoInvoiceSeparately))) orderCost.DoInvoiceSeparately = request.DoInvoiceSeparately ?? false;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.DoInvoiceSeparatelyImmediately))) orderCost.DoInvoiceSeparatelyImmediately = request.DoInvoiceSeparatelyImmediately ?? false;
+                if (updatedFields.Contains(nameof(UpdateOrderCostRequest.IsCostInvoicedSeparately))) orderCost.IsCostInvoicedSeparately = request.IsCostInvoicedSeparately ?? false;
+            }
+            else
+            {
+                orderCost.QuotationId = request.QuotationId;
+                orderCost.QuotationRowId = request.QuotationRowId;
+                orderCost.CalculationRowId = request.CalculationRowId;
+                orderCost.CustomerOrderId = request.CustomerOrderId;
+                orderCost.SupplierOrderId = request.SupplierOrderId;
+                orderCost.CostId = request.CostId;
+                orderCost.NrOf = request.NrOf;
+                orderCost.InPrice = request.InPrice;
+                orderCost.InPriceCurrencyId = request.InPriceCurrencyId;
+                orderCost.OutPrice = request.OutPrice;
+                orderCost.DoDebit = request.DoDebit ?? false;
+                orderCost.Note = request.Note;
+                orderCost.SupplierId = request.SupplierId;
+                orderCost.DoPrintOnCustomerOrder = request.DoPrintOnCustomerOrder ?? false;
+                orderCost.DoPrintOnSupplierOrder = request.DoPrintOnSupplierOrder ?? false;
+                orderCost.DoPrintOnQuotation = request.DoPrintOnQuotation ?? false;
+                orderCost.SupplierName = request.SupplierName;
+                orderCost.DoInvoiceSeparately = request.DoInvoiceSeparately ?? false;
+                orderCost.DoInvoiceSeparatelyImmediately = request.DoInvoiceSeparatelyImmediately ?? false;
+                orderCost.IsCostInvoicedSeparately = request.IsCostInvoicedSeparately ?? false;
+
+                if (request.InPriceAttested.HasValue)
+                {
+                    var (purchaseRate, salesRate) = await ResolveCalculationCurrencyRatesAsync(orderCost.CustomerOrderId);
+                    orderCost.InPriceAttested = request.InPriceAttested;
+                    orderCost.AttestedDateTime = nowUtc;
+                    orderCost.AtttestedBySignature = legacyUser?.Initials;
+                    orderCost.AttestedInPriceCurrencyRate = purchaseRate;
+                    orderCost.AttestedOutPriceCurrencyRate = salesRate;
+                }
+                else
+                {
+                    orderCost.InPriceAttested = null;
+                    orderCost.AttestedDateTime = null;
+                    orderCost.AtttestedBySignature = null;
+                    orderCost.AttestedInPriceCurrencyRate = null;
+                    orderCost.AttestedOutPriceCurrencyRate = null;
+                }
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(MapToDto(orderCost));
+        }
+
+        [HttpPost("{id:int}/attest")]
+        public async Task<ActionResult<OrderCostDto>> Attest(int id)
+        {
+            var orderCost = await _dbContext.OrderCosts
+                .Include(x => x.SupplierOrder!)
+                    .ThenInclude(x => x.PurchaseCurrency)
+                .Include(x => x.CustomerOrder!)
+                    .ThenInclude(x => x.SalesCurrency)
+                .Include(x => x.Cost)
+                .Include(x => x.InPriceCurrency)
+                .Include(x => x.CreatedByUser)
+                .Include(x => x.EditedByUser)
+                .Include(x => x.InvoiceRows)
+                    .ThenInclude(x => x.Invoice)
+                .FirstOrDefaultAsync(x => x.Id == id);
+
+            if (orderCost is null)
+            {
+                return NotFound();
+            }
+
+            var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+            if (legacyUser is null)
+            {
+                return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+            }
+
+            var nowUtc = SwedishTime.Now;
+            var (purchaseRate, salesRate) = await ResolveCalculationCurrencyRatesAsync(orderCost.CustomerOrderId);
+
+            orderCost.AttestedDateTime = nowUtc;
+            orderCost.AtttestedBySignature = legacyUser.Name;
+            orderCost.AttestedInPriceCurrencyRate = purchaseRate;
+            orderCost.AttestedOutPriceCurrencyRate = salesRate;
 
             await _dbContext.SaveChangesAsync();
 
@@ -166,9 +287,42 @@ namespace Econosys.Api.Controllers
         public async Task<ActionResult<PagedResultDto<OrderCostDto>>> Search([FromBody] SearchOrderCostsRequest? request)
         {
             IQueryable<OrderCost> query = _dbContext.OrderCosts
-                .AsNoTracking()
-                .Include(x => x.SupplierOrder)
-                .Include(x => x.CustomerOrder);
+                .AsNoTracking();
+
+            var mode = string.IsNullOrWhiteSpace(request?.Mode)
+                ? "all"
+                : request!.Mode!.Trim().ToLowerInvariant();
+
+            if (mode == "notattested")
+            {
+                query = query.Where(x => x.InPriceAttested == null && x.AttestedDateTime == null && x.AtttestedBySignature == null && x.InPrice != null);
+            }
+            else if (mode == "all")
+            {
+                if (request?.StartDate is DateTime startDate)
+                {
+                    query = query.Where(x => x.CreatedDateTime.HasValue && x.CreatedDateTime.Value >= startDate);
+                }
+
+                if (request?.EndDate is DateTime endDate)
+                {
+                    query = query.Where(x => x.CreatedDateTime.HasValue && x.CreatedDateTime.Value <= endDate);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(request?.SearchText))
+            {
+                var searchText = request.SearchText.Trim();
+
+                query = query.Where(x =>
+                    (x.CustomerOrder != null && x.CustomerOrder.CustomerName != null && x.CustomerOrder.CustomerName.Contains(searchText)) ||
+                    ((x.SupplierOrder != null && x.SupplierOrder.SupplierName != null && x.SupplierOrder.SupplierName.Contains(searchText)) ||
+                     (x.SupplierName != null && x.SupplierName.Contains(searchText))) ||
+                    ((x.CustomerOrder != null && x.CustomerOrder.CustomerOrderNr != null && x.CustomerOrder.CustomerOrderNr.Contains(searchText)) ||
+                     (x.SupplierOrder != null && x.SupplierOrder.CustomerOrderNr != null && x.SupplierOrder.CustomerOrderNr.Contains(searchText))) ||
+                    (x.Cost != null && x.Cost.Name != null && x.Cost.Name.Contains(searchText)));
+            }
+
             var pagination = request?.Pagination ?? new PaginationRequest();
 
             if (request?.Filter?.Conditions?.Count > 0)
@@ -198,17 +352,167 @@ namespace Econosys.Api.Controllers
                 return BadRequest(new { message = ex.Message });
             }
 
+            var stopwatch = Stopwatch.StartNew();
             var totalCount = await query.CountAsync();
+            var countElapsedMs = stopwatch.ElapsedMilliseconds;
             var totalPages = totalCount == 0
                 ? 0
                 : (int)Math.Ceiling(totalCount / (double)pagination.PageSize);
 
-            var items = (await orderedQuery
+            var projectedRows = await orderedQuery
                 .Skip((pagination.PageNumber - 1) * pagination.PageSize)
                 .Take(pagination.PageSize)
-                .ToListAsync())
-                .Select(MapToDto)
+                .Select(source => new
+                {
+                    source.Id,
+                    source.QuotationId,
+                    source.QuotationRowId,
+                    source.CalculationRowId,
+                    source.CustomerOrderId,
+                    source.SupplierOrderId,
+                    source.CostId,
+                    source.NrOf,
+                    source.InPrice,
+                    source.InPriceCurrencyId,
+                    source.OutPrice,
+                    source.DoDebit,
+                    source.Note,
+                    source.SupplierId,
+                    source.DoPrintOnCustomerOrder,
+                    source.DoPrintOnSupplierOrder,
+                    source.DoPrintOnQuotation,
+                    source.SupplierName,
+                    source.InPriceAttested,
+                    source.CreatedById,
+                    source.CreatedDateTime,
+                    source.EditedById,
+                    source.EditedDateTime,
+                    source.AttestedInPriceCurrencyRate,
+                    source.AttestedOutPriceCurrencyRate,
+                    source.AtttestedBySignature,
+                    source.AttestedDateTime,
+                    source.DoInvoiceSeparately,
+                    source.DoInvoiceSeparatelyImmediately,
+                    source.IsCostInvoicedSeparately,
+                    SupplierPurchaseCurrencyRate = source.SupplierOrder != null ? source.SupplierOrder.PurchaseCurrencyRate : null,
+                    CustomerSalesCurrencyRate = source.CustomerOrder != null ? source.CustomerOrder.SalesCurrencyRate : null,
+                    CreatedByName = source.CreatedByUser != null
+                        ? EF.Functions.Collate(source.CreatedByUser.Name ?? string.Empty, SearchCollation)
+                        : EF.Functions.Collate(string.Empty, SearchCollation),
+                    CustomerOrderNr = source.CustomerOrder != null
+                        ? EF.Functions.Collate(source.CustomerOrder.CustomerOrderNr ?? string.Empty, SearchCollation)
+                        : source.SupplierOrder != null
+                            ? EF.Functions.Collate(source.SupplierOrder.CustomerOrderNr ?? string.Empty, SearchCollation)
+                            : EF.Functions.Collate(string.Empty, SearchCollation),
+                    OrderSupplierName = source.SupplierOrder != null
+                        ? EF.Functions.Collate(source.SupplierOrder.SupplierName ?? string.Empty, SearchCollation)
+                        : EF.Functions.Collate(source.SupplierName ?? string.Empty, SearchCollation),
+                    OrderCustomerName = source.CustomerOrder != null
+                        ? EF.Functions.Collate(source.CustomerOrder.CustomerName ?? string.Empty, SearchCollation)
+                        : EF.Functions.Collate(string.Empty, SearchCollation),
+                    CostName = source.Cost != null
+                        ? EF.Functions.Collate(source.Cost.Name ?? string.Empty, SearchCollation)
+                        : EF.Functions.Collate(string.Empty, SearchCollation),
+                    InPriceCurrencyName = source.InPriceCurrency != null
+                        ? EF.Functions.Collate(source.InPriceCurrency.Name ?? string.Empty, SearchCollation)
+                        : source.SupplierOrder != null && source.SupplierOrder.PurchaseCurrency != null
+                            ? EF.Functions.Collate(source.SupplierOrder.PurchaseCurrency.Name ?? string.Empty, SearchCollation)
+                            : EF.Functions.Collate(string.Empty, SearchCollation),
+                    OutPriceCurrencyName = source.CustomerOrder != null && source.CustomerOrder.SalesCurrency != null
+                        ? EF.Functions.Collate(source.CustomerOrder.SalesCurrency.Name ?? string.Empty, SearchCollation)
+                        : EF.Functions.Collate(string.Empty, SearchCollation),
+                    AttestedByName = EF.Functions.Collate(source.AtttestedBySignature ?? string.Empty, SearchCollation),
+                    InvoiceId = source.InvoiceRows
+                        .Where(x => x.InvoiceId.HasValue)
+                        .OrderByDescending(x => x.InvoiceId)
+                        .Select(x => x.InvoiceId)
+                        .FirstOrDefault(),
+                    InvoiceNumber = source.InvoiceRows
+                        .Where(x => x.InvoiceId.HasValue)
+                        .OrderByDescending(x => x.InvoiceId)
+                        .Select(x => x.Invoice != null ? x.Invoice.InvoiceNumber : null)
+                        .FirstOrDefault()
+                })
+                .ToListAsync();
+            var fetchElapsedMs = stopwatch.ElapsedMilliseconds;
+
+            var items = projectedRows
+                .Select(row =>
+                {
+                    var inPriceSek = row.InPrice.HasValue && row.SupplierPurchaseCurrencyRate is > 0
+                        ? row.InPrice.Value * (decimal)row.SupplierPurchaseCurrencyRate.Value
+                        : row.InPrice;
+
+                    var inPriceAttestedSek = row.InPriceAttested.HasValue && row.SupplierPurchaseCurrencyRate is > 0
+                        ? row.InPriceAttested.Value * (decimal)row.SupplierPurchaseCurrencyRate.Value
+                        : row.InPriceAttested;
+
+                    var outPriceSek = row.OutPrice.HasValue && row.CustomerSalesCurrencyRate is > 0
+                        ? row.OutPrice.Value * (decimal)row.CustomerSalesCurrencyRate.Value
+                        : row.OutPrice;
+
+                    return new OrderCostDto
+                    {
+                        Id = row.Id,
+                        QuotationId = row.QuotationId,
+                        QuotationRowId = row.QuotationRowId,
+                        CalculationRowId = row.CalculationRowId,
+                        CustomerOrderId = row.CustomerOrderId,
+                        SupplierOrderId = row.SupplierOrderId,
+                        CostId = row.CostId,
+                        NrOf = row.NrOf,
+                        InPrice = row.InPrice,
+                        InPriceCurrencyId = row.InPriceCurrencyId,
+                        OutPrice = row.OutPrice,
+                        DoDebit = row.DoDebit,
+                        Note = row.Note,
+                        SupplierId = row.SupplierId,
+                        DoPrintOnCustomerOrder = row.DoPrintOnCustomerOrder,
+                        DoPrintOnSupplierOrder = row.DoPrintOnSupplierOrder,
+                        DoPrintOnQuotation = row.DoPrintOnQuotation,
+                        SupplierName = row.SupplierName,
+                        InPriceAttested = row.InPriceAttested,
+                        CreatedById = row.CreatedById,
+                        CreatedDateTime = row.CreatedDateTime,
+                        EditedById = row.EditedById,
+                        EditedDateTime = row.EditedDateTime,
+                        AttestedInPriceCurrencyRate = row.AttestedInPriceCurrencyRate,
+                        AttestedOutPriceCurrencyRate = row.AttestedOutPriceCurrencyRate,
+                        AtttestedBySignature = row.AtttestedBySignature,
+                        AttestedDateTime = row.AttestedDateTime,
+                        DoInvoiceSeparately = row.DoInvoiceSeparately,
+                        DoInvoiceSeparatelyImmediately = row.DoInvoiceSeparatelyImmediately,
+                        IsCostInvoicedSeparately = row.IsCostInvoicedSeparately,
+                        InPriceSEK = inPriceSek,
+                        InPriceAttestedSEK = inPriceAttestedSek,
+                        OutPriceSEK = outPriceSek,
+                        Markup = inPriceSek is null or 0 || outPriceSek is null
+                            ? null
+                            : (outPriceSek.Value - inPriceSek.Value) / inPriceSek.Value,
+                        CreatedByName = row.CreatedByName ?? string.Empty,
+                        CustomerOrderNr = row.CustomerOrderNr ?? string.Empty,
+                        OrderSupplierName = row.OrderSupplierName ?? string.Empty,
+                        OrderCustomerName = row.OrderCustomerName ?? string.Empty,
+                        CostName = NormalizeOrderCostName(row.CostName) ?? string.Empty,
+                        InPriceCurrencyName = row.InPriceCurrencyName ?? string.Empty,
+                        OutPriceCurrencyName = row.OutPriceCurrencyName ?? string.Empty,
+                        AttestedByName = row.AttestedByName ?? string.Empty,
+                        InvoiceId = row.InvoiceId,
+                        InvoiceNumber = row.InvoiceNumber
+                    };
+                })
                 .ToList();
+
+            stopwatch.Stop();
+            _logger.LogInformation(
+                "Order cost search completed in {ElapsedMilliseconds} ms. Count {CountElapsedMs} ms, fetch {FetchElapsedMs} ms. Page {PageNumber} of {TotalPages} returned {ItemCount} items from {TotalCount} total.",
+                stopwatch.ElapsedMilliseconds,
+                countElapsedMs,
+                fetchElapsedMs - countElapsedMs,
+                pagination.PageNumber,
+                totalPages,
+                items.Count,
+                totalCount);
 
             return Ok(new PagedResultDto<OrderCostDto>
             {
@@ -219,6 +523,8 @@ namespace Econosys.Api.Controllers
                 TotalPages = totalPages
             });
         }
+
+
 
         private static Dictionary<string, PropertyInfo> BuildFieldMap()
         {
@@ -313,7 +619,6 @@ namespace Econosys.Api.Controllers
             var result = method.Invoke(null, new object[] { ordered ?? source, lambda });
             return (IOrderedQueryable<OrderCost>)result!;
         }
-
         private static IQueryable<OrderCost> ApplyCondition(IQueryable<OrderCost> query, FilterConditionDto condition)
         {
             var property = ResolveProperty(condition.Field);
@@ -677,8 +982,58 @@ namespace Econosys.Api.Controllers
                 || type == typeof(DateTime);
         }
 
+        private static HashSet<string> BuildUpdatedFieldSet(IEnumerable<string>? updatedFields)
+        {
+            return updatedFields is null
+                ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(
+                    updatedFields
+                        .Where(field => !string.IsNullOrWhiteSpace(field))
+                        .Select(field => field.Trim()),
+                    StringComparer.OrdinalIgnoreCase);
+        }
+
+        private async Task<(decimal? PurchaseRate, decimal? SalesRate)> ResolveCalculationCurrencyRatesAsync(int? customerOrderId)
+        {
+            if (!customerOrderId.HasValue)
+            {
+                return (null, null);
+            }
+
+            var calculationId = await _dbContext.CustomerOrders
+                .AsNoTracking()
+                .Where(x => x.Id == customerOrderId.Value)
+                .Select(x => x.CalculationId)
+                .FirstOrDefaultAsync();
+
+            if (!calculationId.HasValue)
+            {
+                return (null, null);
+            }
+
+            var rates = await _dbContext.Calculations
+                .AsNoTracking()
+                .Where(x => x.Id == calculationId.Value)
+                .Select(x => new
+                {
+                    x.PurchaseCurrencyRate,
+                    x.SalesCurrencyRate,
+                })
+                .FirstOrDefaultAsync();
+
+            return ((decimal?)rates?.PurchaseCurrencyRate, (decimal?)rates?.SalesCurrencyRate);
+        }
+
         private static OrderCostDto MapToDto(OrderCost source)
         {
+            var createdByName = source.CreatedByUser?.Name ?? string.Empty;
+            var editedByName = source.EditedByUser?.Name ?? string.Empty;
+
+            var invoiceRow = source.InvoiceRows
+                .Where(x => x.InvoiceId.HasValue)
+                .OrderByDescending(x => x.InvoiceId)
+                .FirstOrDefault();
+
             return new OrderCostDto
             {
                 Id = source.Id,
@@ -723,7 +1078,59 @@ namespace Econosys.Api.Controllers
                 Markup = ComputeMarkup(
                     source.InPrice, source.SupplierOrder?.PurchaseCurrencyRate,
                     source.OutPrice, source.CustomerOrder?.SalesCurrencyRate)
+                ,
+                CreatedByName = createdByName,
+                EditedByName = editedByName,
+                CustomerOrderNr = source.CustomerOrder?.CustomerOrderNr ?? source.SupplierOrder?.CustomerOrderNr ?? string.Empty,
+                OrderSupplierName = source.SupplierOrder?.SupplierName ?? source.SupplierName ?? string.Empty,
+                OrderCustomerName = source.CustomerOrder?.CustomerName ?? string.Empty,
+                CostName = NormalizeOrderCostName(source.Cost?.Name) ?? string.Empty,
+                InPriceCurrencyName = source.InPriceCurrency?.Name ?? source.SupplierOrder?.PurchaseCurrency?.Name ?? string.Empty,
+                OutPriceCurrencyName = source.CustomerOrder?.SalesCurrency?.Name ?? string.Empty,
+                AttestedByName = source.AtttestedBySignature ?? string.Empty,
+                InvoiceId = invoiceRow?.InvoiceId,
+                InvoiceNumber = invoiceRow?.Invoice?.InvoiceNumber
             };
+        }
+
+        private static string? NormalizeOrderCostName(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return name;
+            }
+
+            var span = name.AsSpan();
+            var index = 0;
+
+            while (index < span.Length && char.IsWhiteSpace(span[index]))
+            {
+                index++;
+            }
+
+            var digitsStart = index;
+            while (index < span.Length && char.IsDigit(span[index]))
+            {
+                index++;
+            }
+
+            if (index == digitsStart)
+            {
+                return name;
+            }
+
+            var whitespaceStart = index;
+            while (index < span.Length && char.IsWhiteSpace(span[index]))
+            {
+                index++;
+            }
+
+            if (index == whitespaceStart || index >= span.Length)
+            {
+                return name;
+            }
+
+            return name[index..].Trim();
         }
 
         private static decimal? ComputeMarkup(

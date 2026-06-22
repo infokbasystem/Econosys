@@ -36,7 +36,7 @@ const ManagementLayout = () => {
             <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Säljrapport</NavLink></li>
             <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Kvalitet</p>
             <li className={"text-xs font-semibold px-6 py-1.5 " + getNavLinkClass('deviations')}><NavLink to="/management/deviations">Avvikelser</NavLink></li>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Förbättringsförslag</NavLink></li>
+            <li className={"text-xs font-semibold px-6 py-1.5 " + getNavLinkClass('improvement-propositions')}><NavLink to="/management/improvement-propositions">Förbättringsförslag</NavLink></li>
             <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Palluppföljning</NavLink></li>
             <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Kostnader</NavLink></li>
             <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Register</p>
@@ -45,12 +45,14 @@ const ManagementLayout = () => {
     );
 
     return (
-        <div className="flex flex-col min-h-screen overflow-x-hidden">
+        <div className="flex flex-col min-h-screen">
             <Header />
-            <Navbar />
+            <div className="sticky top-0 z-50">
+                <Navbar />
+            </div>
             <div className="relative flex grow items-stretch bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50" style={{ backgroundImage: `url(${bg})` }}>
                 {!isDetailPage && (
-                    <div className="flex flex-col w-50 shrink-0 border-r border-gray-300">
+                    <div className="sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto flex flex-col w-50 shrink-0 border-r border-gray-300">
                         {menuContent}
                     </div>
                 )}
@@ -89,7 +91,7 @@ const ManagementLayout = () => {
                     </>
                 )}
 
-                <div className="flex-grow min-w-0 pt-4 px-0 relative">
+                <div className="flex-grow min-w-0 pt-4 px-0 relative overflow-hidden">
                     <Outlet />
                 </div>
             </div>

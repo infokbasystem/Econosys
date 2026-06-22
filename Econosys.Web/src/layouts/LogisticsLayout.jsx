@@ -16,10 +16,12 @@ const LogisticsLayout = () => {
         <PdfProvider>
             <div className="flex flex-col min-h-screen">
                 <Header />
-                <Navbar />
+                <div className="sticky top-0 z-50">
+                    <Navbar />
+                </div>
                 <div className="flex grow items-stretch bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50" style={{ backgroundImage: `url(${bg})` }}>
                     {!isDetailPage && (
-                        <div className="flex flex-col w-50 border-r border-gray-300">
+                        <div className="sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto flex flex-col w-50 border-r border-gray-300">
                             <ul className="flex flex-col pt-5">
                                 <li className="text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink to="/logistics">ÖVERSIKT</NavLink></li>
                                 <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Transportorderöversikt</NavLink></li>

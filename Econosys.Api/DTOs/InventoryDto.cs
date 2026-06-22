@@ -32,7 +32,6 @@ namespace Econosys.Api.DTOs
         public bool IsInventory { get; set; }
 
         [MaxLength(50)]
-        [EmailAddress]
         public string? Email { get; set; }
 
         public bool IsOmlast { get; set; }

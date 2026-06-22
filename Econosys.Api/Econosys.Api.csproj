@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Econosys.Api</RootNamespace>
     <AssemblyName>Econosys.Api</AssemblyName>
+    <!-- <UserSecretsId>econosys-api-local-secrets</UserSecretsId> -->
   </PropertyGroup>
 
   <ItemGroup>
@@ -34,6 +35,10 @@
     <!-- Telerik Reporting: needed for TRDX deserialization and PDF rendering -->
     <PackageReference Include="Telerik.Reporting" Version="19.3.25.1111" />
     <PackageReference Include="Telerik.Drawing.Skia" Version="19.3.25.1111" />
+
+    <Content Update="appsettings.json" CopyToPublishDirectory="Never" />
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+
   </ItemGroup>
 
 </Project>

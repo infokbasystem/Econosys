@@ -1,0 +1,7 @@
+ipconfig getifaddr en0
+
+dotnet publish 
+
+dotnet ef migrations add xxx 
+dotnet ef database update 
+dotnet ef migrations script xxx

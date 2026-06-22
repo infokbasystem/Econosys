@@ -856,7 +856,7 @@ namespace Econosys.Api.Controllers
         [HttpGet("slowmovers")]
         public async Task<ActionResult<SlowMoversReportResponseDto>> GetSlowMoversReport([FromQuery] int? inventoryId)
         {
-            var today = DateTime.UtcNow.Date;
+            var today = SwedishTime.Now.Date;
             var deliveredStatus = (int)DeliveryStatus.Delivered;
 
             var baseRows = await _context.CustomerOrders
@@ -1057,7 +1057,7 @@ namespace Econosys.Api.Controllers
         [HttpPost("order-costs/monthly")]
         public async Task<ActionResult<MonthlyOrderCostsReportResponseDto>> GetMonthlyOrderCostsReport([FromBody] MonthlyOrderCostsReportRequestDto? request)
         {
-            var now = DateTime.UtcNow;
+            var now = SwedishTime.Now;
             var year = request?.Year is >= 2000 and <= 2100 ? request.Year : now.Year;
             var month = request?.Month is >= 1 and <= 12 ? request.Month : now.Month;
             var selectedCostIds = (request?.CostIds ?? new List<int>())
@@ -1138,7 +1138,7 @@ namespace Econosys.Api.Controllers
         [HttpPost("inventory")]
         public async Task<ActionResult<InventoryReportResponseDto>> GetInventoryReport([FromBody] InventoryReportRequestDto? request)
         {
-            var calculationDate = request?.CalculationDate?.Date ?? DateTime.UtcNow.Date;
+            var calculationDate = request?.CalculationDate?.Date ?? SwedishTime.Now.Date;
             var calcDatePlusOne = calculationDate.AddDays(1);
             var inventoryIds = request?.InventoryIds ?? new List<int>();
             var deliveredStatus = (int)DeliveryStatus.Delivered;
@@ -1380,8 +1380,8 @@ namespace Econosys.Api.Controllers
 
             var customerId = request?.CustomerId;
 
-            var startDate = request?.StartDate?.Date ?? DateTime.UtcNow.Date.AddMonths(-1);
-            var endDate = request?.EndDate?.Date ?? DateTime.UtcNow.Date;
+            var startDate = request?.StartDate?.Date ?? SwedishTime.Now.Date.AddMonths(-1);
+            var endDate = request?.EndDate?.Date ?? SwedishTime.Now.Date;
 
             if (endDate < startDate)
             {

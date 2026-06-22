@@ -79,9 +79,12 @@ namespace Econosys.Api.Models
         // Navigation properties
         public SupplierOrder? SupplierOrder { get; set; }
         public CustomerOrder? CustomerOrder { get; set; }
+        public CalculationRow? CalculationRow { get; set; }
         public Cost? Cost { get; set; }
         public Supplier? Supplier { get; set; }
         public Currency? InPriceCurrency { get; set; }
+        public LegacyUser? CreatedByUser { get; set; }
+        public LegacyUser? EditedByUser { get; set; }
         public ICollection<InvoiceRow> InvoiceRows { get; set; } = new List<InvoiceRow>();
     }
 }

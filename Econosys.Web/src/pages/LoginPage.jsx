@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
-import bg from '../assets/login-bg.webp'
+import bg from '../assets/login-bg.png'
 
 export default function LoginPage() {
   const { login, user, isAuthenticated } = useAuth();
@@ -172,10 +172,6 @@ export default function LoginPage() {
                 type="submit"
                 disabled={loading}
                 className={`${loading ? 'animate-pulse' : ''} text-sm py-2 px-16 inline-flex items-center gap-x-2 text-sm font-light rounded-none border border-transparent bg-teal-500 text-white hover:bg-teal-600 focus:outline-hidden focus:bg-teal-600 disabled:opacity-50 disabled:pointer-events-none`}
-              // onClick={() => {
-              //   setLoading(true);
-              //   setTimeout(() => { handleLogin(); }, 0);
-              // }}
               >
                 Logga in
               </button>

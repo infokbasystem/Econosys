@@ -286,7 +286,7 @@ const NonInvoicedOrders = () => {
                     <span className="mr-3 text-xs text-gray-700">
                         Sida {pagination.pageNumber} av {Math.max(1, pagination.totalPages)}
                     </span>
-                    <div className="flex gap-1 mr-10">
+                    <div className="flex gap-1 mr-0">
                         <button
                             type="button"
                             onClick={() => handlePageChange(pagination.pageNumber - 1)}
@@ -307,7 +307,7 @@ const NonInvoicedOrders = () => {
                 </div>
             </div>
 
-            <div className="border-t border-gray-300 py-1 mt-2 flex-1 overflow-auto">
+            <div className="border-t border-gray-300 py-1 mt-4 flex-1 overflow-auto">
                 <table className="table-fixed w-full border-collapse text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                     <colgroup>
                         {columns.map((col) => (

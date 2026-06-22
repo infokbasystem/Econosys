@@ -481,7 +481,7 @@ const MonthlyOrderCostsReport = () => {
                             ))
                         ) : initialLoadCompleted && !loading && sortedRows.length === 0 ? (
                             <tr>
-                                <td colSpan="15" className="px-6 py-14 whitespace-nowrap text-sm text-gray-500 text-center">Inget att visa</td>
+                                <td colSpan="15" className="px-6 py-14 whitespace-nowrap text-sm text-gray-400 text-center">Inget att visa</td>
                             </tr>
                         ) : (
                             sortedRows.map((row, index) => (

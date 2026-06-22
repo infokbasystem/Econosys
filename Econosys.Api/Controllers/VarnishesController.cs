@@ -1,6 +1,7 @@
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -31,7 +32,8 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            return Ok(MapToDto(entity));
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, entity.TranslationCode);
+            return Ok(MapToDto(entity, translations));
         }
 
         [HttpGet("search")]
@@ -42,7 +44,7 @@ namespace Econosys.Api.Controllers
                 .OrderBy(x => x.Id)
                 .ToListAsync();
 
-            return Ok(items.Select(MapToDto).ToList());
+            return Ok(items.Select(x => MapToDto(x)).ToList());
         }
 
         [HttpPost]
@@ -57,14 +59,18 @@ namespace Econosys.Api.Controllers
             {
                 Name = request.Name,
                 TranslationCode = request.TranslationCode,
-                Active = request.Active,
-                OldDbId = request.OldDbId
+                Active = request.Active
             };
 
             _dbContext.Varnishes.Add(entity);
             await _dbContext.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(entity));
+            entity.TranslationCode = await EntityTranslationService.UpsertTranslationsAsync(_dbContext, entity.TranslationCode, request.Translations);
+            await _dbContext.SaveChangesAsync();
+
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, entity.TranslationCode);
+
+            return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(entity, translations));
         }
 
         [HttpPut("{id:int}")]
@@ -82,14 +88,17 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            if (request.Name is not null) entity.Name = request.Name;
-            if (request.TranslationCode.HasValue) entity.TranslationCode = request.TranslationCode;
-            if (request.Active.HasValue) entity.Active = request.Active.Value;
-            if (request.OldDbId.HasValue) entity.OldDbId = request.OldDbId;
+            entity.Name = request.Name;
+            entity.TranslationCode = request.TranslationCode;
+            entity.Active = request.Active ?? false;
+
+            entity.TranslationCode = await EntityTranslationService.UpsertTranslationsAsync(_dbContext, entity.TranslationCode, request.Translations);
 
             await _dbContext.SaveChangesAsync();
 
-            return Ok(MapToDto(entity));
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, entity.TranslationCode);
+
+            return Ok(MapToDto(entity, translations));
         }
 
         [HttpDelete("{id:int}")]
@@ -108,11 +117,12 @@ namespace Econosys.Api.Controllers
             return NoContent();
         }
 
-        private static VarnishDto MapToDto(Varnish entity) => new()
+        private static VarnishDto MapToDto(Varnish entity, List<EntityTranslationDto>? translations = null) => new()
         {
             Id = entity.Id,
             Name = entity.Name,
             TranslationCode = entity.TranslationCode,
+            Translations = translations ?? new List<EntityTranslationDto>(),
             Active = entity.Active,
             OldDbId = entity.OldDbId
         };

@@ -138,7 +138,8 @@ const LabeledInput = ({
                 )}
             </div>
 
-            <div className="flex flex-row items-center w-full gap-2">
+            <div className="flex flex-row items-center w-full">
+                <div className="relative w-full">
                 <input
                     name={name}
                     type={type === 'number' ? 'text' : type}
@@ -146,11 +147,11 @@ const LabeledInput = ({
                     disabled={disabled}
                     onChange={handleChange}
                     onBlur={handleBlur}
-                    className={`text-xs ${inputWidth || 'w-full'} border border-gray-300 rounded-sm px-2 py-1 focus:outline-none ${!disabled ? 'bg-white' : ''}`}
+                    className={`text-xs ${inputWidth || 'w-full'} border border-gray-300 rounded-sm px-2 py-1 focus:outline-none ${showCharCounter && maxLength ? 'pr-16' : ''} ${!disabled ? 'bg-white' : ''}`}
                     {...props}
                 />
                 {showCharCounter && maxLength && (
-                    <span className={`text-xs whitespace-nowrap ${
+                    <span className={`pointer-events-none absolute right-2 pt-[3px] top-1/2 -translate-y-1/2 text-tiny whitespace-nowrap ${
                         String(displayValue || '').length > maxLength
                             ? 'text-red-600 font-semibold'
                             : String(displayValue || '').length >= Math.ceil(0.8 * maxLength)
@@ -160,6 +161,7 @@ const LabeledInput = ({
                         {String(displayValue || '').length} / {maxLength}
                     </span>
                 )}
+                </div>
             </div>
         </div>
     );

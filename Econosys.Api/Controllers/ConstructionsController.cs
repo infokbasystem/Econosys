@@ -1,8 +1,10 @@
 using System.Linq.Expressions;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -36,7 +38,8 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            return Ok(MapToDto(entity));
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, entity.TranslationCode);
+            return Ok(MapToDto(entity, translations));
         }
 
         [HttpPost]
@@ -52,14 +55,18 @@ namespace Econosys.Api.Controllers
                 Name = request.Name,
                 TranslationCode = request.TranslationCode,
                 Active = request.Active,
-                OldDbId = request.OldDbId,
                 IsPackaging = request.IsPackaging
             };
 
             _dbContext.Constructions.Add(entity);
             await _dbContext.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(entity));
+            entity.TranslationCode = await EntityTranslationService.UpsertTranslationsAsync(_dbContext, entity.TranslationCode, request.Translations);
+            await _dbContext.SaveChangesAsync();
+
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, entity.TranslationCode);
+
+            return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(entity, translations));
         }
 
         [HttpPut("{id:int}")]
@@ -77,15 +84,18 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
-            if (request.Name is not null) entity.Name = request.Name;
-            if (request.TranslationCode.HasValue) entity.TranslationCode = request.TranslationCode;
-            if (request.Active.HasValue) entity.Active = request.Active.Value;
-            if (request.OldDbId.HasValue) entity.OldDbId = request.OldDbId;
-            if (request.IsPackaging.HasValue) entity.IsPackaging = request.IsPackaging;
+            entity.Name = request.Name;
+            entity.TranslationCode = request.TranslationCode;
+            entity.Active = request.Active ?? false;
+            entity.IsPackaging = request.IsPackaging;
+
+            entity.TranslationCode = await EntityTranslationService.UpsertTranslationsAsync(_dbContext, entity.TranslationCode, request.Translations);
 
             await _dbContext.SaveChangesAsync();
 
-            return Ok(MapToDto(entity));
+            var translations = await EntityTranslationService.BuildCompletedTranslationsAsync(_dbContext, entity.TranslationCode);
+
+            return Ok(MapToDto(entity, translations));
         }
 
         [HttpDelete("{id:int}")]
@@ -99,9 +109,61 @@ namespace Econosys.Api.Controllers
             }
 
             _dbContext.Constructions.Remove(entity);
-            await _dbContext.SaveChangesAsync();
+
+            try
+            {
+                await _dbContext.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogWarning(ex, "Delete conflict for construction {ConstructionId}", id);
+
+                var details = new List<string>();
+                var productCount = await _dbContext.Products
+                    .AsNoTracking()
+                    .CountAsync(x => x.ConstructionId == id);
+
+                if (productCount > 0)
+                {
+                    details.Add($"Anvands av {productCount} produkt(er).");
+                }
+
+                var table = TryExtractSqlConflictTable(ex);
+                if (!string.IsNullOrWhiteSpace(table))
+                {
+                    details.Add($"Konflikt i tabell {table}.");
+                }
+
+                if (details.Count == 0)
+                {
+                    details.Add("Posten ar relaterad till annan data och kan inte raderas.");
+                }
+
+                return Conflict(new
+                {
+                    message = "Konstruktionen kan inte raderas eftersom den refereras av annan data.",
+                    details
+                });
+            }
 
             return NoContent();
+        }
+
+        private static string? TryExtractSqlConflictTable(DbUpdateException ex)
+        {
+            var fullMessage = ex.InnerException?.Message ?? ex.Message;
+            if (string.IsNullOrWhiteSpace(fullMessage))
+            {
+                return null;
+            }
+
+            var match = Regex.Match(fullMessage, "table '([^']+)'", RegexOptions.IgnoreCase);
+            if (!match.Success)
+            {
+                return null;
+            }
+
+            return match.Groups[1].Value;
         }
 
         [HttpPost("search")]
@@ -148,7 +210,7 @@ namespace Econosys.Api.Controllers
                 .Skip((pagination.PageNumber - 1) * pagination.PageSize)
                 .Take(pagination.PageSize)
                 .ToListAsync())
-                .Select(MapToDto)
+                .Select(x => MapToDto(x))
                 .ToList();
 
             return Ok(new PagedResultDto<ConstructionDto>
@@ -475,11 +537,12 @@ namespace Econosys.Api.Controllers
             };
         }
 
-        private static ConstructionDto MapToDto(Construction entity) => new()
+        private static ConstructionDto MapToDto(Construction entity, List<EntityTranslationDto>? translations = null) => new()
         {
             Id = entity.Id,
             Name = entity.Name,
             TranslationCode = entity.TranslationCode,
+            Translations = translations ?? new List<EntityTranslationDto>(),
             Active = entity.Active,
             OldDbId = entity.OldDbId,
             IsPackaging = entity.IsPackaging,
