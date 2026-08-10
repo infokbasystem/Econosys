@@ -47,13 +47,74 @@ namespace Econosys.Api.Controllers
             }
 
             var contactPersons = await BuildContactPersonsAsync(id);
+            var factories = await BuildFactoriesAsync(id);
             var languages = await BuildLanguagesAsync();
 
             return Ok(new SupplierDetailsDto
             {
                 Supplier = MapToDto(supplier),
                 ContactPersons = contactPersons,
+                Factories = factories,
                 Languages = languages,
+            });
+        }
+
+        [HttpGet("form-options")]
+        public async Task<ActionResult<SupplierFormOptionsDto>> GetFormOptions()
+        {
+            var currencies = await _dbContext.Currencies
+                .AsNoTracking()
+                .Where(x => x.Active)
+                .OrderBy(x => x.Name)
+                .Select(x => new CurrencyDto
+                {
+                    Id = x.Id,
+                    Name = x.Name,
+                    TranslationCode = x.TranslationCode,
+                    IsDefault = x.IsDefault,
+                    RateToSek = x.RateToSek,
+                    Active = x.Active,
+                    RateStockValue = x.RateStockValue,
+                    OldDbId = x.OldDbId,
+                    SpcsKey = x.SpcsKey,
+                    WarningTolerancePercent = x.WarningTolerancePercent,
+                })
+                .ToListAsync();
+
+            var termsOfDelivery = await _dbContext.TermsOfDelivery
+                .AsNoTracking()
+                .Where(x => x.Active && x.Name != null && x.Name != "")
+                .OrderBy(x => x.Name)
+                .Select(x => new FilterOptionDto<string>
+                {
+                    Id = x.Name!,
+                    Name = x.Name!,
+                    IsActive = x.Active,
+                })
+                .ToListAsync();
+
+            var termsOfPayment = await _dbContext.TermsOfPayment
+                .AsNoTracking()
+                .Where(x => x.Active && x.Name != null && x.Name != "")
+                .OrderBy(x => x.Name)
+                .Select(x => new FilterOptionDto<string>
+                {
+                    Id = x.Name!,
+                    Name = x.Name!,
+                    IsActive = x.Active,
+                })
+                .ToListAsync();
+
+            var languages = await BuildLanguagesAsync();
+
+            return Ok(new SupplierFormOptionsDto
+            {
+                Currencies = currencies,
+                TermsOfDelivery = termsOfDelivery,
+                TermsOfPayment = termsOfPayment,
+                Languages = languages,
+                InquiryCommunicationTypes = BuildCommunicationTypes(),
+                SupplierOrderCommunicationTypes = BuildCommunicationTypes(),
             });
         }
 
@@ -99,6 +160,18 @@ namespace Econosys.Api.Controllers
             };
 
             _dbContext.Suppliers.Add(supplier);
+            await _dbContext.SaveChangesAsync();
+
+            if (request.ContactPersons is not null)
+            {
+                await SyncContactPersonsAsync(supplier.Id, request.ContactPersons);
+            }
+
+            if (request.Factories is not null)
+            {
+                await SyncFactoriesAsync(supplier.Id, request.Factories);
+            }
+
             await _dbContext.SaveChangesAsync();
 
             var response = MapToDto(supplier);
@@ -208,6 +281,16 @@ namespace Econosys.Api.Controllers
             supplier.FscDefault = request.FscDefault ?? false;
             supplier.SupplierOrderTemplateNr = request.SupplierOrderTemplateNr;
 
+            if (request.ContactPersons is not null)
+            {
+                await SyncContactPersonsAsync(supplier.Id, request.ContactPersons);
+            }
+
+            if (request.Factories is not null)
+            {
+                await SyncFactoriesAsync(supplier.Id, request.Factories);
+            }
+
             await _dbContext.SaveChangesAsync();
 
             return Ok(MapToDto(supplier));
@@ -294,6 +377,30 @@ namespace Econosys.Api.Controllers
                 .ToListAsync();
         }
 
+        private async Task<List<SupplierFactoryDto>> BuildFactoriesAsync(int supplierId)
+        {
+            return await _dbContext.SupplierFactories
+                .AsNoTracking()
+                .Where(x => x.SupplierId == supplierId)
+                .OrderByDescending(x => x.IsDefault)
+                .ThenBy(x => x.Name)
+                .Select(x => new SupplierFactoryDto
+                {
+                    Id = x.Id,
+                    Name = x.Name,
+                    Address = x.Address,
+                    PostalNr = x.PostalNr,
+                    City = x.City,
+                    Country = x.Country,
+                    CountryCode = x.CountryCode,
+                    AddressExtra = x.AddressExtra,
+                    IsDefault = x.IsDefault,
+                    PositionId = x.PositionId,
+                    ViaInventoryId = x.ViaInventoryId,
+                })
+                .ToListAsync();
+        }
+
         private async Task<List<FilterOptionDto<int>>> BuildLanguagesAsync()
         {
             return await _dbContext.Languages
@@ -306,6 +413,114 @@ namespace Econosys.Api.Controllers
                     IsActive = true,
                 })
                 .ToListAsync();
+        }
+
+        private static List<FilterOptionDto<int>> BuildCommunicationTypes()
+        {
+            return new List<FilterOptionDto<int>>
+            {
+                new()
+                {
+                    Id = 1,
+                    Name = "Epost",
+                    IsActive = true,
+                },
+            };
+        }
+
+        private async Task SyncContactPersonsAsync(int supplierId, IEnumerable<SupplierContactPersonRequest> requests)
+        {
+            var incoming = requests.ToList();
+            var existing = await _dbContext.SupplierContactPersons
+                .Where(x => x.SupplierId == supplierId)
+                .ToListAsync();
+
+            var incomingIds = incoming
+                .Select(x => x.Id)
+                .Where(x => x.HasValue && x.Value > 0)
+                .Select(x => x!.Value)
+                .ToHashSet();
+
+            foreach (var entity in existing.Where(x => !incomingIds.Contains(x.Id)).ToList())
+            {
+                _dbContext.SupplierContactPersons.Remove(entity);
+            }
+
+            foreach (var item in incoming)
+            {
+                var entity = item.Id.HasValue && item.Id.Value > 0
+                    ? existing.FirstOrDefault(x => x.Id == item.Id.Value)
+                    : null;
+
+                if (entity is null)
+                {
+                    entity = new SupplierContactPerson
+                    {
+                        SupplierId = supplierId,
+                    };
+
+                    _dbContext.SupplierContactPersons.Add(entity);
+                }
+
+                entity.SupplierId = supplierId;
+                entity.SupplierContactPersonName = item.SupplierContactPersonName;
+                entity.ContactPerson = item.ContactPerson;
+                entity.Email = item.Email;
+                entity.Telephone = item.Telephone;
+                entity.Cellphone = item.Cellphone;
+                entity.MailInquiry = item.MailInquiry;
+                entity.MailSupplierOrder = item.MailSupplierOrder;
+                entity.DoMailTransportOrder = item.DoMailTransportOrder;
+                entity.Title = item.Title;
+            }
+        }
+
+        private async Task SyncFactoriesAsync(int supplierId, IEnumerable<SupplierFactoryRequest> requests)
+        {
+            var incoming = requests.ToList();
+            var existing = await _dbContext.SupplierFactories
+                .Where(x => x.SupplierId == supplierId)
+                .ToListAsync();
+
+            var incomingIds = incoming
+                .Select(x => x.Id)
+                .Where(x => x.HasValue && x.Value > 0)
+                .Select(x => x!.Value)
+                .ToHashSet();
+
+            foreach (var entity in existing.Where(x => !incomingIds.Contains(x.Id)).ToList())
+            {
+                _dbContext.SupplierFactories.Remove(entity);
+            }
+
+            foreach (var item in incoming)
+            {
+                var entity = item.Id.HasValue && item.Id.Value > 0
+                    ? existing.FirstOrDefault(x => x.Id == item.Id.Value)
+                    : null;
+
+                if (entity is null)
+                {
+                    entity = new SupplierFactory
+                    {
+                        SupplierId = supplierId,
+                    };
+
+                    _dbContext.SupplierFactories.Add(entity);
+                }
+
+                entity.SupplierId = supplierId;
+                entity.Name = item.Name;
+                entity.Address = item.Address;
+                entity.PostalNr = item.PostalNr;
+                entity.City = item.City;
+                entity.Country = item.Country;
+                entity.CountryCode = item.CountryCode;
+                entity.AddressExtra = item.AddressExtra;
+                entity.IsDefault = item.IsDefault;
+                entity.PositionId = item.PositionId;
+                entity.ViaInventoryId = item.ViaInventoryId;
+            }
         }
     }
 
@@ -341,6 +556,8 @@ namespace Econosys.Api.Controllers
         public decimal? PricePerEurPallet { get; set; }
         public bool FscDefault { get; set; }
         public int? SupplierOrderTemplateNr { get; set; }
+        public List<SupplierContactPersonRequest>? ContactPersons { get; set; }
+        public List<SupplierFactoryRequest>? Factories { get; set; }
     }
 
     public class UpdateSupplierRequest
@@ -375,6 +592,37 @@ namespace Econosys.Api.Controllers
         public decimal? PricePerEurPallet { get; set; }
         public bool? FscDefault { get; set; }
         public int? SupplierOrderTemplateNr { get; set; }
+        public List<SupplierContactPersonRequest>? ContactPersons { get; set; }
+        public List<SupplierFactoryRequest>? Factories { get; set; }
+    }
+
+    public class SupplierContactPersonRequest
+    {
+        public int? Id { get; set; }
+        public string? SupplierContactPersonName { get; set; }
+        public string? ContactPerson { get; set; }
+        public string? Email { get; set; }
+        public string? Telephone { get; set; }
+        public string? Cellphone { get; set; }
+        public bool MailInquiry { get; set; }
+        public bool MailSupplierOrder { get; set; }
+        public bool DoMailTransportOrder { get; set; }
+        public string? Title { get; set; }
+    }
+
+    public class SupplierFactoryRequest
+    {
+        public int? Id { get; set; }
+        public string? Name { get; set; }
+        public string? Address { get; set; }
+        public string? PostalNr { get; set; }
+        public string? City { get; set; }
+        public string? Country { get; set; }
+        public string? CountryCode { get; set; }
+        public string? AddressExtra { get; set; }
+        public bool IsDefault { get; set; }
+        public int? PositionId { get; set; }
+        public int? ViaInventoryId { get; set; }
     }
 
     public class SearchSuppliersRequest

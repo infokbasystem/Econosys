@@ -7,6 +7,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 import DateRangePicker from '../../components/Daterangepicker';
 import apiClient from '../../config/apiClient';
 import { formatDateShort, formatDeliveryDate } from '../../helpers/dateUtils';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const PAGE_SIZE = 100;
 
@@ -83,17 +84,16 @@ const NonDeliveredWarehouseOrders = () => {
         };
     };
 
-    const loadRows = async (pageNumber = 1, activeFilters = filters, signal = null) => {
+    const loadRows = async (pageNumber = 1, activeFilters = filters, isActive = true) => {
         setLoading(true);
         setRows([]);
         skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 200);
 
         try {
-            const response = await apiClient.post(
-                '/reporting/non-delivered-warehouse-orders',
-                buildRequestBody(pageNumber, pagination.pageSize, activeFilters, sortConfig),
-                signal ? { signal } : {}
-            );
+            const requestBody = buildRequestBody(pageNumber, pagination.pageSize, activeFilters, sortConfig);
+            const requestKey = `reporting:non-delivered-warehouse-orders:${JSON.stringify(requestBody)}`;
+            const response = await getSharedRequest(requestKey, () => apiClient.post('/reporting/non-delivered-warehouse-orders', requestBody));
+            if (!isActive) return;
 
             const data = response?.data ?? {};
             setRows(data?.items ?? []);
@@ -107,8 +107,8 @@ const NonDeliveredWarehouseOrders = () => {
                 hasNextPage: Boolean(data?.hasNextPage),
             }));
         } catch (error) {
-            if (error.code === 'ERR_CANCELED') return;
             console.error('Failed to load non-delivered warehouse orders:', error);
+            if (!isActive) return;
             setRows([]);
             setPagination((prev) => ({
                 ...prev,
@@ -118,6 +118,7 @@ const NonDeliveredWarehouseOrders = () => {
                 hasNextPage: false,
             }));
         } finally {
+            if (!isActive) return;
             clearTimeout(skeletonTimerRef.current);
             setLoading(false);
             setShowSkeleton(false);
@@ -125,10 +126,10 @@ const NonDeliveredWarehouseOrders = () => {
     };
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const timer = setTimeout(async () => {
-            await loadRows(pagination.pageNumber, filters, controller.signal);
+            await loadRows(pagination.pageNumber, filters, isActive);
             if (!didMountRef.current) {
                 didMountRef.current = true;
                 setInitialLoadCompleted(true);
@@ -136,7 +137,7 @@ const NonDeliveredWarehouseOrders = () => {
         }, didMountRef.current ? 250 : 0);
 
         return () => {
-            controller.abort();
+            isActive = false;
             clearTimeout(timer);
             clearTimeout(skeletonTimerRef.current);
         };

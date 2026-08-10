@@ -7,6 +7,7 @@ import ExcelJS from 'exceljs';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import DateRangePicker from '../../components/Daterangepicker';
 import apiClient from '../../config/apiClient';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const columns = [
     { key: 'orderNumber', label: 'Nr', align: 'left' },
@@ -55,17 +56,17 @@ const RevenuePerOrder = () => {
     });
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const initialize = async () => {
-            await loadFilterOptions(controller.signal);
-            await loadReport(controller.signal, 1, filters, sortConfig);
+            await loadFilterOptions(isActive);
+            await loadReport(isActive, 1, filters, sortConfig);
         };
 
-        initialize();
+        void initialize();
 
         return () => {
-            controller.abort();
+            isActive = false;
         };
     }, []);
 
@@ -94,19 +95,23 @@ const RevenuePerOrder = () => {
         }],
     });
 
-    const loadFilterOptions = async (signal = null) => {
+    const loadFilterOptions = async (isActive = true) => {
         try {
-            const response = await apiClient.get('/reporting/revenue-per-order/filter-options', signal ? { signal } : {});
+            const response = await getSharedRequest(
+                'reporting:revenue-per-order:filter-options',
+                () => apiClient.get('/reporting/revenue-per-order/filter-options'),
+            );
+            if (!isActive) return;
             const options = response?.data?.sellers ?? [];
             setSellers(options);
         } catch (error) {
-            if (error.code === 'ERR_CANCELED') return;
             console.error('Failed to load revenue per order filter options:', error);
+            if (!isActive) return;
             setSellers([]);
         }
     };
 
-    const loadReport = async (signal = null, pageNumber = 1, overrideFilters = null, overrideSort = null) => {
+    const loadReport = async (isActive = true, pageNumber = 1, overrideFilters = null, overrideSort = null) => {
         const requestFilters = overrideFilters ?? filters;
         const requestSort = overrideSort ?? sortConfig;
 
@@ -115,11 +120,13 @@ const RevenuePerOrder = () => {
         skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 200);
 
         try {
-            const response = await apiClient.post(
-                '/reporting/revenue-per-order',
-                buildRequest(pageNumber, requestFilters, requestSort),
-                signal ? { signal } : {}
+            const requestBody = buildRequest(pageNumber, requestFilters, requestSort);
+            const requestKey = `reporting:revenue-per-order:${JSON.stringify(requestBody)}`;
+            const response = await getSharedRequest(
+                requestKey,
+                () => apiClient.post('/reporting/revenue-per-order', requestBody),
             );
+            if (!isActive) return;
 
             const data = response?.data ?? {};
             setRows(data.items ?? []);
@@ -132,11 +139,12 @@ const RevenuePerOrder = () => {
                 hasNextPage: Boolean(data.hasNextPage),
             });
         } catch (error) {
-            if (error.code === 'ERR_CANCELED') return;
             console.error('Failed to load revenue per order report:', error);
+            if (!isActive) return;
             setRows([]);
             setPagination((prev) => ({ ...prev, totalCount: 0, totalPages: 0, hasPreviousPage: false, hasNextPage: false }));
         } finally {
+            if (!isActive) return;
             clearTimeout(skeletonTimerRef.current);
             setLoading(false);
             setShowSkeleton(false);
@@ -146,7 +154,7 @@ const RevenuePerOrder = () => {
     const handleFilterChange = (updates) => {
         setFilters((prev) => {
             const next = { ...prev, ...updates };
-            loadReport(null, 1, next, sortConfig);
+            void loadReport(true, 1, next, sortConfig);
             return next;
         });
     };
@@ -157,13 +165,13 @@ const RevenuePerOrder = () => {
             direction: sortConfig.key === key && sortConfig.direction === 'asc' ? 'desc' : 'asc',
         };
         setSortConfig(nextSort);
-        await loadReport(null, 1, filters, nextSort);
+        await loadReport(true, 1, filters, nextSort);
     };
 
     const handlePageChange = async (targetPage) => {
         if (targetPage < 1) return;
         if (pagination.totalPages > 0 && targetPage > pagination.totalPages) return;
-        await loadReport(null, targetPage, filters, sortConfig);
+        await loadReport(true, targetPage, filters, sortConfig);
     };
 
     const getSortIndicator = (key) => {

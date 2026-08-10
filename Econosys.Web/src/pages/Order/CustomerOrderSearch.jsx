@@ -11,17 +11,15 @@ import { getSharedRequest } from '../../helpers/sharedRequest';
 const PAGE_SIZE = 25;
 
 const columns = [
-    { key: 'id', label: 'Nr', align: 'left', width: '5%' },
+    { key: 'customerOrderNr', label: 'Nr', align: 'left', width: '9%' },
+    { key: 'supplierOrderNr', label: 'Lev onr', align: 'left', width: '10%' },
     { key: 'product', label: 'Produkt', align: 'left', width: '14%' },
-    { key: 'customerName', label: 'Kund', align: 'left', width: '13%' },
-    { key: 'supplierName', label: 'Levetantör', align: 'left', width: '11%' },
-    { key: 'construction', label: 'Konstruktion', align: 'left', width: '11%' },
-    { key: 'material', label: 'Materail', align: 'left', width: '13%' },
-    { key: 'format', label: 'Format', align: 'left', width: '11%' },
-    { key: 'sellerName', label: 'Säljare', align: 'left', width: '8%' },
-    { key: 'createdByName', label: 'Skapad av', align: 'left', width: '8%' },
-    { key: 'createdAt', label: 'Skapad', align: 'left', width: '6%' },
-    { key: 'editedAt', label: 'Ändrad', align: 'left', width: '6%' },
+    { key: 'customerName', label: 'Kund', align: 'left', width: '14%' },
+    { key: 'construction', label: 'Konstruktion', align: 'left', width: '12%' },
+    { key: 'material', label: 'Material', align: 'left', width: '12%' },
+    { key: 'format', label: 'Format', align: 'left', width: '10%' },
+    { key: 'created', label: 'Skapad', align: 'left', width: '6%' },
+    { key: 'edited', label: 'Ändrad', align: 'left', width: '7%' },
 ];
 
 const initialPagination = {
@@ -33,7 +31,7 @@ const initialPagination = {
     hasNextPage: false,
 };
 
-const InquirySearch = () => {
+const CustomerOrderSearch = () => {
     const navigate = useNavigate();
 
     const [rows, setRows] = useState([]);
@@ -42,7 +40,7 @@ const InquirySearch = () => {
     const [searchInput, setSearchInput] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [pagination, setPagination] = useState(initialPagination);
-    const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
+    const [sortConfig, setSortConfig] = useState({ key: 'created', direction: 'desc' });
     const [selectedRowId, setSelectedRowId] = useState(null);
 
     useEffect(() => {
@@ -61,8 +59,10 @@ const InquirySearch = () => {
             setLoading(true);
 
             try {
+                const trimmedSearchTerm = searchTerm.trim();
+
                 const requestBody = {
-                    searchTerm: searchTerm.trim() || null,
+                    searchTerm: trimmedSearchTerm || null,
                     pagination: {
                         pageNumber: pagination.pageNumber,
                         pageSize: pagination.pageSize,
@@ -72,8 +72,8 @@ const InquirySearch = () => {
                         direction: sortConfig.direction,
                     }],
                 };
-                const requestKey = `inquiries:search:${JSON.stringify(requestBody)}`;
-                const response = await getSharedRequest(requestKey, () => apiClient.post('/inquiries/search', requestBody));
+                const requestKey = `customerorders:search:${JSON.stringify(requestBody)}`;
+                const response = await getSharedRequest(requestKey, () => apiClient.post('/customerorders/search', requestBody));
                 if (!isActive) return;
 
                 const data = response?.data ?? {};
@@ -88,7 +88,7 @@ const InquirySearch = () => {
                     hasNextPage: Boolean(data.hasNextPage),
                 }));
             } catch (error) {
-                console.error('Failed to load inquiry search:', error);
+                console.error('Failed to load customer order search:', error);
                 if (!isActive) return;
                 setRows([]);
                 setPagination((prev) => ({
@@ -129,12 +129,6 @@ const InquirySearch = () => {
         setPagination((prev) => ({ ...prev, pageNumber: nextPage }));
     };
 
-    const handleOpenInquiry = (event, inquiryId) => {
-        event.preventDefault();
-        event.stopPropagation();
-        navigate(`/order/inquiries/${inquiryId}`);
-    };
-
     const getRowClass = (rowId) => {
         if (selectedRowId === rowId) {
             return 'cursor-pointer border-b border-amber-200 bg-amber-100';
@@ -143,17 +137,15 @@ const InquirySearch = () => {
         return 'cursor-pointer border-b border-gray-100 hover:bg-amber-50';
     };
 
+    const handleOpenCustomerOrder = (event, customerOrderId) => {
+        event.preventDefault();
+        event.stopPropagation();
+        navigate(`/order/customerorders/${customerOrderId}`);
+    };
+
     return (
         <div className="flex h-full flex-col pt-1 pb-4 ps-5 pe-10">
-            <div className="flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-2 mt-2">
-                {/* <button
-                    type="button"
-                    onClick={() => navigate('/order/inquiries/new')}
-                    className="w-40 shadow-md/30 text-xs text-white bg-lime-600 hover:bg-lime-700 px-4 py-[5px]"
-                >
-                    Skapa ny forfragan
-                </button> */}
-
+            <div className="mt-2 flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-2">
                 <div className="relative ml-16 w-56">
                     <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
                     <input
@@ -161,7 +153,7 @@ const InquirySearch = () => {
                         value={searchInput}
                         onChange={(event) => setSearchInput(event.target.value)}
                         placeholder="Sok"
-                        className="w-full text-xs border border-gray-300 rounded-sm pl-7 pr-2 py-1 focus:outline-none bg-white"
+                        className="w-full rounded-sm border border-gray-300 bg-white py-1 pl-7 pr-2 text-xs focus:outline-none"
                     />
                 </div>
 
@@ -189,7 +181,7 @@ const InquirySearch = () => {
                 </div>
             </div>
 
-            <div className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
+            <div className="mt-3 min-h-0 flex-1 overflow-auto border-t border-gray-300 py-1">
                 <table className="table-fixed w-full border-collapse text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                     <colgroup>
                         {columns.map((column) => (
@@ -225,7 +217,7 @@ const InquirySearch = () => {
                             ))
                         ) : rows.length === 0 ? (
                             <tr>
-                                <td colSpan={columns.length} className="px-4 py-8 text-center text-gray-400">Inga forfragningar hittades.</td>
+                                <td colSpan={columns.length} className="px-4 py-8 text-center text-gray-400">Inga ordererkännanden hittades.</td>
                             </tr>
                         ) : (
                             rows.map((row) => (
@@ -237,22 +229,20 @@ const InquirySearch = () => {
                                     <td className="truncate px-2 py-1 text-gray-800">
                                         <button
                                             type="button"
-                                            onClick={(event) => handleOpenInquiry(event, row.id)}
+                                            onClick={(event) => handleOpenCustomerOrder(event, row.id)}
                                             className="underline-offset-2 hover:underline"
                                         >
-                                            {row.id}
+                                            {row.customerOrderNr}
                                         </button>
                                     </td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{row.supplierOrderNr}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.product}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.customerName}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{row.supplierName}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.construction}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.material}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.format}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{row.sellerName}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{row.createdByName}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{formatDateShort(row.createdAt)}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{formatDateShort(row.editedAt)}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{formatDateShort(row.created)}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{formatDateShort(row.edited)}</td>
                                 </tr>
                             ))
                         )}
@@ -263,4 +253,4 @@ const InquirySearch = () => {
     );
 };
 
-export default InquirySearch;
+export default CustomerOrderSearch;

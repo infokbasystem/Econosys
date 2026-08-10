@@ -16,6 +16,7 @@ import apiClient from '../../config/apiClient';
 import { formatDateShort, formatDateTime, fromDateInputToSwedishIso, toSwedishDateInputValue } from '../../helpers/dateUtils';
 import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
 import { formatNumber, parseNullableInt, parseNullableNumber } from '../../helpers/numberUtils';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 import OrderSearchModal from '../../components/OrderSearchModal';
 
 const statusOptions = [
@@ -401,12 +402,13 @@ const Deviation = () => {
     const costRows = useMemo(() => deviation?.costs ?? [], [deviation]);
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadDeviation = async () => {
             setLoading(true);
             try {
-                const formOptionsRes = await apiClient.get('/deviations/form-options', { signal: controller.signal });
+                const formOptionsRes = await getSharedRequest('deviations:form-options', () => apiClient.get('/deviations/form-options'));
+                if (!isActive) return;
                 const opts = formOptionsRes.data;
                 setSuppliers(opts.suppliers ?? []);
                 setCustomers(opts.customers ?? []);
@@ -418,11 +420,13 @@ const Deviation = () => {
 
                 if (isNewDeviation) {
                     const emptyDeviation = createNewDeviationModel();
+                    if (!isActive) return;
                     setDeviation(emptyDeviation);
                     setOriginalDeviation(structuredClone(emptyDeviation));
                     setAttachedFiles([]);
                 } else {
-                    const deviationRes = await apiClient.get(`/deviations/${id}`, { signal: controller.signal });
+                    const deviationRes = await getSharedRequest(`deviations:${id}`, () => apiClient.get(`/deviations/${id}`));
+                    if (!isActive) return;
                     const data = deviationRes.data;
                     const attachments = (
                         Array.isArray(data?.attachedFiles)
@@ -438,13 +442,15 @@ const Deviation = () => {
                     setAttachedFiles(attachments.map(f => ({ ...f })));
                 }
                 
-                try { setBadges && setBadges(defaultBadges); } catch (e) { /* ignore if unavailable */ }
+                if (isActive) {
+                    try { setBadges && setBadges(defaultBadges); } catch (e) { /* ignore if unavailable */ }
+                }
             } catch (error) {
-                if (error.code === 'ERR_CANCELED') return;
                 console.error('Failed to load deviation:', error);
+                if (!isActive) return;
                 setDeviation(null);
             } finally {
-                if (!controller.signal.aborted) {
+                if (isActive) {
                     setLoading(false);
                 }
             }
@@ -452,7 +458,9 @@ const Deviation = () => {
 
         loadDeviation();
 
-        return () => controller.abort();
+        return () => {
+            isActive = false;
+        };
     }, [id, isNewDeviation]);
 
 

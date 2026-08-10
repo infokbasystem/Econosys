@@ -9,23 +9,27 @@ const LabeledSwitch = ({
     onChange,
     label,
     labelWidth,
+    labelPosition = 'left',
     marginTop,
     marginLeft,
     disabled = false,
     containerClassName = '',
 }) => {
     const resolvedId = id || name;
+    const isRightLabel = labelPosition === 'right';
 
 
     return (
         <div
-            className={`flex items-center space-x-1 w-auto pb-[1px] ${disabled ? 'opacity-60' : ''} ${containerClassName}`}
+            className={`flex items-center w-auto py-[3.5px] ${disabled ? 'opacity-60' : ''} ${containerClassName}`}
             style={{
                 ...(marginTop !== undefined ? { marginTop: `${marginTop}px` } : {}),
                 ...(marginLeft !== undefined ? { marginLeft: `${marginLeft}px` } : {}),
             }}
         >
-            <label className={`${labelWidth || ''} pr-2 flex-none text-xs text-gray-700`}>{label}</label>
+            {!isRightLabel && (
+                <label className={`${labelWidth || ''} pr-2 flex-none text-xs text-gray-700`}>{label}</label>
+            )}
             <ToggleSwitch
                 rowId={rowId}
                 field={field}
@@ -34,7 +38,11 @@ const LabeledSwitch = ({
                 checked={value}
                 onChange={(rowId, field, checked) => onChange(rowId, field, checked)}
                 disabled={disabled}
+                
             />
+            {isRightLabel && (
+                <label className={`${labelWidth || ''} mt-[1px] pl-0 flex-none text-xs text-gray-700`}>{label}</label>
+            )}
             {/* <input type="checkbox" value={value} onClick={(e) => onClick(e)} className="sr-only peer" />
             <div value={value} onClick={(e) => onClick(e)} className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full 
                                         rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] 

@@ -6,6 +6,7 @@ import ExcelJS from 'exceljs';
 import apiClient from '../../config/apiClient';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import { getSwedishTodayDateString } from '../../helpers/dateUtils';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const SlowMoversReport = () => {
     const [loading, setLoading] = useState(false);
@@ -23,8 +24,7 @@ const SlowMoversReport = () => {
     const activeRequestIdRef = useRef(0);
 
     useEffect(() => {
-        const controller = new AbortController();
-        const signal = controller.signal;
+        let isActive = true;
 
         const loadInventories = async () => {
             setLoadingInventories(true);
@@ -36,7 +36,7 @@ const SlowMoversReport = () => {
                 const fetchedInventories = [];
 
                 while (hasNextPage) {
-                    const response = await apiClient.post('/inventories/search', {
+                    const requestBody = {
                         filter: {
                             conditions: [
                                 {
@@ -54,7 +54,10 @@ const SlowMoversReport = () => {
                             pageNumber,
                             pageSize,
                         },
-                    }, { signal });
+                    };
+                    const requestKey = `inventories:search:slow-movers:${pageNumber}:${pageSize}`;
+                    const response = await getSharedRequest(requestKey, () => apiClient.post('/inventories/search', requestBody));
+                    if (!isActive) return;
 
                     const data = response?.data;
                     const items = data?.items ?? [];
@@ -74,41 +77,44 @@ const SlowMoversReport = () => {
                     new Map(fetchedInventories.map((item) => [item.id, item])).values()
                 ).sort((a, b) => a.name.localeCompare(b.name, 'sv-SE'));
 
+                if (!isActive) return;
                 setInventoryOptions([
                     { id: 0, name: 'Visa alla' },
                     ...uniqueInventories,
                 ]);
             } catch (error) {
-                if (error.code === 'ERR_CANCELED') return;
                 console.error('Failed to load inventories:', error);
             } finally {
+                if (!isActive) return;
                 setLoadingInventories(false);
             }
         };
 
-        loadInventories();
-        return () => controller.abort();
+        void loadInventories();
+        return () => {
+            isActive = false;
+        };
     }, []);
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const run = async () => {
-            await loadSlowMovers(controller.signal, filters.inventory);
+            await loadSlowMovers(isActive, filters.inventory);
 
-            if (!controller.signal.aborted) {
+            if (isActive) {
                 setInitialLoadCompleted(true);
             }
         };
 
-        run();
+        void run();
 
         return () => {
-            controller.abort();
+            isActive = false;
         };
     }, [filters.inventory]);
 
-    const loadSlowMovers = async (signal = null, selectedInventoryId = null) => {
+    const loadSlowMovers = async (isActive = true, selectedInventoryId = null) => {
         const requestId = activeRequestIdRef.current + 1;
         activeRequestIdRef.current = requestId;
         const inventoryId = selectedInventoryId ?? filters.inventory;
@@ -120,22 +126,23 @@ const SlowMoversReport = () => {
 
         try {
             const requestConfig = {
-                ...(signal ? { signal } : {}),
                 params: {
                     ...(inventoryId > 0 ? { inventoryId } : {}),
                 },
             };
-
-            const response = await apiClient.get('/reporting/slowmovers', requestConfig);
+            const requestKey = `reporting:slowmovers:${inventoryId > 0 ? inventoryId : 'all'}`;
+            const response = await getSharedRequest(requestKey, () => apiClient.get('/reporting/slowmovers', requestConfig));
+            if (!isActive) return;
             if (requestId !== activeRequestIdRef.current) return;
 
             const data = response?.data ?? {};
             setRows(data.rows ?? []);
         } catch (error) {
-            if (error.code === 'ERR_CANCELED') return;
+            if (!isActive) return;
             if (requestId !== activeRequestIdRef.current) return;
             console.error('Failed to load slow movers report:', error);
         } finally {
+            if (!isActive) return;
             if (requestId !== activeRequestIdRef.current) return;
             clearTimeout(skeletonTimerRef.current);
             setLoading(false);

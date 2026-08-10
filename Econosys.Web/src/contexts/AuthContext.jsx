@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import apiClient, { setUnauthorizedHandler } from '../config/apiClient';
+import { getSharedRequest } from '../helpers/sharedRequest';
 
 const AuthContext = createContext(null);
 const KEEP_ALIVE_INTERVAL_MS = 60 * 1000;
@@ -101,7 +102,7 @@ export const AuthProvider = ({ children }) => {
   const checkAuth = async () => {
     try {
       console.log('🔍 Checking auth...');
-      const response = await apiClient.get('/auth/me');
+      const response = await getSharedRequest('auth:me:bootstrap', () => apiClient.get('/auth/me'));
       console.log('✅ Auth check successful:', response.data);
       updateAuthState(response.data);
     } catch (error) {

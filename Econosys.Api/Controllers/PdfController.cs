@@ -239,6 +239,62 @@ namespace Econosys.Api.Controllers
             return File(result.DocumentBytes, "application/pdf", fileName, enableRangeProcessing: true);
         }
 
+        [HttpGet("supplierorder/{id:int}")]
+        public async Task<IActionResult> GetSupplierOrderPdfById(int id)
+        {
+            var supplierOrder = await _context.SupplierOrders
+                .AsNoTracking()
+                .Include(x => x.Customer)
+                .Include(x => x.Supplier)
+                .Include(x => x.OrderCosts)
+                .FirstOrDefaultAsync(x => x.Id == id);
+
+            if (supplierOrder is null)
+            {
+                return NotFound("Supplier order not found.");
+            }
+
+            var report = new Telerik.Reporting.Report
+            {
+                Name = "SupplierOrderReport",
+                PageSettings =
+                {
+                    PaperKind = System.Drawing.Printing.PaperKind.A4,
+                    Margins = new MarginsU(Unit.Cm(1.5), Unit.Cm(1.5), Unit.Cm(1.5), Unit.Cm(1.5))
+                },
+                Width = Unit.Cm(18)
+            };
+
+            var detail = new Telerik.Reporting.DetailSection
+            {
+                Height = Unit.Cm(28)
+            };
+
+            detail.Items.Add(new Telerik.Reporting.TextBox
+            {
+                Name = "SupplierOrderSummary",
+                Value = BuildSupplierOrderSummary(supplierOrder),
+                Location = new PointU(Unit.Cm(0), Unit.Cm(0)),
+                Size = new SizeU(Unit.Cm(18), Unit.Cm(27)),
+                CanGrow = true,
+                Style = { Font = { Name = "Arial", Size = Unit.Point(10) } }
+            });
+
+            report.Items.Add(detail);
+
+            var processor = new ReportProcessor();
+            var reportSource = new InstanceReportSource { ReportDocument = report };
+            var result = processor.RenderReport("PDF", reportSource, null);
+
+            if (result.HasErrors)
+            {
+                return Problem(string.Join("\n", result.Errors.Select(e => e.Message)));
+            }
+
+            var fileName = $"supplierorder_{supplierOrder.Id}.pdf";
+            return File(result.DocumentBytes, "application/pdf", fileName, enableRangeProcessing: true);
+        }
+
         private static string BuildInquirySummary(Econosys.Api.Models.Inquiry inquiry)
         {
             var lines = new List<string>
@@ -316,6 +372,81 @@ namespace Econosys.Api.Controllers
                 lines.Add(string.Empty);
                 lines.Add("Offertrader:");
                 lines.AddRange(rows);
+            }
+
+            if (orderCosts.Count > 0)
+            {
+                lines.Add(string.Empty);
+                lines.Add("Orderkostnader:");
+                lines.AddRange(orderCosts);
+            }
+
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        private static string BuildSupplierOrderSummary(Econosys.Api.Models.SupplierOrder supplierOrder)
+        {
+            var goodsMarkingFlags = (supplierOrder.GoodsMarking ?? string.Empty)
+                .Split(new[] { ';', ',', '|' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => x.ToLowerInvariant())
+                .ToHashSet();
+
+            var showProduct = goodsMarkingFlags.Contains("produkt") || !supplierOrder.HideProductNameOnPrint;
+            var showCustomerOrderNr = goodsMarkingFlags.Contains("kundordernr");
+            var showCustomerName = goodsMarkingFlags.Contains("kundnamn") || !supplierOrder.HideCustomerNameOnPrint;
+
+            var orderCosts = supplierOrder.OrderCosts
+                .OrderBy(x => x.Id)
+                .Select(cost =>
+                {
+                    var note = cost.Note ?? string.Empty;
+                    var supplierName = cost.SupplierName ?? string.Empty;
+                    var outPrice = cost.OutPrice?.ToString() ?? string.Empty;
+                    return $"Kostnad {cost.Id}: {supplierName} {outPrice} {note}".Trim();
+                })
+                .ToList();
+
+            var lines = new List<string>
+            {
+                $"Beställning {supplierOrder.Id}",
+                $"Best.nr: {supplierOrder.SupplierOrderNr ?? string.Empty}",
+            };
+
+            if (showCustomerOrderNr)
+            {
+                lines.Add($"Kunds onr: {supplierOrder.CustomerOrderNr ?? string.Empty}");
+            }
+
+            if (showCustomerName)
+            {
+                lines.Add($"Kund: {supplierOrder.Customer?.Name ?? string.Empty}");
+            }
+
+            lines.Add($"Leverantör: {supplierOrder.Supplier?.Name ?? supplierOrder.SupplierName ?? string.Empty}");
+
+            if (showProduct)
+            {
+                lines.Add($"Produkt: {supplierOrder.Product ?? string.Empty}");
+            }
+
+            lines.Add($"Material: {supplierOrder.Material ?? string.Empty}");
+            lines.Add($"Format: {supplierOrder.Format ?? string.Empty}");
+            lines.Add($"Färg: {supplierOrder.Color ?? string.Empty}");
+            lines.Add($"Konstruktion: {supplierOrder.Construction ?? string.Empty}");
+            lines.Add($"Leveranstid: {supplierOrder.TimeOfDelivery ?? string.Empty}");
+            lines.Add($"Lev.villkor: {supplierOrder.TermsOfDelivery ?? string.Empty}");
+            lines.Add($"Bet.villkor: {supplierOrder.TermsOfPayment ?? string.Empty}");
+            lines.Add($"Meddelande: {supplierOrder.Message ?? string.Empty}");
+            lines.Add($"FSC: {(supplierOrder.IsFSC ? "Ja" : "Nej")}");
+            lines.Add($"Datum: {(supplierOrder.Date.HasValue ? supplierOrder.Date.Value.ToString("yyyy-MM-dd") : string.Empty)}");
+
+            if (!supplierOrder.HideCustomerInfoOnPrint)
+            {
+                lines.Add($"Leveransadress: {supplierOrder.DeliveryAddressName ?? string.Empty}");
+                lines.Add($"Adress: {supplierOrder.DeliveryAddress ?? string.Empty}");
+                lines.Add($"Postnr: {supplierOrder.DeliveryPostalNr ?? string.Empty}");
+                lines.Add($"Postadress: {supplierOrder.DeliveryPostalAddress ?? string.Empty}");
+                lines.Add($"Land: {supplierOrder.DeliveryCountry ?? string.Empty}");
             }
 
             if (orderCosts.Count > 0)

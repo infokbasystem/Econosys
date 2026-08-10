@@ -37,9 +37,9 @@ const getNodeLink = (type, id) => {
         case 'quotation':
             return `/order/quotations/${id}`;
         case 'supplierOrder':
-            return `/order/supplierorder/${id}`;
+            return `/order/supplierorders/${id}`;
         case 'customerOrder':
-            return `/order/customerorder/${id}`;
+            return `/order/customerorders/${id}`;
         default:
             return null;
     }

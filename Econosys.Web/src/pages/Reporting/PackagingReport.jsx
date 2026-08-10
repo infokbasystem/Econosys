@@ -7,6 +7,7 @@ import SwitchSelector from 'react-switch-selector';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import DateRangePicker from '../../components/Daterangepicker';
 import apiClient from '../../config/apiClient';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const columns = [
     { key: 'customerName', label: 'Kund', align: 'left' },
@@ -79,21 +80,19 @@ const PackagingReport = () => {
     });
 
     useEffect(() => {
-        const controller = new AbortController();
-        let disposed = false;
+        let isActive = true;
 
         const initialize = async () => {
-            await loadCustomers(controller.signal);
-            if (!disposed) {
+            await loadCustomers(isActive);
+            if (isActive) {
                 setInitialLoadCompleted(true);
             }
         };
 
-        initialize();
+        void initialize();
 
         return () => {
-            disposed = true;
-            controller.abort();
+            isActive = false;
             clearTimeout(skeletonTimerRef.current);
         };
     }, []);
@@ -103,25 +102,23 @@ const PackagingReport = () => {
             return;
         }
 
-        const controller = new AbortController();
-        loadReport(controller.signal);
+        let isActive = true;
+        void loadReport(isActive);
 
         return () => {
-            controller.abort();
+            isActive = false;
         };
     }, [filters, initialLoadCompleted]);
 
-    const loadCustomers = async (signal = null) => {
+    const loadCustomers = async (isActive = true) => {
         try {
-            const response = await apiClient.post(
-                '/customers/search',
-                {
-                    active: true,
-                    sortBy: 'Name',
-                    sortDescending: false,
-                },
-                signal ? { signal } : {}
-            );
+            const requestBody = {
+                active: true,
+                sortBy: 'Name',
+                sortDescending: false,
+            };
+            const requestKey = `customers:search:packaging-report:${JSON.stringify(requestBody)}`;
+            const response = await getSharedRequest(requestKey, () => apiClient.post('/customers/search', requestBody));
 
             const data = response?.data;
             const fetched = (data?.items ?? []).map((customer) => ({
@@ -129,15 +126,16 @@ const PackagingReport = () => {
                 name: customer.name ?? String(customer.id),
             }));
 
+            if (!isActive) return;
             setCustomerOptions(fetched.sort((a, b) => a.name.localeCompare(b.name, 'sv-SE')));
         } catch (error) {
-            if (error.code === 'ERR_CANCELED') return;
             console.error('Failed to load customers:', error);
+            if (!isActive) return;
             setCustomerOptions([]);
         }
     };
 
-    const loadReport = async (signal = null, overrideFilters = null) => {
+    const loadReport = async (isActive = true, overrideFilters = null) => {
         const activeFilters = overrideFilters ?? filters;
 
         if (activeFilters.mode !== 'customer') {
@@ -161,22 +159,22 @@ const PackagingReport = () => {
         skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 200);
 
         try {
-            const response = await apiClient.post(
-                '/reporting/packaging-report',
-                {
-                    startDate: toDateOnlyString(activeFilters.startDate),
-                    endDate: toDateOnlyString(activeFilters.endDate),
-                    customerId: activeFilters.customerId,
-                },
-                signal ? { signal } : {}
-            );
+            const requestBody = {
+                startDate: toDateOnlyString(activeFilters.startDate),
+                endDate: toDateOnlyString(activeFilters.endDate),
+                customerId: activeFilters.customerId,
+            };
+            const requestKey = `reporting:packaging-report:${JSON.stringify(requestBody)}`;
+            const response = await getSharedRequest(requestKey, () => apiClient.post('/reporting/packaging-report', requestBody));
 
+            if (!isActive) return;
             setRows(response?.data?.rows ?? []);
         } catch (error) {
-            if (error.code === 'ERR_CANCELED') return;
             console.error('Failed to load packaging report:', error);
+            if (!isActive) return;
             setRows([]);
         } finally {
+            if (!isActive) return;
             clearTimeout(skeletonTimerRef.current);
             setLoading(false);
             setShowSkeleton(false);

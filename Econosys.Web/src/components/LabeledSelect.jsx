@@ -12,7 +12,7 @@ const LabeledSelect = ({
   const selectedItem = items?.find(it => String(it.id) === String(value));
 
   return (
-    <div className={`flex items-center space-x-1 w-full pb-[1px] mt-${margintop}`}>
+    <div className={`flex items-center w-full pb-[1px] mt-${margintop}`}>
       <label className={`${labelWidth} flex-none text-xs text-gray-700`}>{label}</label>
       <select
         name={name}

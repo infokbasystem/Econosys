@@ -1,7 +1,7 @@
 import Select, { components } from 'react-select';
 
 
-const LabeledReactSelect = ({ label, labelWidth, margintop, name, value, items, onChange, disableInactive, allowRawValueLabel = false, ...props }) => {
+const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, value, items, onChange, disableInactive, allowRawValueLabel = false, ...props }) => {
     const normalizedItems = Array.isArray(items) ? items : [];
 
     const options = normalizedItems
@@ -43,6 +43,8 @@ const LabeledReactSelect = ({ label, labelWidth, margintop, name, value, items, 
             height: isMultiSelect ? 'auto' : 25,
             borderColor: state.isFocused ? '#ccc' : '#ccc',
             boxShadow: state.isFocused ? 'none' : 'none',
+            backgroundColor: state.isDisabled ? 'transparent' : '#fff',
+            cursor: state.isDisabled ? 'not-allowed' : 'default',
         }),
         valueContainer: (provided) => ({
             ...provided,
@@ -58,6 +60,10 @@ const LabeledReactSelect = ({ label, labelWidth, margintop, name, value, items, 
             ...provided,
             height: 25,
             
+        }),
+        singleValue: (provided, state) => ({
+            ...provided,
+            color: state.isDisabled ? '#374151' : provided.color,
         }),
         multiValue: (provided) => ({
             ...provided,
@@ -85,13 +91,13 @@ const LabeledReactSelect = ({ label, labelWidth, margintop, name, value, items, 
 
 
     return (
-        <div className={`flex items-center space-x-1 w-full pb-[1px] mt-${margintop}`}>
+        <div className={`flex items-center w-full pb-[1px] mt-${margintop}`}>
             <label className={`${labelWidth || ''} flex-none text-xs text-gray-700`}>{label}</label>
             <Select
                 options={options}
                 value={selectedValue}
                 onChange={handleChange}
-                className="text-xs w-full"
+                className={`text-xs ${inputWidth || 'w-full'}`}
                 placeholder="Välj"
                 isClearable
                 isSearchable

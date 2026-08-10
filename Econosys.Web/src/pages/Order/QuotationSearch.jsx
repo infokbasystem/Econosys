@@ -6,47 +6,22 @@ import 'react-loading-skeleton/dist/skeleton.css';
 
 import apiClient from '../../config/apiClient';
 import { formatDateShort } from '../../helpers/dateUtils';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const PAGE_SIZE = 25;
-const SINGLE_FLIGHT_TTL_MS = 2000;
-
-// Avoid duplicate initial requests caused by React StrictMode double-mount in development.
-const __singleFlight = new Map();
-const fetchOnce = (key, fn) => {
-    if (__singleFlight.has(key)) return __singleFlight.get(key);
-
-    const promise = (async () => {
-        try {
-            const result = await fn();
-            __singleFlight.set(key, Promise.resolve(result));
-            setTimeout(() => {
-                __singleFlight.delete(key);
-            }, SINGLE_FLIGHT_TTL_MS);
-            return result;
-        } catch (err) {
-            __singleFlight.delete(key);
-            throw err;
-        }
-    })();
-
-    __singleFlight.set(key, promise);
-    return promise;
-};
-
-const INITIAL_QUOTATION_SEARCH_KEY = 'quotation-search:initial';
 
 const columns = [
-    { key: 'id', label: 'NR', align: 'left', width: '5%' },
-    { key: 'product', label: 'PRODUKT', align: 'left', width: '14%' },
-    { key: 'customerName', label: 'KUND', align: 'left', width: '13%' },
-    { key: 'supplierName', label: 'LEVERANTOR', align: 'left', width: '11%' },
-    { key: 'construction', label: 'KONSTRUKTION', align: 'left', width: '11%' },
-    { key: 'material', label: 'MATERIAL', align: 'left', width: '13%' },
-    { key: 'format', label: 'FORMAT', align: 'left', width: '11%' },
-    { key: 'sellerName', label: 'SALJARE', align: 'left', width: '8%' },
-    { key: 'createdByName', label: 'SKAPAD AV', align: 'left', width: '8%' },
-    { key: 'createdAt', label: 'SKAPAD', align: 'left', width: '6%' },
-    { key: 'editedAt', label: 'ANDRAD', align: 'left', width: '6%' },
+    { key: 'id', label: 'Nr', align: 'left', width: '5%' },
+    { key: 'product', label: 'Produkt', align: 'left', width: '14%' },
+    { key: 'customerName', label: 'Kund', align: 'left', width: '13%' },
+    { key: 'supplierName', label: 'Levernstör', align: 'left', width: '11%' },
+    { key: 'construction', label: 'Konstruktion', align: 'left', width: '11%' },
+    { key: 'material', label: 'Material', align: 'left', width: '13%' },
+    { key: 'format', label: 'Format', align: 'left', width: '11%' },
+    { key: 'sellerName', label: 'Säljare', align: 'left', width: '8%' },
+    { key: 'createdByName', label: 'Skapad av', align: 'left', width: '8%' },
+    { key: 'createdAt', label: 'Skapad', align: 'left', width: '6%' },
+    { key: 'editedAt', label: 'Ändrad', align: 'left', width: '6%' },
 ];
 
 const initialPagination = {
@@ -80,7 +55,7 @@ const QuotationSearch = () => {
     }, [searchInput]);
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadRows = async () => {
             setLoading(true);
@@ -97,18 +72,9 @@ const QuotationSearch = () => {
                         direction: sortConfig.direction,
                     }],
                 };
-
-                const isInitialRequest =
-                    !searchLoaded &&
-                    !searchTerm.trim() &&
-                    pagination.pageNumber === 1 &&
-                    pagination.pageSize === PAGE_SIZE &&
-                    sortConfig.key === 'createdAt' &&
-                    sortConfig.direction === 'desc';
-
-                const response = isInitialRequest
-                    ? await fetchOnce(INITIAL_QUOTATION_SEARCH_KEY, () => apiClient.post('/quotations/search', requestBody))
-                    : await apiClient.post('/quotations/search', requestBody, { signal: controller.signal });
+                const requestKey = `quotations:search:${JSON.stringify(requestBody)}`;
+                const response = await getSharedRequest(requestKey, () => apiClient.post('/quotations/search', requestBody));
+                if (!isActive) return;
 
                 const data = response?.data ?? {};
                 setRows(data.items ?? []);
@@ -122,8 +88,8 @@ const QuotationSearch = () => {
                     hasNextPage: Boolean(data.hasNextPage),
                 }));
             } catch (error) {
-                if (error.code === 'ERR_CANCELED') return;
                 console.error('Failed to load quotation search:', error);
+                if (!isActive) return;
                 setRows([]);
                 setPagination((prev) => ({
                     ...prev,
@@ -133,7 +99,7 @@ const QuotationSearch = () => {
                     hasNextPage: false,
                 }));
             } finally {
-                if (!controller.signal.aborted) {
+                if (isActive) {
                     setSearchLoaded(true);
                     setLoading(false);
                 }
@@ -142,7 +108,9 @@ const QuotationSearch = () => {
 
         loadRows();
 
-        return () => controller.abort();
+        return () => {
+            isActive = false;
+        };
     }, [searchTerm, pagination.pageNumber, pagination.pageSize, sortConfig]);
 
     const showSkeleton = loading && !searchLoaded;

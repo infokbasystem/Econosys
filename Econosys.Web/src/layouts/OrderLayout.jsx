@@ -27,8 +27,32 @@ const OrderLayout = () => {
                 : 'text-gray-600 hover:text-gray-950';
         }
 
+        if (type === 'customers') {
+            return location.pathname.startsWith('/order/customers')
+                ? 'text-red-600'
+                : 'text-gray-600 hover:text-gray-950';
+        }
+
+        if (type === 'suppliers') {
+            return location.pathname.startsWith('/order/suppliers')
+                ? 'text-red-600'
+                : 'text-gray-600 hover:text-gray-950';
+        }
+
         if (type === 'quotations') {
             return location.pathname.startsWith('/order/quotations')
+                ? 'text-red-600'
+                : 'text-gray-600 hover:text-gray-950';
+        }
+
+        if (type === 'supplierorders') {
+            return location.pathname.startsWith('/order/supplierorders')
+                ? 'text-red-600'
+                : 'text-gray-600 hover:text-gray-950';
+        }
+
+        if (type === 'customerorders') {
+            return location.pathname.startsWith('/order/customerorders')
                 ? 'text-red-600'
                 : 'text-gray-600 hover:text-gray-950';
         }
@@ -55,11 +79,11 @@ const OrderLayout = () => {
             <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Order</p>
             <li className={'text-xs font-semibold px-6 py-1.5 ' + getNavLinkClass('inquiries')}><NavLink to="/order/inquiries">Förfrågningar</NavLink></li>
             <li className={'text-xs font-semibold px-6 py-1.5 ' + getNavLinkClass('quotations')}><NavLink to="/order/quotations">Affärsförslag</NavLink></li>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Beställning</NavLink></li>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Ordererkännande</NavLink></li>
+            <li className={'text-xs font-semibold px-6 py-1.5 ' + getNavLinkClass('supplierorders')}><NavLink to="/order/supplierorders">Beställningar</NavLink></li>
+            <li className={'text-xs font-semibold px-6 py-1.5 ' + getNavLinkClass('customerorders')}><NavLink to="/order/customerorders">Ordererkännanden</NavLink></li>
             <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Register</p>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Kunder</NavLink></li>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Levernatörer</NavLink></li>
+            <li className={'text-xs font-semibold px-6 py-1.5 ' + getNavLinkClass('customers')}><NavLink to="/order/customers">Kunder</NavLink></li>
+            <li className={'text-xs font-semibold px-6 py-1.5 ' + getNavLinkClass('suppliers')}><NavLink to="/order/suppliers">Levernatörer</NavLink></li>
             <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Material</NavLink></li>
             <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Konstruktioner</NavLink></li>
         </ul>
@@ -114,7 +138,9 @@ const OrderLayout = () => {
                     )}
 
                     <div className="flex-grow min-w-0 pt-4 px-0 relative overflow-hidden">
-                        <Outlet />
+                        <div className="outlet-leading-none h-full">
+                            <Outlet />
+                        </div>
                         <PdfPanel />
                     </div>
                 </div>

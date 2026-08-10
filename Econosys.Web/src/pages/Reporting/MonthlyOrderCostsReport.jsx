@@ -5,6 +5,7 @@ import ExcelJS from 'exceljs';
 
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import apiClient from '../../config/apiClient';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const monthOptions = [
     { id: 1, name: 'Januari' },
@@ -57,12 +58,11 @@ const MonthlyOrderCostsReport = () => {
     const [sortConfig, setSortConfig] = useState({ key: 'orderCreatedAt', direction: 'desc' });
 
     useEffect(() => {
-        const controller = new AbortController();
-        let disposed = false;
+        let isActive = true;
 
         const initialize = async () => {
-            const selectedYear = await loadSelectableYears(controller.signal);
-            await loadCosts(controller.signal);
+            const selectedYear = await loadSelectableYears(isActive);
+            await loadCosts(isActive);
             const currentMonth = new Date().getMonth() + 1;
             const initialFilters = {
                 ...filters,
@@ -70,30 +70,34 @@ const MonthlyOrderCostsReport = () => {
                 month: currentMonth,
             };
 
+            if (!isActive) return;
             setFilters(initialFilters);
-            await loadReport(controller.signal, initialFilters);
+            await loadReport(isActive, initialFilters);
 
-            if (!disposed) {
+            if (isActive) {
                 setInitialLoadCompleted(true);
             }
         };
 
-        initialize();
+        void initialize();
         return () => {
-            disposed = true;
-            controller.abort();
+            isActive = false;
         };
     }, []);
 
-    const loadSelectableYears = async (signal = null) => {
+    const loadSelectableYears = async (isActive = true) => {
         try {
-            const response = await apiClient.get('/reporting/selectable-years', {
+            const requestConfig = {
                 params: {
                     itemType: 'supplier-order',
                     dateField: 'created',
                 },
-                ...(signal ? { signal } : {}),
-            });
+            };
+            const response = await getSharedRequest(
+                'reporting:selectable-years:supplier-order:created',
+                () => apiClient.get('/reporting/selectable-years', requestConfig),
+            );
+            if (!isActive) return null;
 
             const years = response?.data?.years ?? [];
             const options = years.map((year) => ({ id: year, name: String(year) }));
@@ -111,8 +115,8 @@ const MonthlyOrderCostsReport = () => {
 
             return selectedYear;
         } catch (error) {
-            if (error.code === 'ERR_CANCELED') return null;
             console.error('Failed to load selectable years:', error);
+            if (!isActive) return null;
             setYearOptions([]);
             return null;
         }
@@ -127,24 +131,25 @@ const MonthlyOrderCostsReport = () => {
                     : (Number(value) || prev[field]),
             };
 
-            loadReport(null, nextFilters);
+            void loadReport(true, nextFilters);
             return nextFilters;
         });
     };
 
-    const loadCosts = async (signal = null) => {
+    const loadCosts = async (isActive = true) => {
         try {
-            const response = await apiClient.post('/costs/search', {}, signal ? { signal } : {});
+            const response = await getSharedRequest('costs:search:monthly-order-costs', () => apiClient.post('/costs/search', {}));
+            if (!isActive) return;
             const costs = Array.isArray(response?.data) ? response.data : [];
             setCostOptions(costs.filter((cost) => cost.isActive).map((cost) => ({ id: cost.id, name: cost.name })));
         } catch (error) {
-            if (error.code === 'ERR_CANCELED') return;
             console.error('Failed to load costs:', error);
+            if (!isActive) return;
             setCostOptions([]);
         }
     };
 
-    const loadReport = async (signal = null, overrideFilters = null) => {
+    const loadReport = async (isActive = true, overrideFilters = null) => {
         const requestFilters = overrideFilters ?? filters;
 
         setLoading(true);
@@ -152,19 +157,23 @@ const MonthlyOrderCostsReport = () => {
         skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 200);
 
         try {
-            const response = await apiClient.post('/reporting/order-costs/monthly', {
+            const requestBody = {
                 year: requestFilters.year,
                 month: requestFilters.month,
                 costIds: requestFilters.costIds ?? [],
-            }, signal ? { signal } : {});
+            };
+            const requestKey = `reporting:order-costs:monthly:${JSON.stringify(requestBody)}`;
+            const response = await getSharedRequest(requestKey, () => apiClient.post('/reporting/order-costs/monthly', requestBody));
+            if (!isActive) return;
 
             const data = response?.data ?? {};
             setRows(data.rows ?? []);
         } catch (error) {
-            if (error.code === 'ERR_CANCELED') return;
             console.error('Failed to load monthly order costs report:', error);
+            if (!isActive) return;
             setRows([]);
         } finally {
+            if (!isActive) return;
             clearTimeout(skeletonTimerRef.current);
             setLoading(false);
             setShowSkeleton(false);

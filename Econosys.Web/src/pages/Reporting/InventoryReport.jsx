@@ -7,6 +7,7 @@ import ExcelJS from 'exceljs';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import apiClient from '../../config/apiClient';
 import { getSwedishTodayDateString } from '../../helpers/dateUtils';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const InventoryReport = () => {
     const [loading, setLoading] = useState(false);
@@ -36,8 +37,7 @@ const InventoryReport = () => {
     ]);
 
     useEffect(() => {
-        const controller = new AbortController();
-        const signal = controller.signal;
+        let isActive = true;
 
         const loadWarehouses = async () => {
             setLoadingWarehouses(true);
@@ -49,7 +49,7 @@ const InventoryReport = () => {
                 const fetchedWarehouses = [];
 
                 while (hasNextPage) {
-                    const response = await apiClient.post('/inventories/search', {
+                    const requestBody = {
                         filter: {
                             conditions: [
                                 {
@@ -67,7 +67,10 @@ const InventoryReport = () => {
                             pageNumber,
                             pageSize,
                         },
-                    }, { signal });
+                    };
+                    const requestKey = `inventories:search:inventory-report:${pageNumber}:${pageSize}`;
+                    const response = await getSharedRequest(requestKey, () => apiClient.post('/inventories/search', requestBody));
+                    if (!isActive) return;
 
                     const data = response?.data;
                     const items = data?.items ?? [];
@@ -87,35 +90,40 @@ const InventoryReport = () => {
                     new Map(fetchedWarehouses.map((item) => [item.id, item])).values()
                 ).sort((a, b) => a.name.localeCompare(b.name, 'sv-SE'));
 
+                if (!isActive) return;
                 setWarehouseOptions([
                     { id: 0, name: 'Visa alla' },
                     ...uniqueWarehouses,
                 ]);
             } catch (error) {
-                if (error.code === 'ERR_CANCELED') return;
                 console.error('Failed to load warehouses:', error);
             } finally {
+                if (!isActive) return;
                 setLoadingWarehouses(false);
             }
         };
 
-        loadWarehouses();
-        return () => controller.abort();
+        void loadWarehouses();
+        return () => {
+            isActive = false;
+        };
     }, []);
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const run = async () => {
-            await handleUpdate(controller.signal);
+            await handleUpdate(isActive);
 
-            if (!controller.signal.aborted) {
+            if (isActive) {
                 setInitialLoadCompleted(true);
             }
         };
 
-        run();
-        return () => controller.abort();
+        void run();
+        return () => {
+            isActive = false;
+        };
     }, [filters.warehouse, calcDate]);
 
     const handleFilterChange = (field, value) => {
@@ -125,19 +133,13 @@ const InventoryReport = () => {
         }));
     };
 
-    const handleUpdate = async (signalOrEvent = null) => {
+    const handleUpdate = async (isActiveOrEvent = true) => {
         setLoading(true);
         setInventoryData([]);
         setReportTotalValue(0);
         skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 200);
 
-        const isAbortSignal =
-            signalOrEvent &&
-            typeof signalOrEvent === 'object' &&
-            typeof signalOrEvent.addEventListener === 'function' &&
-            typeof signalOrEvent.aborted === 'boolean';
-
-        const signal = isAbortSignal ? signalOrEvent : null;
+        const isActive = typeof isActiveOrEvent === 'boolean' ? isActiveOrEvent : true;
 
         try {
             const payload = {};
@@ -150,17 +152,20 @@ const InventoryReport = () => {
                 payload.calculationDate = calcDate;
             }
 
-            const response = await apiClient.post('/reporting/inventory', payload, signal ? { signal } : {});
+            const requestKey = `reporting:inventory:${JSON.stringify(payload)}`;
+            const response = await getSharedRequest(requestKey, () => apiClient.post('/reporting/inventory', payload));
+            if (!isActive) return;
             const data = response?.data ?? {};
 
             setInventoryData(data.rows ?? []);
             setReportTotalValue(Number(data.currentInventoryValue) || 0);
         } catch (error) {
-            if (error.code === 'ERR_CANCELED') return;
             console.error('Failed to load inventory report:', error);
+            if (!isActive) return;
             setInventoryData([]);
             setReportTotalValue(0);
         } finally {
+            if (!isActive) return;
             clearTimeout(skeletonTimerRef.current);
             setLoading(false);
             setShowSkeleton(false);

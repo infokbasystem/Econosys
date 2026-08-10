@@ -14,6 +14,7 @@ import apiClient from '../../config/apiClient';
 import { formatDateTime } from '../../helpers/dateUtils';
 import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
 import { parseNullableInt, parseNullableNumber, roundTo2 } from '../../helpers/numberUtils';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 import {
     createNewInvoiceModel,
     toDateInputValue,
@@ -463,26 +464,27 @@ const Invoice = () => {
     };
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadOptions = async () => {
             try {
                 const [currencyRes, unitRes] = await Promise.all([
-                    apiClient.post('/currencies/search', {
+                    getSharedRequest('currencies:search:invoice-form', () => apiClient.post('/currencies/search', {
                         pagination: { pageNumber: 1, pageSize: 200 },
                         orderBy: [{ field: 'name', direction: 'asc' }],
-                    }, { signal: controller.signal }),
-                    apiClient.post('/units/search', {
+                    })),
+                    getSharedRequest('units:search:invoice-form', () => apiClient.post('/units/search', {
                         pagination: { pageNumber: 1, pageSize: 200 },
                         orderBy: [{ field: 'name', direction: 'asc' }],
-                    }, { signal: controller.signal }),
+                    })),
                 ]);
 
+                if (!isActive) return;
                 setCurrencies(Array.isArray(currencyRes?.data?.items) ? currencyRes.data.items : []);
                 setUnits(Array.isArray(unitRes?.data?.items) ? unitRes.data.items : []);
             } catch (error) {
-                if (error.code === 'ERR_CANCELED') return;
                 console.error('Failed loading invoice options:', error);
+                if (!isActive) return;
                 setCurrencies([]);
                 setUnits([]);
             }
@@ -514,7 +516,8 @@ const Invoice = () => {
                         setOriginalInvoice(structuredClone(emptyInvoice));
                     }
                 } else {
-                    const response = await apiClient.get(`/invoices/${id}`, { signal: controller.signal });
+                    const response = await getSharedRequest(`invoices:${id}`, () => apiClient.get(`/invoices/${id}`));
+                    if (!isActive) return;
                     const data = response.data;
 
                     const normalized = normalizeInvoiceForEditor(data);
@@ -523,20 +526,24 @@ const Invoice = () => {
                     setOriginalInvoice(structuredClone(normalized));
                 }
 
-                clearStale();
+                if (isActive) {
+                    clearStale();
+                }
             } catch (error) {
-                if (error.code === 'ERR_CANCELED') return;
                 console.error('Failed to load invoice:', error);
+                if (!isActive) return;
                 setInvoice(null);
             } finally {
-                if (!controller.signal.aborted) {
+                if (isActive) {
                     setLoading(false);
                 }
             }
         };
 
-        loadInvoice();
-        return () => controller.abort();
+        void loadInvoice();
+        return () => {
+            isActive = false;
+        };
     }, [draftKey, id, isNewInvoice]);
 
     const totals = useMemo(() => {

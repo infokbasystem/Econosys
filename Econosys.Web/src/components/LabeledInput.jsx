@@ -94,7 +94,7 @@ const LabeledInput = ({
 
 
     return (
-        <div className={`flex items-center space-x-1 w-full pb-[1px] mt-${margintop}`} ref={wrapperRef}>
+        <div className={`flex items-center w-full pb-[1px] mt-${margintop}`} ref={wrapperRef}>
             <div className={`relative flex items-center flex-none justify-between ${labelWidth}`}>
                 <label className="text-xs text-gray-700">{label}</label>
                 {popupItems && Array.isArray(popupItems) && (

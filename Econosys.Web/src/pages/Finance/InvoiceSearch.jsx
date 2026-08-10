@@ -8,6 +8,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 import DateRangePicker from '../../components/Daterangepicker';
 import LabeledInput from '../../components/LabeledInput';
 import apiClient from '../../config/apiClient';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const PAGE_SIZE = 100;
 const INVOICE_SEARCH_CACHE_KEY = 'invoice-search-page-state';
@@ -147,7 +148,7 @@ const InvoiceSearch = () => {
         };
     };
 
-    const loadRows = async (pageNumber = 1, activeFilters = filters, signal = null, keepExistingRows = false) => {
+    const loadRows = async (pageNumber = 1, activeFilters = filters, isActive = true, keepExistingRows = false) => {
         setLoading(true);
 
         if (!keepExistingRows) {
@@ -157,12 +158,9 @@ const InvoiceSearch = () => {
 
         try {
             const requestBody = buildRequestBody(pageNumber, pagination.pageSize, activeFilters, sortConfig);
-
-            const response = await apiClient.post(
-                '/invoices/search',
-                requestBody,
-                signal ? { signal } : {}
-            );
+            const requestKey = `invoices:search:${JSON.stringify(requestBody)}`;
+            const response = await getSharedRequest(requestKey, () => apiClient.post('/invoices/search', requestBody));
+            if (!isActive) return;
 
             const data = response?.data;
             setRows(data?.items ?? []);
@@ -184,8 +182,8 @@ const InvoiceSearch = () => {
                 sumInclVatSek: Number(data?.totals?.values?.sumInclVatSek) || 0,
             });
         } catch (error) {
-            if (error.code === 'ERR_CANCELED') return;
             console.error('Failed to load invoices:', error);
+            if (!isActive) return;
             if (!hasSearchSnapshot) {
                 setRows([]);
                 setPagination((prev) => ({
@@ -205,6 +203,7 @@ const InvoiceSearch = () => {
                 });
             }
         } finally {
+            if (!isActive) return;
             clearTimeout(skeletonTimerRef.current);
             setHasSearchSnapshot(true);
             setLoading(false);
@@ -213,10 +212,10 @@ const InvoiceSearch = () => {
     };
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const timer = setTimeout(async () => {
-            await loadRows(pagination.pageNumber, filters, controller.signal, hasSearchSnapshot);
+            await loadRows(pagination.pageNumber, filters, isActive, hasSearchSnapshot);
             if (!didMountRef.current) {
                 didMountRef.current = true;
                 setInitialLoadCompleted(true);
@@ -224,7 +223,7 @@ const InvoiceSearch = () => {
         }, didMountRef.current ? 250 : 0);
 
         return () => {
-            controller.abort();
+            isActive = false;
             clearTimeout(timer);
             clearTimeout(skeletonTimerRef.current);
         };

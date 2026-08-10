@@ -59,7 +59,9 @@ const ReportingLayout = () => {
                     </div>
                 )}
                 <div className="flex-grow min-w-0 pt-4 px-5 relative overflow-hidden">
-                    <Outlet />
+                    <div className="outlet-leading-none h-full">
+                        <Outlet />
+                    </div>
                 </div>
             </div>
         </div>

@@ -140,7 +140,8 @@ export default function PdfPanel({ onOpenFileModal = null }) {
             <div
                 className={`absolute right-0 w-[560px] bg-yellow-50 shadow-xl/30 z-50 pt-3 pl-3
         transform transition-transform duration-300
-        ${visible ? 'translate-x-0 opacity-100 pointer-events-auto' : 'translate-x-full opacity-0 pointer-events-none'}`}
+            ${visible ? 'translate-x-0 opacity-100 pointer-events-auto' : 'translate-x-full opacity-0 pointer-events-none hidden'}`}
+                aria-hidden={!visible}
                 style={{ top: 0, bottom: 0 }}
             >
                 <div className="flex items-center p-3">

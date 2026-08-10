@@ -39,6 +39,86 @@ namespace Econosys.Api.Controllers
             return Ok(MapToDetailsDto(customer));
         }
 
+        [HttpGet("form-options")]
+        public async Task<ActionResult<CustomerFormOptionsDto>> GetFormOptions()
+        {
+            var users = await _dbContext.LegacyUsers
+                .AsNoTracking()
+                .Where(x => x.Active && x.Name != null && x.Name != "")
+                .OrderBy(x => x.Name)
+                .Select(x => new FilterOptionDto<int>
+                {
+                    Id = x.Id,
+                    Name = x.Name!,
+                    IsActive = x.Active,
+                })
+                .ToListAsync();
+
+            var currencies = await _dbContext.Currencies
+                .AsNoTracking()
+                .Where(x => x.Active)
+                .OrderBy(x => x.Name)
+                .Select(x => new CurrencyDto
+                {
+                    Id = x.Id,
+                    Name = x.Name,
+                    TranslationCode = x.TranslationCode,
+                    IsDefault = x.IsDefault,
+                    RateToSek = x.RateToSek,
+                    Active = x.Active,
+                    RateStockValue = x.RateStockValue,
+                    OldDbId = x.OldDbId,
+                    SpcsKey = x.SpcsKey,
+                    WarningTolerancePercent = x.WarningTolerancePercent,
+                })
+                .ToListAsync();
+
+            var termsOfDelivery = await _dbContext.TermsOfDelivery
+                .AsNoTracking()
+                .Where(x => x.Active && x.Name != null && x.Name != "")
+                .OrderBy(x => x.Name)
+                .Select(x => new FilterOptionDto<string>
+                {
+                    Id = x.Name!,
+                    Name = x.Name!,
+                    IsActive = x.Active,
+                })
+                .ToListAsync();
+
+            var termsOfPayment = await _dbContext.TermsOfPayment
+                .AsNoTracking()
+                .Where(x => x.Active && x.Name != null && x.Name != "")
+                .OrderBy(x => x.Name)
+                .Select(x => new FilterOptionDto<string>
+                {
+                    Id = x.Name!,
+                    Name = x.Name!,
+                    IsActive = x.Active,
+                })
+                .ToListAsync();
+
+            var languages = await _dbContext.Languages
+                .AsNoTracking()
+                .Where(x => x.Name != null && x.Name != "")
+                .OrderBy(x => x.Name)
+                .Select(x => new FilterOptionDto<int>
+                {
+                    Id = x.Id,
+                    Name = x.Name!,
+                    IsActive = true,
+                })
+                .ToListAsync();
+
+            return Ok(new CustomerFormOptionsDto
+            {
+                Users = users,
+                Currencies = currencies,
+                TermsOfDelivery = termsOfDelivery,
+                TermsOfPayment = termsOfPayment,
+                Languages = languages,
+            });
+        }
+
         [HttpPost]
         public async Task<ActionResult<CustomerDto>> Create([FromBody] CreateCustomerRequest request)
         {
@@ -104,6 +184,9 @@ namespace Econosys.Api.Controllers
                 InvoiceRowsInProductNameOrder = request.InvoiceRowsInProductNameOrder,
                 OrderNrPrefix = request.OrderNrPrefix
             };
+
+            customer.DeliveryAddresses = BuildDeliveryAddresses(request.DeliveryAddresses);
+            customer.CustomerContactPersons = BuildContactPersons(request.ContactPersons);
 
             _dbContext.Customers.Add(customer);
             await _dbContext.SaveChangesAsync();
@@ -206,7 +289,10 @@ namespace Econosys.Api.Controllers
                 return BadRequest(ModelState);
             }
 
-            var customer = await _dbContext.Customers.FirstOrDefaultAsync(x => x.Id == id);
+            var customer = await _dbContext.Customers
+                .Include(x => x.DeliveryAddresses)
+                .Include(x => x.CustomerContactPersons)
+                .FirstOrDefaultAsync(x => x.Id == id);
 
             if (customer is null)
             {
@@ -268,9 +354,186 @@ namespace Econosys.Api.Controllers
             customer.InvoiceRowsInProductNameOrder = request.InvoiceRowsInProductNameOrder ?? false;
             customer.OrderNrPrefix = request.OrderNrPrefix;
 
+            if (request.DeliveryAddresses is not null)
+            {
+                SyncDeliveryAddresses(customer, request.DeliveryAddresses);
+            }
+
+            if (request.ContactPersons is not null)
+            {
+                SyncContactPersons(customer, request.ContactPersons);
+            }
+
             await _dbContext.SaveChangesAsync();
 
             return Ok(MapToDto(customer));
+        }
+
+        private static List<CustomerDeliveryAddress> BuildDeliveryAddresses(IEnumerable<CustomerDeliveryAddressUpsertDto>? source)
+        {
+            return (source ?? Array.Empty<CustomerDeliveryAddressUpsertDto>())
+                .Select(x => new CustomerDeliveryAddress
+                {
+                    Name = x.Name,
+                    Address = x.Address,
+                    PostalNr = x.PostalNr,
+                    PostalAddress = x.PostalAddress,
+                    Country = x.Country,
+                    PalletRegistrationNr = x.PalletRegistrationNr,
+                    IsDefault = x.IsDefault ?? false,
+                    Address2 = x.Address2,
+                    PostalNrValue = x.PostalNrValue,
+                    CountryCode = x.CountryCode,
+                    LogisticsInfoInternal = x.LogisticsInfoInternal,
+                    InventoryId = x.InventoryId,
+                    NextTransportDeliveryAddressId = x.NextTransportDeliveryAddressId,
+                    PositionId = x.PositionId,
+                    AddressExtra = x.AddressExtra,
+                })
+                .ToList();
+        }
+
+        private static List<CustomerContactPerson> BuildContactPersons(IEnumerable<CustomerContactPersonUpsertDto>? source)
+        {
+            return (source ?? Array.Empty<CustomerContactPersonUpsertDto>())
+                .Select(x => new CustomerContactPerson
+                {
+                    CustomerContactPersonName = x.CustomerContactPersonName,
+                    ContactPerson = x.ContactPerson,
+                    Email = x.Email,
+                    Telephone = x.Telephone,
+                    Cellphone = x.Cellphone,
+                    MailQuotation = x.MailQuotation,
+                    MailCustomerOrder = x.MailCustomerOrder,
+                    MailInvoice = x.MailInvoice,
+                    MailTransportOrder = x.MailTransportOrder,
+                    MailGeneralInfo = x.MailGeneralInfo,
+                    MailCallOffConfirmation = x.MailCallOffConfirmation,
+                    Title = x.Title,
+                })
+                .ToList();
+        }
+
+        private static void SyncDeliveryAddresses(Customer customer, IEnumerable<CustomerDeliveryAddressUpsertDto>? source)
+        {
+            var incoming = (source ?? Array.Empty<CustomerDeliveryAddressUpsertDto>()).ToList();
+            var incomingIds = incoming
+                .Where(x => x.Id.HasValue && x.Id.Value > 0)
+                .Select(x => x.Id!.Value)
+                .ToHashSet();
+
+            var removed = customer.DeliveryAddresses
+                .Where(x => !incomingIds.Contains(x.Id))
+                .ToList();
+
+            foreach (var item in removed)
+            {
+                customer.DeliveryAddresses.Remove(item);
+            }
+
+            foreach (var dto in incoming)
+            {
+                var existing = dto.Id.HasValue && dto.Id.Value > 0
+                    ? customer.DeliveryAddresses.FirstOrDefault(x => x.Id == dto.Id.Value)
+                    : null;
+
+                if (existing is null)
+                {
+                    customer.DeliveryAddresses.Add(new CustomerDeliveryAddress
+                    {
+                        Name = dto.Name,
+                        Address = dto.Address,
+                        PostalNr = dto.PostalNr,
+                        PostalAddress = dto.PostalAddress,
+                        Country = dto.Country,
+                        PalletRegistrationNr = dto.PalletRegistrationNr,
+                        IsDefault = dto.IsDefault ?? false,
+                        Address2 = dto.Address2,
+                        PostalNrValue = dto.PostalNrValue,
+                        CountryCode = dto.CountryCode,
+                        LogisticsInfoInternal = dto.LogisticsInfoInternal,
+                        InventoryId = dto.InventoryId,
+                        NextTransportDeliveryAddressId = dto.NextTransportDeliveryAddressId,
+                        PositionId = dto.PositionId,
+                        AddressExtra = dto.AddressExtra,
+                    });
+                    continue;
+                }
+
+                existing.Name = dto.Name;
+                existing.Address = dto.Address;
+                existing.PostalNr = dto.PostalNr;
+                existing.PostalAddress = dto.PostalAddress;
+                existing.Country = dto.Country;
+                existing.PalletRegistrationNr = dto.PalletRegistrationNr ?? existing.PalletRegistrationNr;
+                existing.IsDefault = dto.IsDefault ?? existing.IsDefault;
+                existing.Address2 = dto.Address2 ?? existing.Address2;
+                existing.PostalNrValue = dto.PostalNrValue ?? existing.PostalNrValue;
+                existing.CountryCode = dto.CountryCode ?? existing.CountryCode;
+                existing.LogisticsInfoInternal = dto.LogisticsInfoInternal ?? existing.LogisticsInfoInternal;
+                existing.InventoryId = dto.InventoryId ?? existing.InventoryId;
+                existing.NextTransportDeliveryAddressId = dto.NextTransportDeliveryAddressId ?? existing.NextTransportDeliveryAddressId;
+                existing.PositionId = dto.PositionId ?? existing.PositionId;
+                existing.AddressExtra = dto.AddressExtra ?? existing.AddressExtra;
+            }
+        }
+
+        private static void SyncContactPersons(Customer customer, IEnumerable<CustomerContactPersonUpsertDto>? source)
+        {
+            var incoming = (source ?? Array.Empty<CustomerContactPersonUpsertDto>()).ToList();
+            var incomingIds = incoming
+                .Where(x => x.Id.HasValue && x.Id.Value > 0)
+                .Select(x => x.Id!.Value)
+                .ToHashSet();
+
+            var removed = customer.CustomerContactPersons
+                .Where(x => !incomingIds.Contains(x.Id))
+                .ToList();
+
+            foreach (var item in removed)
+            {
+                customer.CustomerContactPersons.Remove(item);
+            }
+
+            foreach (var dto in incoming)
+            {
+                var existing = dto.Id.HasValue && dto.Id.Value > 0
+                    ? customer.CustomerContactPersons.FirstOrDefault(x => x.Id == dto.Id.Value)
+                    : null;
+
+                if (existing is null)
+                {
+                    customer.CustomerContactPersons.Add(new CustomerContactPerson
+                    {
+                        CustomerContactPersonName = dto.CustomerContactPersonName,
+                        ContactPerson = dto.ContactPerson,
+                        Email = dto.Email,
+                        Telephone = dto.Telephone,
+                        Cellphone = dto.Cellphone,
+                        MailQuotation = dto.MailQuotation,
+                        MailCustomerOrder = dto.MailCustomerOrder,
+                        MailInvoice = dto.MailInvoice,
+                        MailTransportOrder = dto.MailTransportOrder,
+                        MailGeneralInfo = dto.MailGeneralInfo,
+                        MailCallOffConfirmation = dto.MailCallOffConfirmation,
+                        Title = dto.Title,
+                    });
+                    continue;
+                }
+
+                existing.CustomerContactPersonName = dto.CustomerContactPersonName;
+                existing.ContactPerson = dto.ContactPerson;
+                existing.Email = dto.Email;
+                existing.Telephone = dto.Telephone;
+                existing.Cellphone = dto.Cellphone;
+                existing.MailQuotation = dto.MailQuotation;
+                existing.MailCustomerOrder = dto.MailCustomerOrder;
+                existing.MailInvoice = dto.MailInvoice;
+                existing.MailTransportOrder = dto.MailTransportOrder;
+                existing.MailGeneralInfo = dto.MailGeneralInfo;
+                existing.MailCallOffConfirmation = dto.MailCallOffConfirmation;
+                existing.Title = dto.Title;
+            }
         }
 
         [HttpDelete("{id:int}")]
@@ -368,6 +631,17 @@ namespace Econosys.Api.Controllers
                         PostalNr = x.PostalNr,
                         PostalAddress = x.PostalAddress,
                         Country = x.Country,
+                        PalletRegistrationNr = x.PalletRegistrationNr,
+                        IsDefault = x.IsDefault,
+                        Address2 = x.Address2,
+                        OldDbId = x.OldDbId,
+                        PostalNrValue = x.PostalNrValue,
+                        CountryCode = x.CountryCode,
+                        LogisticsInfoInternal = x.LogisticsInfoInternal,
+                        InventoryId = x.InventoryId,
+                        NextTransportDeliveryAddressId = x.NextTransportDeliveryAddressId,
+                        PositionId = x.PositionId,
+                        AddressExtra = x.AddressExtra,
                     })
                     .ToList(),
                 ContactPersons = customer.CustomerContactPersons

@@ -42,7 +42,9 @@ const LogisticsLayout = () => {
                         </div>
                     )}
                     <div className="flex-grow pt-4 px-5 relative">
-                        <Outlet />
+                        <div className="outlet-leading-none h-full">
+                            <Outlet />
+                        </div>
                         <PdfPanel />
                     </div>
                 </div>

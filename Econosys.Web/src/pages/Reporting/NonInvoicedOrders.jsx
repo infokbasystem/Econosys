@@ -6,6 +6,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import apiClient from '../../config/apiClient';
 import { formatDeliveryDate } from '../../helpers/dateUtils';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const PAGE_SIZE = 100;
 
@@ -67,11 +68,15 @@ const NonInvoicedOrders = () => {
     }), [filterOptions]);
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const initialize = async () => {
             try {
-                const response = await apiClient.get('/reporting/non-invoiced-orders/filter-options', { signal: controller.signal });
+                const response = await getSharedRequest(
+                    'reporting:non-invoiced-orders:filter-options',
+                    () => apiClient.get('/reporting/non-invoiced-orders/filter-options'),
+                );
+                if (!isActive) return;
                 setFilterOptions({
                     sellers: response?.data?.sellers ?? [],
                     ourReferences: response?.data?.ourReferences ?? [],
@@ -79,19 +84,21 @@ const NonInvoicedOrders = () => {
                     suppliers: response?.data?.suppliers ?? [],
                 });
             } catch (error) {
-                if (error.code === 'ERR_CANCELED') return;
                 console.error('Failed to load non-invoiced order filter options:', error);
+                if (!isActive) return;
                 setFilterOptions({ sellers: [], ourReferences: [], customers: [], suppliers: [] });
             }
         };
 
-        initialize();
+        void initialize();
 
-        return () => controller.abort();
+        return () => {
+            isActive = false;
+        };
     }, []);
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadReport = async () => {
             setLoading(true);
@@ -99,24 +106,23 @@ const NonInvoicedOrders = () => {
             skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 200);
 
             try {
-                const response = await apiClient.post(
-                    '/reporting/non-invoiced-orders',
-                    {
-                        sellerId: filters.sellerId || null,
-                        ourReferenceId: filters.ourReferenceId || null,
-                        customerId: filters.customerId || null,
-                        supplierId: filters.supplierId || null,
-                        pagination: {
-                            pageNumber: pagination.pageNumber,
-                            pageSize: pagination.pageSize,
-                        },
-                        orderBy: [{
-                            field: sortConfig.key,
-                            direction: sortConfig.direction,
-                        }],
+                const requestBody = {
+                    sellerId: filters.sellerId || null,
+                    ourReferenceId: filters.ourReferenceId || null,
+                    customerId: filters.customerId || null,
+                    supplierId: filters.supplierId || null,
+                    pagination: {
+                        pageNumber: pagination.pageNumber,
+                        pageSize: pagination.pageSize,
                     },
-                    { signal: controller.signal }
-                );
+                    orderBy: [{
+                        field: sortConfig.key,
+                        direction: sortConfig.direction,
+                    }],
+                };
+                const requestKey = `reporting:non-invoiced-orders:${JSON.stringify(requestBody)}`;
+                const response = await getSharedRequest(requestKey, () => apiClient.post('/reporting/non-invoiced-orders', requestBody));
+                if (!isActive) return;
 
                 const data = response?.data ?? {};
                 setRows(data.items ?? []);
@@ -136,8 +142,8 @@ const NonInvoicedOrders = () => {
                     hasNextPage: Boolean(data.hasNextPage),
                 }));
             } catch (error) {
-                if (error.code === 'ERR_CANCELED') return;
                 console.error('Failed to load non-invoiced orders:', error);
+                if (!isActive) return;
                 setRows([]);
                 setTotals({ orderValueSek: 0, totalTbSek: 0 });
                 setPagination((prev) => ({
@@ -148,16 +154,17 @@ const NonInvoicedOrders = () => {
                     hasNextPage: false,
                 }));
             } finally {
+                if (!isActive) return;
                 clearTimeout(skeletonTimerRef.current);
                 setLoading(false);
                 setShowSkeleton(false);
             }
         };
 
-        loadReport();
+        void loadReport();
 
         return () => {
-            controller.abort();
+            isActive = false;
             clearTimeout(skeletonTimerRef.current);
         };
     }, [filters, pagination.pageNumber, pagination.pageSize, sortConfig]);

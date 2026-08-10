@@ -5,6 +5,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import apiClient from '../../config/apiClient';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const PAGE_SIZE = 100;
 
@@ -43,28 +44,33 @@ const NonConfirmedSupplierOrders = () => {
     });
 
     useEffect(() => {
-        const controller = new AbortController();
-        loadReport(controller.signal);
-        return () => controller.abort();
+        let isActive = true;
+        void loadReport(isActive);
+
+        return () => {
+            isActive = false;
+        };
     }, []);
 
-    const loadReport = async (signal = null) => {
+    const loadReport = async (isActive = true) => {
         setLoading(true);
         setAllRows([]);
         skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 200);
 
         try {
-            const response = await apiClient.get(
-                '/reporting/non-confirmed-supplier-orders',
-                signal ? { signal } : {}
+            const response = await getSharedRequest(
+                'reporting:non-confirmed-supplier-orders',
+                () => apiClient.get('/reporting/non-confirmed-supplier-orders'),
             );
+            if (!isActive) return;
             setAllRows(response?.data ?? []);
             setPageNumber(1);
         } catch (error) {
-            if (error.code === 'ERR_CANCELED') return;
             console.error('Failed to load non-confirmed supplier orders:', error);
+            if (!isActive) return;
             setAllRows([]);
         } finally {
+            if (!isActive) return;
             clearTimeout(skeletonTimerRef.current);
             setLoading(false);
             setShowSkeleton(false);

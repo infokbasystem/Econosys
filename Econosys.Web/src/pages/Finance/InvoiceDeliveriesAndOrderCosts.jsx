@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, ChevronsUpDown, Mail } from 'lucide-react';
 import SwitchSelector from 'react-switch-selector';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import apiClient from '../../config/apiClient';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const DRAFT_STORAGE_KEY_PREFIX = 'invoice-draft:';
 
@@ -459,23 +460,25 @@ const InvoiceDeliveriesAndOrderCosts = () => {
     };
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadData = async () => {
             if (viewMode === 'grouped') {
                 try {
-                    const response = await apiClient.get('/invoices/invoice-source/grouped', {
+                    const requestConfig = {
                         params: {
                             onlyDelivered: deliveryScope === 'onlyDelivered',
                         },
-                        signal: controller.signal,
-                    });
+                    };
+                    const requestKey = `invoices:invoice-source:grouped:${deliveryScope === 'onlyDelivered'}`;
+                    const response = await getSharedRequest(requestKey, () => apiClient.get('/invoices/invoice-source/grouped', requestConfig));
+                    if (!isActive) return;
                     const customers = toArray(response?.data).map(normalizeGroupedCustomer);
                     setGroupedCustomers(customers);
                     setGroupedDataError('');
                 } catch (error) {
-                    if (error.code === 'ERR_CANCELED') return;
                     console.error('Failed to load invoice source grouped data:', error);
+                    if (!isActive) return;
                     setGroupedCustomers([]);
                     setGroupedDataError(getRequestErrorMessage(error));
                 }
@@ -483,25 +486,29 @@ const InvoiceDeliveriesAndOrderCosts = () => {
             }
 
             try {
-                const response = await apiClient.get('/invoices/invoice-source/list', {
+                const requestConfig = {
                     params: {
                         onlyDelivered: deliveryScope === 'onlyDelivered',
                     },
-                    signal: controller.signal,
-                });
+                };
+                const requestKey = `invoices:invoice-source:list:${deliveryScope === 'onlyDelivered'}`;
+                const response = await getSharedRequest(requestKey, () => apiClient.get('/invoices/invoice-source/list', requestConfig));
+                if (!isActive) return;
                 const rows = toArray(response?.data).map((row, index) => normalizeListRow(row, index));
                 setListRows(rows);
                 setListDataError('');
             } catch (error) {
-                if (error.code === 'ERR_CANCELED') return;
                 console.error('Failed to load invoice source list data:', error);
+                if (!isActive) return;
                 setListRows([]);
                 setListDataError(getRequestErrorMessage(error));
             }
         };
 
-        loadData();
-        return () => controller.abort();
+        void loadData();
+        return () => {
+            isActive = false;
+        };
     }, [viewMode, deliveryScope]);
 
     const customerSelectItems = useMemo(() => {

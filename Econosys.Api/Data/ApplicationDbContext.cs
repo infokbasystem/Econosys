@@ -22,6 +22,7 @@ namespace Econosys.Api.Data
         public DbSet<Language> Languages => Set<Language>();
         public DbSet<TranslationItem> TranslationItems => Set<TranslationItem>();
         public DbSet<Supplier> Suppliers => Set<Supplier>();
+        public DbSet<SupplierFactory> SupplierFactories => Set<SupplierFactory>();
         public DbSet<SupplierOrder> SupplierOrders => Set<SupplierOrder>();
         public DbSet<CustomerOrder> CustomerOrders => Set<CustomerOrder>();
         public DbSet<Customer> Customers => Set<Customer>();
@@ -192,6 +193,21 @@ namespace Econosys.Api.Data
                 entity.HasOne(x => x.Language)
                     .WithMany(x => x.Suppliers)
                     .HasForeignKey(x => x.LanguageId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<SupplierFactory>(entity =>
+            {
+                entity.ToTable("SupplierFactory", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.Supplier)
+                    .WithMany(x => x.SupplierFactories)
+                    .HasForeignKey(x => x.SupplierId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.ViaInventory)
+                    .WithMany(x => x.SupplierFactories)
+                    .HasForeignKey(x => x.ViaInventoryId)
                     .OnDelete(DeleteBehavior.NoAction);
             });
 

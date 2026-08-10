@@ -9,6 +9,7 @@ import DateRangePicker from '../../components/Daterangepicker';
 import apiClient from '../../config/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
 import { toSwedishDateBoundaryIso } from '../../helpers/dateUtils';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const PAGE_SIZE = 100;
 
@@ -125,17 +126,16 @@ const OrderCostAttest = () => {
         return request;
     };
 
-    const loadRows = async (pageNumber = 1, signal = null) => {
+    const loadRows = async (pageNumber = 1, isActive = true) => {
         setLoading(true);
         setRows([]);
         skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 200);
 
         try {
-            const response = await apiClient.post(
-                '/ordercosts/search',
-                buildRequestBody(pageNumber),
-                signal ? { signal } : {},
-            );
+            const requestBody = buildRequestBody(pageNumber);
+            const requestKey = `ordercosts:search:attest:${JSON.stringify(requestBody)}`;
+            const response = await getSharedRequest(requestKey, () => apiClient.post('/ordercosts/search', requestBody));
+            if (!isActive) return;
 
             const data = response?.data ?? {};
             const items = data?.items ?? [];
@@ -156,8 +156,8 @@ const OrderCostAttest = () => {
                 hasNextPage: Boolean(data?.hasNextPage),
             }));
         } catch (error) {
-            if (error.code === 'ERR_CANCELED') return;
             console.error('Failed to load order costs for attestation:', error);
+            if (!isActive) return;
             setRows([]);
             setAttestInputs({});
             setPagination((prev) => ({
@@ -168,6 +168,7 @@ const OrderCostAttest = () => {
                 hasNextPage: false,
             }));
         } finally {
+            if (!isActive) return;
             clearTimeout(skeletonTimerRef.current);
             setLoading(false);
             setShowSkeleton(false);
@@ -175,14 +176,14 @@ const OrderCostAttest = () => {
     };
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const timer = setTimeout(() => {
-            loadRows(pagination.pageNumber, controller.signal);
+            void loadRows(pagination.pageNumber, isActive);
         }, 200);
 
         return () => {
-            controller.abort();
+            isActive = false;
             clearTimeout(timer);
             clearTimeout(skeletonTimerRef.current);
         };

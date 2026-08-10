@@ -3,9 +3,11 @@ using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
+using Econosys.Api.Common;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -21,18 +23,22 @@ namespace Econosys.Api.Controllers
 
         private readonly ApplicationDbContext _dbContext;
         private readonly ILogger<CustomerOrdersController> _logger;
+        private readonly ILegacyUserResolutionService _legacyUserResolution;
 
-        public CustomerOrdersController(ApplicationDbContext dbContext, ILogger<CustomerOrdersController> logger)
+        public CustomerOrdersController(
+            ApplicationDbContext dbContext,
+            ILogger<CustomerOrdersController> logger,
+            ILegacyUserResolutionService legacyUserResolution)
         {
             _dbContext = dbContext;
             _logger = logger;
+            _legacyUserResolution = legacyUserResolution;
         }
 
         [HttpGet("{id:int}")]
         public async Task<ActionResult<CustomerOrderDto>> GetById(int id)
         {
-            var customerOrder = await _dbContext.CustomerOrders
-                .AsNoTracking()
+            var customerOrder = await BuildDetailsQuery()
                 .FirstOrDefaultAsync(x => x.Id == id);
 
             if (customerOrder is null)
@@ -43,11 +49,95 @@ namespace Econosys.Api.Controllers
             return Ok(MapToDto(customerOrder));
         }
 
+        [HttpPost]
+        public async Task<ActionResult<CustomerOrderDto>> Create([FromBody] CreateCustomerOrderRequest request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+            if (legacyUser is null)
+            {
+                return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+            }
+
+            var entity = new CustomerOrder();
+            ApplyCreateRequestToEntity(entity, request);
+
+            entity.Created ??= SwedishTime.Now;
+            entity.CreatedBy ??= legacyUser.Id;
+            entity.Edited = SwedishTime.Now;
+            entity.EditedBy = legacyUser.Id;
+
+            _dbContext.CustomerOrders.Add(entity);
+            await _dbContext.SaveChangesAsync();
+
+            await SyncOrderCostsAsync(entity.Id, request.OrderCosts);
+            await _dbContext.SaveChangesAsync();
+
+            var saved = await BuildDetailsQuery().FirstAsync(x => x.Id == entity.Id);
+            return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(saved));
+        }
+
+        [HttpPut("{id:int}")]
+        public async Task<ActionResult<CustomerOrderDto>> Update(int id, [FromBody] UpdateCustomerOrderRequest request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+            if (legacyUser is null)
+            {
+                return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+            }
+
+            if (request.Id > 0 && request.Id != id)
+            {
+                return BadRequest(new { message = "Request id does not match route id." });
+            }
+
+            var entity = await _dbContext.CustomerOrders.FirstOrDefaultAsync(x => x.Id == id);
+            if (entity is null)
+            {
+                return NotFound();
+            }
+
+            ApplyUpdateRequestToEntity(entity, request);
+            entity.Edited = SwedishTime.Now;
+            entity.EditedBy = legacyUser.Id;
+
+            await SyncOrderCostsAsync(entity.Id, request.OrderCosts);
+            await _dbContext.SaveChangesAsync();
+
+            var saved = await BuildDetailsQuery().FirstAsync(x => x.Id == entity.Id);
+            return Ok(MapToDto(saved));
+        }
+
         [HttpPost("search")]
         public async Task<ActionResult<PagedResultDto<CustomerOrderDto>>> Search([FromBody] SearchCustomerOrdersRequest? request)
         {
-            IQueryable<CustomerOrder> query = _dbContext.CustomerOrders.AsNoTracking();
+            IQueryable<CustomerOrder> query = _dbContext.CustomerOrders
+                .AsNoTracking()
+                .Include(x => x.SupplierOrder);
             var pagination = request?.Pagination ?? new PaginationRequest();
+
+            var searchTerm = request?.SearchTerm?.Trim();
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                var likePattern = $"%{EscapeLikePattern(searchTerm)}%";
+                var hasNumericId = int.TryParse(searchTerm, NumberStyles.Integer, CultureInfo.InvariantCulture, out var idValue);
+
+                query = query.Where(x =>
+                    (hasNumericId && x.Id == idValue) ||
+                    (x.CustomerOrderNr != null && EF.Functions.Like(x.CustomerOrderNr, likePattern)) ||
+                    (x.SupplierOrder != null && x.SupplierOrder.SupplierOrderNr != null && EF.Functions.Like(x.SupplierOrder.SupplierOrderNr, likePattern)) ||
+                    (x.CustomerName != null && EF.Functions.Like(x.CustomerName, likePattern)) ||
+                    (x.Product != null && EF.Functions.Like(x.Product, likePattern)));
+            }
 
             if (request?.Filter?.Conditions?.Count > 0)
             {
@@ -98,6 +188,14 @@ namespace Econosys.Api.Controllers
             });
         }
 
+        private static string EscapeLikePattern(string value)
+        {
+            return value
+                .Replace("[", "[[")
+                .Replace("%", "[%]")
+                .Replace("_", "[_]");
+        }
+
         private static Dictionary<string, PropertyInfo> BuildFieldMap()
         {
             var map = new Dictionary<string, PropertyInfo>(StringComparer.OrdinalIgnoreCase);
@@ -145,8 +243,15 @@ namespace Econosys.Api.Controllers
 
             foreach (var sort in orderBy)
             {
-                var property = ResolveProperty(sort.Field);
                 var isDescending = string.Equals(sort.Direction, "desc", StringComparison.OrdinalIgnoreCase);
+
+                if (string.Equals(sort.Field, "supplierordernr", StringComparison.OrdinalIgnoreCase))
+                {
+                    ordered = ApplySort(ordered, query, x => x.SupplierOrder != null ? x.SupplierOrder.SupplierOrderNr : null, isDescending);
+                    continue;
+                }
+
+                var property = ResolveProperty(sort.Field);
                 ordered = ApplySort(ordered, query, property, isDescending);
             }
 
@@ -174,6 +279,24 @@ namespace Econosys.Api.Controllers
 
             var result = method.Invoke(null, new object[] { ordered ?? source, lambda });
             return (IOrderedQueryable<CustomerOrder>)result!;
+        }
+
+        private static IOrderedQueryable<CustomerOrder> ApplySort<TKey>(
+            IOrderedQueryable<CustomerOrder>? ordered,
+            IQueryable<CustomerOrder> source,
+            Expression<Func<CustomerOrder, TKey>> keySelector,
+            bool isDescending)
+        {
+            if (ordered is null)
+            {
+                return isDescending
+                    ? source.OrderByDescending(keySelector)
+                    : source.OrderBy(keySelector);
+            }
+
+            return isDescending
+                ? ordered.ThenByDescending(keySelector)
+                : ordered.ThenBy(keySelector);
         }
 
         private static IQueryable<CustomerOrder> ApplyCondition(IQueryable<CustomerOrder> query, FilterConditionDto condition)
@@ -553,6 +676,177 @@ namespace Econosys.Api.Controllers
                 || type == typeof(DateTime);
         }
 
+        private IQueryable<CustomerOrder> BuildDetailsQuery()
+        {
+            return _dbContext.CustomerOrders
+                .AsNoTracking()
+                .Include(x => x.Customer)
+                .Include(x => x.Unit)
+                .Include(x => x.SalesCurrency)
+                .Include(x => x.SupplierOrder)
+                .Include(x => x.OrderCosts)
+                    .ThenInclude(x => x.InvoiceRows);
+        }
+
+        private async Task SyncOrderCostsAsync(int customerOrderId, List<UpsertCustomerOrderOrderCostRequest>? requestedCosts)
+        {
+            var requested = requestedCosts ?? new List<UpsertCustomerOrderOrderCostRequest>();
+
+            var requestedIds = requested
+                .Where(x => x.Id.HasValue && x.Id.Value > 0)
+                .Select(x => x.Id!.Value)
+                .ToHashSet();
+
+            var existing = await _dbContext.OrderCosts
+                .Where(x => x.CustomerOrderId == customerOrderId)
+                .ToListAsync();
+
+            var toDelete = existing.Where(x => !requestedIds.Contains(x.Id)).ToList();
+            if (toDelete.Count > 0)
+            {
+                _dbContext.OrderCosts.RemoveRange(toDelete);
+            }
+
+            foreach (var req in requested)
+            {
+                if (req.Id.HasValue && req.Id.Value > 0)
+                {
+                    var entity = existing.FirstOrDefault(x => x.Id == req.Id.Value);
+                    if (entity != null)
+                    {
+                        ApplyOrderCostRequest(entity, req);
+                    }
+                }
+                else if (req.CostId.HasValue)
+                {
+                    var entity = new OrderCost { CustomerOrderId = customerOrderId };
+                    ApplyOrderCostRequest(entity, req);
+                    _dbContext.OrderCosts.Add(entity);
+                }
+            }
+        }
+
+        private static void ApplyOrderCostRequest(OrderCost entity, UpsertCustomerOrderOrderCostRequest req)
+        {
+            entity.CustomerOrderId = req.CustomerOrderId;
+            entity.SupplierOrderId = req.SupplierOrderId;
+            entity.CostId = req.CostId;
+            entity.DoDebit = req.DoDebit;
+            entity.NrOf = req.NrOf;
+            entity.InPrice = req.InPrice;
+            entity.InPriceAttested = req.InPriceAttested;
+            entity.OutPrice = req.OutPrice;
+            entity.Note = req.Note;
+            entity.SupplierName = req.SupplierName;
+            entity.DoPrintOnQuotation = req.DoPrintOnQuotation;
+            entity.DoPrintOnCustomerOrder = req.DoPrintOnCustomerOrder;
+            entity.DoPrintOnSupplierOrder = req.DoPrintOnSupplierOrder;
+            entity.DoInvoiceSeparately = req.DoInvoiceSeparately;
+            entity.DoInvoiceSeparatelyImmediately = req.DoInvoiceSeparatelyImmediately;
+            entity.IsCostInvoicedSeparately = req.IsCostInvoicedSeparately;
+        }
+
+        private static CustomerOrderOrderCostDto MapOrderCostToDto(OrderCost source, double? salesCurrencyRate)
+        {
+            var invoiceRow = source.InvoiceRows
+                .Where(x => x.InvoiceId.HasValue)
+                .OrderByDescending(x => x.InvoiceId)
+                .FirstOrDefault();
+
+            return new CustomerOrderOrderCostDto
+            {
+                Id = source.Id,
+                CustomerOrderId = source.CustomerOrderId,
+                SupplierOrderId = source.SupplierOrderId,
+                CostId = source.CostId,
+                DoDebit = source.DoDebit,
+                NrOf = source.NrOf,
+                InPrice = source.InPrice,
+                InPriceAttested = source.InPriceAttested,
+                OutPrice = source.OutPrice,
+                OutPriceSEK = source.OutPrice.HasValue && salesCurrencyRate is > 0
+                    ? source.OutPrice * (decimal)salesCurrencyRate.Value
+                    : source.OutPrice,
+                Markup = source.InPrice.HasValue && source.OutPrice.HasValue && source.InPrice != 0
+                    ? Math.Round((source.OutPrice.Value - source.InPrice.Value) / source.InPrice.Value * 100, 2)
+                    : null,
+                Note = source.Note,
+                SupplierName = source.SupplierName,
+                DoPrintOnQuotation = source.DoPrintOnQuotation,
+                DoPrintOnCustomerOrder = source.DoPrintOnCustomerOrder,
+                DoPrintOnSupplierOrder = source.DoPrintOnSupplierOrder,
+                DoInvoiceSeparately = source.DoInvoiceSeparately,
+                DoInvoiceSeparatelyImmediately = source.DoInvoiceSeparatelyImmediately,
+                IsCostInvoicedSeparately = source.IsCostInvoicedSeparately,
+                InvoiceId = invoiceRow?.InvoiceId,
+                InvoiceRowId = invoiceRow?.Id,
+            };
+        }
+
+        private static void ApplyCreateRequestToEntity(CustomerOrder entity, CreateCustomerOrderRequest request)
+        {
+            entity.QuotationId = request.QuotationId;
+            entity.SupplierOrderId = request.SupplierOrderId;
+            entity.CustomerOrderNr = request.CustomerOrderNr;
+            entity.CustomerId = request.CustomerId;
+            entity.CustomerName = request.CustomerName;
+            entity.DeliveryAddressName = request.DeliveryAddressName;
+            entity.DeliveryAddress = request.DeliveryAddress;
+            entity.DeliveryPostalNr = request.DeliveryPostalNr;
+            entity.DeliveryPostalAddress = request.DeliveryPostalAddress;
+            entity.DeliveryCountry = request.DeliveryCountry;
+            entity.Date = request.Date;
+            entity.TimeOfDelivery = request.TimeOfDelivery;
+            entity.YourReference = request.YourReference;
+            entity.OurReference = request.OurReference;
+            entity.TermsOfDelivery = request.TermsOfDelivery;
+            entity.TermsOfPayment = request.TermsOfPayment;
+            entity.Message = request.Message;
+            entity.Product = request.Product;
+            entity.Material = request.Material;
+            entity.Format = request.Format;
+            entity.Color = request.Color;
+            entity.Construction = request.Construction;
+            entity.IsFSC = request.IsFSC;
+            entity.SalesCurrencyId = request.SalesCurrencyId;
+            entity.SalesCurrencyRate = request.SalesCurrencyRate;
+            entity.UnitId = request.UnitId;
+            entity.Edition = request.Edition;
+            entity.SalesPrice = request.SalesPrice;
+            entity.PalletFormatId = request.PalletFormatId;
+            entity.EurPallet = request.EurPallet;
+        }
+
+        private static void ApplyUpdateRequestToEntity(CustomerOrder entity, UpdateCustomerOrderRequest request)
+        {
+            entity.CustomerOrderNr = request.CustomerOrderNr;
+            entity.DeliveryAddressName = request.DeliveryAddressName;
+            entity.DeliveryAddress = request.DeliveryAddress;
+            entity.DeliveryPostalNr = request.DeliveryPostalNr;
+            entity.DeliveryPostalAddress = request.DeliveryPostalAddress;
+            entity.DeliveryCountry = request.DeliveryCountry;
+            entity.Date = request.Date;
+            entity.TimeOfDelivery = request.TimeOfDelivery;
+            entity.YourReference = request.YourReference;
+            entity.OurReference = request.OurReference;
+            entity.TermsOfDelivery = request.TermsOfDelivery;
+            entity.TermsOfPayment = request.TermsOfPayment;
+            entity.Message = request.Message;
+            entity.Product = request.Product;
+            entity.Material = request.Material;
+            entity.Format = request.Format;
+            entity.Color = request.Color;
+            entity.Construction = request.Construction;
+            entity.IsFSC = request.IsFSC;
+            entity.SalesCurrencyId = request.SalesCurrencyId;
+            entity.SalesCurrencyRate = request.SalesCurrencyRate;
+            entity.UnitId = request.UnitId;
+            entity.Edition = request.Edition;
+            entity.SalesPrice = request.SalesPrice;
+            entity.PalletFormatId = request.PalletFormatId;
+            entity.EurPallet = request.EurPallet;
+        }
+
         private static CustomerOrderDto MapToDto(CustomerOrder source)
         {
             return new CustomerOrderDto
@@ -560,9 +854,10 @@ namespace Econosys.Api.Controllers
                 Id = source.Id,
                 QuotationId = source.QuotationId,
                 SupplierOrderId = source.SupplierOrderId,
+                SupplierOrderNr = source.SupplierOrder?.SupplierOrderNr,
                 CustomerOrderNr = source.CustomerOrderNr,
                 CustomerId = source.CustomerId,
-                CustomerName = source.CustomerName,
+                CustomerName = source.CustomerName ?? source.Customer?.Name,
                 Address = source.Address,
                 PostalNr = source.PostalNr,
                 PostalAddress = source.PostalAddress,
@@ -588,7 +883,9 @@ namespace Econosys.Api.Controllers
                 Message = source.Message,
                 GoodsMarking = source.GoodsMarking,
                 SalesCurrencyId = source.SalesCurrencyId,
+                SalesCurrencyName = source.SalesCurrency?.Name,
                 UnitId = source.UnitId,
+                UnitName = source.Unit?.Name,
                 SelectedCalculationRowId = source.SelectedCalculationRowId,
                 Edition = source.Edition,
                 SalesPrice = source.SalesPrice,
@@ -617,7 +914,9 @@ namespace Econosys.Api.Controllers
                 Created = source.Created,
                 Edited = source.Edited,
                 CreatedBy = source.CreatedBy,
+                CreatedByUserName = null,
                 EditedBy = source.EditedBy,
+                EditedByUserName = null,
                 YourOrderNr = source.YourOrderNr,
                 Completed = source.Completed,
                 ProductMessage = source.ProductMessage,
@@ -642,7 +941,11 @@ namespace Econosys.Api.Controllers
                 IsFSC = source.IsFSC,
                 TotalCostInSalesCurrency = source.TotalCostInSalesCurrency,
                 InvoicingInfo = source.InvoicingInfo,
-                CalculationId = source.CalculationId
+                CalculationId = source.CalculationId,
+                OrderCosts = source.OrderCosts
+                    .OrderBy(x => x.Id)
+                    .Select(x => MapOrderCostToDto(x, source.SalesCurrencyRate))
+                    .ToList(),
             };
         }
     }

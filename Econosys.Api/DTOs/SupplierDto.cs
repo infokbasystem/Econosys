@@ -39,7 +39,18 @@ namespace Econosys.Api.DTOs
     {
         public SupplierDto Supplier { get; set; } = new();
         public List<SupplierContactPersonDto> ContactPersons { get; set; } = new();
+        public List<SupplierFactoryDto> Factories { get; set; } = new();
         public List<FilterOptionDto<int>> Languages { get; set; } = new();
+    }
+
+    public class SupplierFormOptionsDto
+    {
+        public IReadOnlyList<CurrencyDto> Currencies { get; set; } = Array.Empty<CurrencyDto>();
+        public IReadOnlyList<FilterOptionDto<string>> TermsOfDelivery { get; set; } = Array.Empty<FilterOptionDto<string>>();
+        public IReadOnlyList<FilterOptionDto<string>> TermsOfPayment { get; set; } = Array.Empty<FilterOptionDto<string>>();
+        public IReadOnlyList<FilterOptionDto<int>> Languages { get; set; } = Array.Empty<FilterOptionDto<int>>();
+        public IReadOnlyList<FilterOptionDto<int>> InquiryCommunicationTypes { get; set; } = Array.Empty<FilterOptionDto<int>>();
+        public IReadOnlyList<FilterOptionDto<int>> SupplierOrderCommunicationTypes { get; set; } = Array.Empty<FilterOptionDto<int>>();
     }
 
     public class SupplierContactPersonDto
@@ -56,5 +67,20 @@ namespace Econosys.Api.DTOs
         public bool DoMailTransportOrder { get; set; }
         public string? Title { get; set; }
         public int? OldDbId { get; set; }
+    }
+
+    public class SupplierFactoryDto
+    {
+        public int Id { get; set; }
+        public string? Name { get; set; }
+        public string? Address { get; set; }
+        public string? PostalNr { get; set; }
+        public string? City { get; set; }
+        public string? Country { get; set; }
+        public string? CountryCode { get; set; }
+        public string? AddressExtra { get; set; }
+        public bool IsDefault { get; set; }
+        public int? PositionId { get; set; }
+        public int? ViaInventoryId { get; set; }
     }
 }

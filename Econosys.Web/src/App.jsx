@@ -19,8 +19,14 @@ import Overview from './pages/Overview'
 import OrderOverview from './pages/Order/OrderOverview'
 import ProductSearch from './pages/Order/ProductSearch'
 import Product from './pages/Order/Product'
+import CustomerSearch from './pages/Order/CustomerSearch'
+import SuppliersOverview from './pages/Order/SuppliersOverview'
+import Customer from './pages/Order/Customer'
+import Supplier from './pages/Order/Supplier'
 import InquirySearch from './pages/Order/InquirySearch'
 import QuotationSearch from './pages/Order/QuotationSearch'
+import SupplierOrderSearch from './pages/Order/SupplierOrderSearch'
+import CustomerOrderSearch from './pages/Order/CustomerOrderSearch'
 
 import FinanceOverview from './pages/Finance/FinanceOverview'
 import InvoiceSearch from './pages/Finance/InvoiceSearch'
@@ -34,6 +40,8 @@ import DeviationsOverview from './pages/Management/DeviationsOverview'
 import Deviation from './pages/Management/Deviation'
 import Inquiry from './pages/Management/Inquiry'
 import Quotation from './pages/Management/Quotation'
+import SupplierOrder from './pages/Management/SupplierOrder'
+import CustomerOrder from './pages/Management/CustomerOrder'
 import ImprovementPropositionsOverview from './pages/Management/ImprovementPropositionsOverview'
 
 import ReportingOverview from './pages/Reporting/ReportingOverview'
@@ -84,7 +92,19 @@ const router = createBrowserRouter(
         <Route index element={<ProtectedRoute>< OrderOverview /></ProtectedRoute>} />
         <Route path="products" element={<ProtectedRoute><ProductSearch /></ProtectedRoute>} />
         <Route path="products/:id" element={<ProtectedRoute><Product /></ProtectedRoute>} />
+        <Route path="customers" element={<ProtectedRoute><CustomerSearch /></ProtectedRoute>} />
+        <Route path="suppliers" element={<ProtectedRoute><SuppliersOverview /></ProtectedRoute>} />
+        <Route path="customers/new" element={<ProtectedRoute><Customer /></ProtectedRoute>} />
+        <Route path="customers/:id" element={<ProtectedRoute><Customer /></ProtectedRoute>} />
+        <Route path="suppliers/new" element={<ProtectedRoute><Supplier /></ProtectedRoute>} />
+        <Route path="suppliers/:id" element={<ProtectedRoute><Supplier /></ProtectedRoute>} />
         <Route path="quotations" element={<ProtectedRoute><QuotationSearch /></ProtectedRoute>} />
+        <Route path="supplierorders" element={<ProtectedRoute><SupplierOrderSearch /></ProtectedRoute>} />
+        <Route path="customerorders" element={<ProtectedRoute><CustomerOrderSearch /></ProtectedRoute>} />
+        <Route path="supplierorders/new" element={<ProtectedRoute><PdfEnabledPage><SupplierOrder /></PdfEnabledPage></ProtectedRoute>} />
+        <Route path="supplierorders/:id" element={<ProtectedRoute><PdfEnabledPage><SupplierOrder /></PdfEnabledPage></ProtectedRoute>} />
+        <Route path="customerorders/new" element={<ProtectedRoute><CustomerOrder /></ProtectedRoute>} />
+        <Route path="customerorders/:id" element={<ProtectedRoute><CustomerOrder /></ProtectedRoute>} />
         <Route path="quotations/new" element={<ProtectedRoute><PdfEnabledPage><Quotation /></PdfEnabledPage></ProtectedRoute>} />
         <Route path="quotations/:id" element={<ProtectedRoute><PdfEnabledPage><Quotation /></PdfEnabledPage></ProtectedRoute>} />
         <Route path="inquiries" element={<ProtectedRoute><InquirySearch /></ProtectedRoute>} />

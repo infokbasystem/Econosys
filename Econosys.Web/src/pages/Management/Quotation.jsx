@@ -14,31 +14,10 @@ import apiClient, { logApiRequestSummary } from '../../config/apiClient';
 import { formatDateTime, fromDateInputToSwedishIso, toSwedishDateInputValue } from '../../helpers/dateUtils';
 import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
 import { parseNullableInt } from '../../helpers/numberUtils';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 import LabeledTextArea from '../../components/LabeledTextArea';
 
 const COMPANY_ID = 1;
-
-// Simple single-flight cache to avoid duplicate network requests
-// across React StrictMode double-mounts in development.
-const __singleFlight = new Map();
-const fetchOnce = (key, fn) => {
-    if (__singleFlight.has(key)) return __singleFlight.get(key);
-
-    const promise = (async () => {
-        try {
-            const result = await fn();
-            // replace with resolved promise to keep returned value stable
-            __singleFlight.set(key, Promise.resolve(result));
-            return result;
-        } catch (err) {
-            __singleFlight.delete(key);
-            throw err;
-        }
-    })();
-
-    __singleFlight.set(key, promise);
-    return promise;
-};
 
 const toArray = (value) => (Array.isArray(value) ? value : []);
 
@@ -478,27 +457,26 @@ const Quotation = () => {
     const isCustomerDetailsLoading = Boolean(customerId && customerId > 0 && loadedCustomerDetailsForId !== customerId);
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadQuotation = async () => {
             setLoading(true);
             quotationLoadStartedAtRef.current = Date.now();
 
             try {
-                setSelectedSupplierDetails(null);
+                if (isActive) {
+                    setSelectedSupplierDetails(null);
+                }
 
                 if (isNewQuotation) {
                     const emptyQuotation = createNewQuotationModel();
+                    if (!isActive) return;
                     setQuotation(emptyQuotation);
                     setOriginalQuotation(structuredClone(emptyQuotation));
                 } else {
-                    // Deduplicate per-quotation fetches to avoid duplicate network calls
-                    // from React StrictMode's development-only double mount cycle.
-                    const response = await fetchOnce(`quotation-by-id-${id}`, () => apiClient.get(`/quotations/${id}`));
-
-                    if (controller.signal.aborted) {
-                        return;
-                    }
+                    const requestKey = `quotations:${id}`;
+                    const response = await getSharedRequest(requestKey, () => apiClient.get(`/quotations/${id}`));
+                    if (!isActive) return;
 
                     const data = response.data;
                     const dataWithEditable = {
@@ -509,20 +487,25 @@ const Quotation = () => {
                     setOriginalQuotation(structuredClone(dataWithEditable));
                 }
 
-                clearStale();
+                if (isActive) {
+                    clearStale();
+                }
             } catch (error) {
-                if (error.code === 'ERR_CANCELED') return;
                 console.error('Failed to load quotation:', error);
+                if (!isActive) return;
                 setQuotation(null);
             } finally {
-                if (!controller.signal.aborted) {
+                if (isActive) {
                     setLoading(false);
                 }
             }
         };
 
         loadQuotation();
-        return () => controller.abort();
+
+        return () => {
+            isActive = false;
+        };
     }, [clearStale, id, isNewQuotation]);
 
     useEffect(() => {
@@ -569,16 +552,18 @@ const Quotation = () => {
             return;
         }
 
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadSupplierDetails = async () => {
             try {
-                const response = await apiClient.get(`/suppliers/${supplierId}/details`, { signal: controller.signal });
+                const requestKey = `suppliers:${supplierId}:details`;
+                const response = await getSharedRequest(requestKey, () => apiClient.get(`/suppliers/${supplierId}/details`));
+                if (!isActive) return;
                 setSelectedSupplierDetails(response?.data ?? null);
                 setLoadedSupplierDetailsForId(supplierId);
             } catch (error) {
-                if (error?.code === 'ERR_CANCELED') return;
                 console.error('Failed to load supplier details:', error);
+                if (!isActive) return;
                 setSelectedSupplierDetails(null);
                 setLoadedSupplierDetailsForId(supplierId);
             }
@@ -586,11 +571,13 @@ const Quotation = () => {
 
         loadSupplierDetails();
 
-        return () => controller.abort();
+        return () => {
+            isActive = false;
+        };
     }, [quotation?.selectedSupplierId]);
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const toLegacyUserOptions = (items) => (Array.isArray(items)
             ? items
@@ -606,10 +593,11 @@ const Quotation = () => {
                 const quotationId = parseNullableInt(id);
 
                 if (!isNewQuotation && quotationId && quotationId > 0) {
-                    const response = await fetchOnce(`quotation-form-options-${quotationId}`, () => apiClient.get(`/quotations/${quotationId}/form-options`));
+                    const requestKey = `quotations:${quotationId}:form-options`;
+                    const response = await getSharedRequest(requestKey, () => apiClient.get(`/quotations/${quotationId}/form-options`));
                     const payload = response?.data ?? {};
 
-                    if (controller.signal.aborted) return;
+                    if (!isActive) return;
 
                     setLegacyUserOptions(toLegacyUserOptions(payload?.users));
                     setOrderCostOptions(toArray(payload?.costs));
@@ -618,36 +606,36 @@ const Quotation = () => {
                     return;
                 }
 
-                const [usersRes, costsRes, currenciesRes] = await Promise.all([
-                    fetchOnce('legacyusers-active-options', () => apiClient.get('/legacyusers/active-options')),
-                    fetchOnce('costs-search', () => apiClient.post('/costs/search', {})),
-                    fetchOnce('currencies-search-page1-size200', () => apiClient.post('/currencies/search', {
+                const [usersRes, costsRes, currenciesRes] = await getSharedRequest('quotations:new:form-options', () => Promise.all([
+                    apiClient.get('/legacyusers/active-options'),
+                    apiClient.post('/costs/search', {}),
+                    apiClient.post('/currencies/search', {
                         pagination: { pageNumber: 1, pageSize: 200 },
                         orderBy: [{ field: 'name', direction: 'asc' }],
-                    })),
-                ]);
+                    }),
+                ]));
 
-                if (controller.signal.aborted) return;
+                if (!isActive) return;
 
                 setLegacyUserOptions(toLegacyUserOptions(usersRes?.data));
                 setOrderCostOptions(toArray(costsRes?.data));
                 setCurrencyOptions(Array.isArray(currenciesRes?.data?.items) ? currenciesRes.data.items : []);
                 setPalletFormatOptions([]);
             } catch (error) {
-                if (error?.code === 'ERR_CANCELED') return;
                 console.error('Failed to load quotation form options:', error);
-                if (!controller.signal.aborted) {
-                    setLegacyUserOptions([]);
-                    setOrderCostOptions([]);
-                    setCurrencyOptions([]);
-                    setPalletFormatOptions([]);
-                }
+                if (!isActive) return;
+                setLegacyUserOptions([]);
+                setOrderCostOptions([]);
+                setCurrencyOptions([]);
+                setPalletFormatOptions([]);
             }
         };
 
         loadFormOptions();
 
-        return () => controller.abort();
+        return () => {
+            isActive = false;
+        };
     }, [id, isNewQuotation]);
 
     useEffect(() => {
@@ -659,16 +647,18 @@ const Quotation = () => {
             return;
         }
 
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadCustomerDetails = async () => {
             try {
-                const response = await apiClient.get(`/customers/${customerId}`, { signal: controller.signal });
+                const requestKey = `customers:${customerId}`;
+                const response = await getSharedRequest(requestKey, () => apiClient.get(`/customers/${customerId}`));
+                if (!isActive) return;
                 setSelectedCustomerDetails(response?.data ?? null);
                 setLoadedCustomerDetailsForId(customerId);
             } catch (error) {
-                if (error?.code === 'ERR_CANCELED') return;
                 console.error('Failed to load customer details:', error);
+                if (!isActive) return;
                 setSelectedCustomerDetails(null);
                 setLoadedCustomerDetailsForId(customerId);
             }
@@ -676,7 +666,9 @@ const Quotation = () => {
 
         loadCustomerDetails();
 
-        return () => controller.abort();
+        return () => {
+            isActive = false;
+        };
     }, [quotation?.customerId]);
 
     useEffect(() => {
@@ -820,11 +812,6 @@ const Quotation = () => {
                         </div>
                     </div>
 
-                    <OrderNavigationTree
-                        entityType="quotation"
-                        entityId={Number.isInteger(quotation?.id) && quotation.id > 0 ? quotation.id : null}
-                    />
-
                     <hr className="mt-5 border-gray-300 dark:border-white" />
                     <h2 className="text-sm text-center text-gray-700 mt-5">Meddelanden</h2>
                     {messages.length === 0 ? (
@@ -846,6 +833,11 @@ const Quotation = () => {
                             ))}
                         </ul>
                     )}
+
+                    <OrderNavigationTree
+                        entityType="quotation"
+                        entityId={Number.isInteger(quotation?.id) && quotation.id > 0 ? quotation.id : null}
+                    />
 
                 </div>
 
@@ -908,7 +900,7 @@ const Quotation = () => {
 
                     <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
                         <span>
-                            <div className="grid grid-cols-[350px_350px_300px] gap-x-20 gap-y-8">
+                            <div className="grid grid-cols-[380px_380px_300px] gap-x-20 gap-y-8">
                                 <span>
                                     <p className='text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300'>{quotation?.customerName || ''}</p>
                                     <LabeledReactSelect

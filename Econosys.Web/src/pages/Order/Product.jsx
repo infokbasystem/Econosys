@@ -10,6 +10,7 @@ import LabeledReactSelect from '../../components/LabeledReactSelect';
 import LabeledSwitch from '../../components/LabeledSwitch';
 import { formatDateTime } from '../../helpers/dateUtils';
 import { parseNullableInt } from '../../helpers/numberUtils';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const createNewProductModel = () => ({
     id: 0,
@@ -108,23 +109,24 @@ const Product = () => {
     );
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadLookupsAndProduct = async () => {
             setLoading(true);
 
             try {
                 const [materialsRes, constructionsRes, varnishesRes] = await Promise.all([
-                    apiClient.post('/materials/search', {
+                    getSharedRequest('materials:search:product-form', () => apiClient.post('/materials/search', {
                         pagination: { pageNumber: 1, pageSize: 200 },
                         orderBy: [{ field: 'name', direction: 'asc' }],
-                    }, { signal: controller.signal }),
-                    apiClient.post('/constructions/search', {
+                    })),
+                    getSharedRequest('constructions:search:product-form', () => apiClient.post('/constructions/search', {
                         pagination: { pageNumber: 1, pageSize: 200 },
                         orderBy: [{ field: 'name', direction: 'asc' }],
-                    }, { signal: controller.signal }),
-                    apiClient.get('/varnishes/search', { signal: controller.signal }),
+                    })),
+                    getSharedRequest('varnishes:search:product-form', () => apiClient.get('/varnishes/search')),
                 ]);
+                if (!isActive) return;
 
                 const mappedMaterials = (materialsRes?.data?.items ?? []).map((item) => ({
                     id: item.id,
@@ -150,29 +152,33 @@ const Product = () => {
 
                 if (isNewProduct) {
                     const newProduct = createNewProductModel();
+                    if (!isActive) return;
                     setProduct(newProduct);
                     setOriginalProduct(structuredClone(newProduct));
                 } else {
-                    const productRes = await apiClient.get(`/products/${id}`, { signal: controller.signal });
+                    const productRes = await getSharedRequest(`products:${id}`, () => apiClient.get(`/products/${id}`));
+                    if (!isActive) return;
                     const loadedProduct = productRes?.data ?? null;
                     setProduct(loadedProduct);
                     setOriginalProduct(structuredClone(loadedProduct));
                 }
             } catch (error) {
-                if (error.code === 'ERR_CANCELED') return;
                 console.error('Failed to load product view data:', error);
+                if (!isActive) return;
                 setMessages([{ type: 'error', text: 'Kunde inte lasa produktdata.' }]);
                 setProduct((prev) => prev ?? (isNewProduct ? createNewProductModel() : null));
             } finally {
-                if (!controller.signal.aborted) {
+                if (isActive) {
                     setLoading(false);
                 }
             }
         };
 
-        loadLookupsAndProduct();
+        void loadLookupsAndProduct();
 
-        return () => controller.abort();
+        return () => {
+            isActive = false;
+        };
     }, [id, isNewProduct]);
 
     const handleBackClick = () => {

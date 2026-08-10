@@ -1,27 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import apiClient from '../../config/apiClient';
-import { formatDateShort } from '../../helpers/dateUtils';
+import LabeledSwitch from '../../components/LabeledSwitch';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const PAGE_SIZE = 25;
 
 const columns = [
-    { key: 'id', label: 'Nr', align: 'left', width: '5%' },
-    { key: 'product', label: 'Produkt', align: 'left', width: '14%' },
-    { key: 'customerName', label: 'Kund', align: 'left', width: '13%' },
-    { key: 'supplierName', label: 'Levetantör', align: 'left', width: '11%' },
-    { key: 'construction', label: 'Konstruktion', align: 'left', width: '11%' },
-    { key: 'material', label: 'Materail', align: 'left', width: '13%' },
-    { key: 'format', label: 'Format', align: 'left', width: '11%' },
-    { key: 'sellerName', label: 'Säljare', align: 'left', width: '8%' },
-    { key: 'createdByName', label: 'Skapad av', align: 'left', width: '8%' },
-    { key: 'createdAt', label: 'Skapad', align: 'left', width: '6%' },
-    { key: 'editedAt', label: 'Ändrad', align: 'left', width: '6%' },
+    { key: 'id', label: 'Kundnr', align: 'left', width: '10%', sortable: false },
+    { key: 'name', label: 'Namn', align: 'left', width: '28%', sortBy: 'name' },
+    { key: 'orgNr', label: 'Org nr', align: 'left', width: '16%', sortable: false },
+    { key: 'email', label: 'Email', align: 'left', width: '24%', sortBy: 'email' },
+    { key: 'active', label: 'Aktiv', align: 'left', width: '8%', sortable: false },
+    { key: 'lastActivity', label: 'Senaste aktivitet', align: 'left', sortBy: 'lastactivity' },
 ];
 
 const initialPagination = {
@@ -33,7 +28,7 @@ const initialPagination = {
     hasNextPage: false,
 };
 
-const InquirySearch = () => {
+const CustomerSearch = () => {
     const navigate = useNavigate();
 
     const [rows, setRows] = useState([]);
@@ -41,18 +36,30 @@ const InquirySearch = () => {
     const [searchLoaded, setSearchLoaded] = useState(false);
     const [searchInput, setSearchInput] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
+    const [includeInactive, setIncludeInactive] = useState(false);
     const [pagination, setPagination] = useState(initialPagination);
-    const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
+    const [sortConfig, setSortConfig] = useState({ key: 'name', direction: 'asc' });
     const [selectedRowId, setSelectedRowId] = useState(null);
 
     useEffect(() => {
         const timer = setTimeout(() => {
             setSearchTerm(searchInput);
             setPagination((prev) => ({ ...prev, pageNumber: 1 }));
-        }, 350);
+        }, 300);
 
         return () => clearTimeout(timer);
     }, [searchInput]);
+
+    const requestBody = useMemo(() => ({
+        searchTerm: searchTerm.trim() || null,
+        active: includeInactive ? null : true,
+        sortBy: sortConfig.key,
+        sortDescending: sortConfig.direction === 'desc',
+        pagination: {
+            pageNumber: pagination.pageNumber,
+            pageSize: pagination.pageSize,
+        },
+    }), [includeInactive, pagination.pageNumber, pagination.pageSize, searchTerm, sortConfig.direction, sortConfig.key]);
 
     useEffect(() => {
         let isActive = true;
@@ -61,34 +68,27 @@ const InquirySearch = () => {
             setLoading(true);
 
             try {
-                const requestBody = {
-                    searchTerm: searchTerm.trim() || null,
-                    pagination: {
-                        pageNumber: pagination.pageNumber,
-                        pageSize: pagination.pageSize,
-                    },
-                    orderBy: [{
-                        field: sortConfig.key,
-                        direction: sortConfig.direction,
-                    }],
-                };
-                const requestKey = `inquiries:search:${JSON.stringify(requestBody)}`;
-                const response = await getSharedRequest(requestKey, () => apiClient.post('/inquiries/search', requestBody));
+                const requestKey = `customers:search:${JSON.stringify(requestBody)}`;
+                const response = await getSharedRequest(requestKey, () => apiClient.post('/customers/search', requestBody));
                 if (!isActive) return;
 
                 const data = response?.data ?? {};
+                const totalCount = data.totalCount ?? 0;
+                const totalPages = data.totalPages ?? 0;
+                const pageNumber = data.pageNumber ?? pagination.pageNumber;
+
                 setRows(data.items ?? []);
                 setPagination((prev) => ({
                     ...prev,
-                    pageNumber: data.pageNumber ?? prev.pageNumber,
+                    pageNumber,
                     pageSize: data.pageSize ?? prev.pageSize,
-                    totalCount: data.totalCount ?? 0,
-                    totalPages: data.totalPages ?? 0,
-                    hasPreviousPage: Boolean(data.hasPreviousPage),
-                    hasNextPage: Boolean(data.hasNextPage),
+                    totalCount,
+                    totalPages,
+                    hasPreviousPage: pageNumber > 1,
+                    hasNextPage: totalPages > 0 && pageNumber < totalPages,
                 }));
             } catch (error) {
-                console.error('Failed to load inquiry search:', error);
+                console.error('Failed to load customer search:', error);
                 if (!isActive) return;
                 setRows([]);
                 setPagination((prev) => ({
@@ -111,14 +111,20 @@ const InquirySearch = () => {
         return () => {
             isActive = false;
         };
-    }, [searchTerm, pagination.pageNumber, pagination.pageSize, sortConfig]);
+    }, [pagination.pageNumber, pagination.pageSize, requestBody]);
 
     const showSkeleton = loading && !searchLoaded;
 
-    const handleSort = (key) => {
+    const handleSort = (column) => {
+        const nextKey = column.sortBy;
+
+        if (!nextKey) {
+            return;
+        }
+
         setSortConfig((prev) => ({
-            key,
-            direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc',
+            key: nextKey,
+            direction: prev.key === nextKey && prev.direction === 'asc' ? 'desc' : 'asc',
         }));
         setPagination((prev) => ({ ...prev, pageNumber: 1 }));
     };
@@ -129,12 +135,6 @@ const InquirySearch = () => {
         setPagination((prev) => ({ ...prev, pageNumber: nextPage }));
     };
 
-    const handleOpenInquiry = (event, inquiryId) => {
-        event.preventDefault();
-        event.stopPropagation();
-        navigate(`/order/inquiries/${inquiryId}`);
-    };
-
     const getRowClass = (rowId) => {
         if (selectedRowId === rowId) {
             return 'cursor-pointer border-b border-amber-200 bg-amber-100';
@@ -143,16 +143,22 @@ const InquirySearch = () => {
         return 'cursor-pointer border-b border-gray-100 hover:bg-amber-50';
     };
 
+    const handleOpenCustomer = (event, rowId) => {
+        event.preventDefault();
+        event.stopPropagation();
+        navigate(`/order/customers/${rowId}`);
+    };
+
     return (
         <div className="flex h-full flex-col pt-1 pb-4 ps-5 pe-10">
-            <div className="flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-2 mt-2">
-                {/* <button
+            <div className="mt-2 flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-2">
+                <button
                     type="button"
-                    onClick={() => navigate('/order/inquiries/new')}
-                    className="w-40 shadow-md/30 text-xs text-white bg-lime-600 hover:bg-lime-700 px-4 py-[5px]"
+                    onClick={() => navigate('/order/customers/new')}
+                    className="w-32 bg-lime-700 px-4 py-[5px] text-xs text-white shadow-md/30 hover:bg-lime-900"
                 >
-                    Skapa ny forfragan
-                </button> */}
+                    Ny kund
+                </button>
 
                 <div className="relative ml-16 w-56">
                     <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
@@ -160,10 +166,22 @@ const InquirySearch = () => {
                         type="text"
                         value={searchInput}
                         onChange={(event) => setSearchInput(event.target.value)}
-                        placeholder="Sok"
-                        className="w-full text-xs border border-gray-300 rounded-sm pl-7 pr-2 py-1 focus:outline-none bg-white"
+                        placeholder="Sok kund"
+                        className="w-full rounded-sm border border-gray-300 bg-white py-1 pl-7 pr-2 text-xs focus:outline-none"
                     />
                 </div>
+
+                <LabeledSwitch
+                    label="Inkludera inaktiva"
+                    name="includeInactive"
+                    value={includeInactive}
+                    onChange={(_rowId, _field, checked) => {
+                        setIncludeInactive(checked);
+                        setPagination((prev) => ({ ...prev, pageNumber: 1 }));
+                    }}
+                    disabled={loading}
+                    containerClassName="shrink-0"
+                />
 
                 <div className="ml-auto flex items-center gap-4 text-xs text-gray-600" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                     <span>Rader <strong>{pagination.totalCount}</strong></span>
@@ -189,7 +207,7 @@ const InquirySearch = () => {
                 </div>
             </div>
 
-            <div className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
+            <div className="mt-3 min-h-0 flex-1 overflow-auto border-t border-gray-300 py-1">
                 <table className="table-fixed w-full border-collapse text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                     <colgroup>
                         {columns.map((column) => (
@@ -198,22 +216,28 @@ const InquirySearch = () => {
                     </colgroup>
                     <thead>
                         <tr>
-                            {columns.map((column) => (
-                                <th
-                                    key={column.key}
-                                    onClick={() => handleSort(column.key)}
-                                    className={`cursor-pointer px-2 py-2 text-[10px] font-medium text-gray-500 ${column.align === 'right' ? 'text-right' : 'text-left'}`}
-                                >
-                                    <span className="inline-flex items-center gap-1">
-                                        {column.label}
-                                        {sortConfig.key === column.key ? (
-                                            sortConfig.direction === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
-                                        ) : (
-                                            <ChevronUp className="h-3 w-3 opacity-0" />
-                                        )}
-                                    </span>
-                                </th>
-                            ))}
+                            {columns.map((column) => {
+                                const isSorted = sortConfig.key === column.sortBy;
+
+                                return (
+                                    <th
+                                        key={column.key}
+                                        onClick={() => handleSort(column)}
+                                        className={`${column.sortBy ? 'cursor-pointer' : 'cursor-default'} px-2 py-2 text-[10px] font-medium text-gray-500 ${column.align === 'right' ? 'text-right' : 'text-left'}`}
+                                    >
+                                        <span className="inline-flex items-center gap-1">
+                                            {column.label}
+                                            {column.sortBy ? (
+                                                isSorted ? (
+                                                    sortConfig.direction === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                                                ) : (
+                                                    <ChevronUp className="h-3 w-3 opacity-0" />
+                                                )
+                                            ) : null}
+                                        </span>
+                                    </th>
+                                );
+                            })}
                         </tr>
                     </thead>
                     <tbody className={`${!loading && rows.length > 0 ? 'bg-white' : 'bg-transparent'}`}>
@@ -225,7 +249,7 @@ const InquirySearch = () => {
                             ))
                         ) : rows.length === 0 ? (
                             <tr>
-                                <td colSpan={columns.length} className="px-4 py-8 text-center text-gray-400">Inga forfragningar hittades.</td>
+                                <td colSpan={columns.length} className="px-4 py-8 text-center text-gray-400">Inga kunder hittades.</td>
                             </tr>
                         ) : (
                             rows.map((row) => (
@@ -237,22 +261,17 @@ const InquirySearch = () => {
                                     <td className="truncate px-2 py-1 text-gray-800">
                                         <button
                                             type="button"
-                                            onClick={(event) => handleOpenInquiry(event, row.id)}
+                                            onClick={(event) => handleOpenCustomer(event, row.id)}
                                             className="underline-offset-2 hover:underline"
                                         >
                                             {row.id}
                                         </button>
                                     </td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{row.product}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{row.customerName}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{row.supplierName}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{row.construction}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{row.material}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{row.format}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{row.sellerName}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{row.createdByName}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{formatDateShort(row.createdAt)}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{formatDateShort(row.editedAt)}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{row.name}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{row.orgNr}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{row.email}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{row.active ? 'Ja' : 'Nej'}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{row.lastActivity}</td>
                                 </tr>
                             ))
                         )}
@@ -263,4 +282,4 @@ const InquirySearch = () => {
     );
 };
 
-export default InquirySearch;
+export default CustomerSearch;

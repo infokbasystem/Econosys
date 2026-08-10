@@ -12,6 +12,10 @@ const SWEDISH_DATE_FORMATTER = new Intl.DateTimeFormat(SWEDISH_LOCALE, {
 });
 
 const toValidDate = (value) => {
+    if (value == null || value === '') {
+        return null;
+    }
+
     const date = value instanceof Date ? value : new Date(value);
     return Number.isNaN(date.getTime()) ? null : date;
 };

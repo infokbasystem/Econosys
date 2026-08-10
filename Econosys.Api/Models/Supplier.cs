@@ -126,6 +126,7 @@ namespace Econosys.Api.Models
         public virtual ICollection<Deviation> Deviations { get; set; } = new List<Deviation>();
         public virtual ICollection<InquiryRecipient> InquiryRecipients { get; set; } = new List<InquiryRecipient>();
         public virtual ICollection<SupplierContactPerson> SupplierContactPersons { get; set; } = new List<SupplierContactPerson>();
+        public virtual ICollection<SupplierFactory> SupplierFactories { get; set; } = new List<SupplierFactory>();
         public virtual ICollection<PalletFormatPrice> PalletFormatPrices { get; set; } = new List<PalletFormatPrice>();
     }
 }

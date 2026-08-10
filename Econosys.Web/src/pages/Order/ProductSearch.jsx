@@ -6,6 +6,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 
 import apiClient from '../../config/apiClient';
 import LabeledSwitch from '../../components/LabeledSwitch';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const PAGE_SIZE = 25;
 
@@ -119,13 +120,15 @@ const ProductSearch = () => {
     }, [appliedCode, appliedName, includeInactive, pagination.pageNumber, pagination.pageSize, sortConfig.direction, sortConfig.key]);
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadRows = async () => {
             setLoading(true);
 
             try {
-                const response = await apiClient.post('/products/search', payload, { signal: controller.signal });
+                const requestKey = `products:search:${JSON.stringify(payload)}`;
+                const response = await getSharedRequest(requestKey, () => apiClient.post('/products/search', payload));
+                if (!isActive) return;
                 const data = response?.data ?? {};
 
                 setRows(data.items ?? []);
@@ -139,8 +142,8 @@ const ProductSearch = () => {
                     hasNextPage: Boolean(data.hasNextPage),
                 }));
             } catch (error) {
-                if (error.code === 'ERR_CANCELED') return;
                 console.error('Failed to load products search:', error);
+                if (!isActive) return;
                 setRows([]);
                 setPagination((prev) => ({
                     ...prev,
@@ -150,7 +153,7 @@ const ProductSearch = () => {
                     hasNextPage: false,
                 }));
             } finally {
-                if (!controller.signal.aborted) {
+                if (isActive) {
                     setSearchLoaded(true);
                     setLoading(false);
                 }
@@ -159,7 +162,9 @@ const ProductSearch = () => {
 
         loadRows();
 
-        return () => controller.abort();
+        return () => {
+            isActive = false;
+        };
     }, [payload]);
 
     const showSkeleton = loading && !searchLoaded;

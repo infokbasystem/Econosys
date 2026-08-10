@@ -52,5 +52,6 @@ namespace Econosys.Api.Models
         public string? AddressExtra { get; set; }
 
         public virtual ICollection<SupplierOrder> SupplierOrders { get; set; } = new List<SupplierOrder>();
+        public virtual ICollection<SupplierFactory> SupplierFactories { get; set; } = new List<SupplierFactory>();
     }
 }

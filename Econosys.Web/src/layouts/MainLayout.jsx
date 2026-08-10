@@ -9,7 +9,9 @@ const MainLayout = () => {
       <Header />
       <Navbar />
       <div className="flex grow items-stretch bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50" style={{ backgroundImage: `url(${bg})` }}>
-        <Outlet />
+        <div className="w-full outlet-leading-none">
+          <Outlet />
+        </div>
       </div>
     </div>
   );

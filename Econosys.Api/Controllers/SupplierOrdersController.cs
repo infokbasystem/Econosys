@@ -3,9 +3,11 @@ using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
+using Econosys.Api.Common;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -21,18 +23,25 @@ namespace Econosys.Api.Controllers
 
         private readonly ApplicationDbContext _dbContext;
         private readonly ILogger<SupplierOrdersController> _logger;
+        private readonly ILegacyUserResolutionService _legacyUserResolution;
+        private readonly IPalletFormatOptionsService _palletFormatOptionsService;
 
-        public SupplierOrdersController(ApplicationDbContext dbContext, ILogger<SupplierOrdersController> logger)
+        public SupplierOrdersController(
+            ApplicationDbContext dbContext,
+            ILogger<SupplierOrdersController> logger,
+            ILegacyUserResolutionService legacyUserResolution,
+            IPalletFormatOptionsService palletFormatOptionsService)
         {
             _dbContext = dbContext;
             _logger = logger;
+            _legacyUserResolution = legacyUserResolution;
+            _palletFormatOptionsService = palletFormatOptionsService;
         }
 
         [HttpGet("{id:int}")]
         public async Task<ActionResult<SupplierOrderDto>> GetById(int id)
         {
-            var supplierOrder = await _dbContext.SupplierOrders
-                .AsNoTracking()
+            var supplierOrder = await BuildDetailsQuery()
                 .FirstOrDefaultAsync(x => x.Id == id);
 
             if (supplierOrder is null)
@@ -43,11 +52,345 @@ namespace Econosys.Api.Controllers
             return Ok(MapToDto(supplierOrder));
         }
 
+        [HttpPost]
+        public async Task<ActionResult<SupplierOrderDto>> Create([FromBody] CreateSupplierOrderRequest request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+            if (legacyUser is null)
+            {
+                return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+            }
+
+            var entity = new SupplierOrder();
+            ApplyCreateRequestToEntity(entity, request);
+
+            entity.Created ??= SwedishTime.Now;
+            entity.CreatedBy ??= legacyUser.Id;
+            entity.Edited = SwedishTime.Now;
+            entity.EditedBy = legacyUser.Id;
+
+            _dbContext.SupplierOrders.Add(entity);
+            await _dbContext.SaveChangesAsync();
+
+            await SyncOrderCostsAsync(entity.Id, request.OrderCosts);
+            await _dbContext.SaveChangesAsync();
+
+            var saved = await BuildDetailsQuery().FirstAsync(x => x.Id == entity.Id);
+            return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(saved));
+        }
+
+        [HttpGet("{id:int}/form-options")]
+        public async Task<ActionResult<SupplierOrderFormOptionsDto>> GetFormOptions(int id)
+        {
+            var context = await _dbContext.SupplierOrders
+                .AsNoTracking()
+                .Where(x => x.Id == id)
+                .Select(x => new
+                {
+                    x.CustomerId,
+                    x.SupplierId,
+                    x.SupplierFactoryId,
+                    x.InventoryId,
+                })
+                .FirstOrDefaultAsync();
+
+            if (context is null)
+            {
+                return NotFound();
+            }
+
+            var users = await _dbContext.LegacyUsers
+                .AsNoTracking()
+                .Where(x => x.Active && x.Name != null && x.Name != "")
+                .OrderBy(x => x.Name)
+                .Select(x => new FilterOptionDto<string>
+                {
+                    Id = x.Name!,
+                    Name = x.Name!,
+                    IsActive = x.Active,
+                })
+                .ToListAsync();
+
+            var costs = await _dbContext.Costs
+                .AsNoTracking()
+                .OrderBy(x => x.Name)
+                .Select(x => new CostDto
+                {
+                    Id = x.Id,
+                    Name = x.Name,
+                    IsActive = x.IsActive,
+                    AccountDomestic = x.AccountDomestic,
+                    AccountEU = x.AccountEU,
+                    AccountExport = x.AccountExport,
+                    AddAutomaicIfEconopackIsTransportReponsible = x.AddAutomaicIfEconopackIsTransportReponsible,
+                    CostTypeText = x.CostTypeText,
+                    DmtFixed = x.DmtFixed,
+                    DmtPercent = x.DmtPercent,
+                    IsCalculation = x.IsCalculation,
+                    IsCustomerDefault = x.IsCustomerDefault,
+                    IsNrOf = x.IsNrOf,
+                    IsSupplier = x.IsSupplier,
+                    IsDebitDefault = x.IsDebitDefault,
+                    DoPrintCustomerOrderDefault = x.DoPrintCustomerOrderDefault,
+                    DoPrintQuotationDefault = x.DoPrintQuotationDefault,
+                    DoPrintScrapToolsTextOnCustomerOrder = x.DoPrintScrapToolsTextOnCustomerOrder,
+                    DoPrintSupplierOrderDefault = x.DoPrintSupplierOrderDefault,
+                    ProvisionPercent = x.ProvisionPercent,
+                    TranslationCodeCustomerOrderKnown = x.TranslationCodeCustomerOrderKnown,
+                    TranslationCodeCustomerOrderUnknown = x.TranslationCodeCustomerOrderUnknown,
+                    TranslationCodeInvoiceRow = x.TranslationCodeInvoiceRow,
+                    TranslationCodeQuotationKnown = x.TranslationCodeQuotationKnown,
+                    TranslationCodeQuotationUnknown = x.TranslationCodeQuotationUnknown,
+                    TranslationCodeSupplierOrderKnown = x.TranslationCodeSupplierOrderKnown,
+                    TranslationCodeSupplierOrderUnknown = x.TranslationCodeSupplierOrderUnknown,
+                })
+                .ToListAsync();
+
+            var currencies = await _dbContext.Currencies
+                .AsNoTracking()
+                .OrderBy(x => x.Name)
+                .Select(x => new CurrencyDto
+                {
+                    Id = x.Id,
+                    Name = x.Name,
+                    TranslationCode = x.TranslationCode,
+                    IsDefault = x.IsDefault,
+                    RateToSek = x.RateToSek,
+                    Active = x.Active,
+                    RateStockValue = x.RateStockValue,
+                    OldDbId = x.OldDbId,
+                    SpcsKey = x.SpcsKey,
+                    WarningTolerancePercent = x.WarningTolerancePercent,
+                })
+                .ToListAsync();
+
+            var palletFormats = await _palletFormatOptionsService.GetOptionsAsync(context.CustomerId, context.SupplierId);
+
+            var supplierFactories = context.SupplierId.HasValue
+                ? await _dbContext.SupplierFactories
+                    .AsNoTracking()
+                    .Where(x => x.SupplierId == context.SupplierId)
+                    .OrderBy(x => x.Name)
+                    .ThenBy(x => x.Id)
+                    .Select(x => new FilterOptionDto<int>
+                    {
+                        Id = x.Id,
+                        Name = !string.IsNullOrWhiteSpace(x.Name) ? x.Name! : $"Fabrik {x.Id}",
+                        IsActive = true,
+                    })
+                    .ToListAsync()
+                : new List<FilterOptionDto<int>>();
+
+            if (context.SupplierFactoryId.HasValue && supplierFactories.All(x => x.Id != context.SupplierFactoryId.Value))
+            {
+                var selectedFactory = await _dbContext.SupplierFactories
+                    .AsNoTracking()
+                    .Where(x => x.Id == context.SupplierFactoryId.Value)
+                    .Select(x => new { x.Id, x.Name })
+                    .FirstOrDefaultAsync();
+
+                supplierFactories.Add(new FilterOptionDto<int>
+                {
+                    Id = context.SupplierFactoryId.Value,
+                    Name = !string.IsNullOrWhiteSpace(selectedFactory?.Name)
+                        ? selectedFactory!.Name!
+                        : $"Fabrik {context.SupplierFactoryId.Value}",
+                    IsActive = true,
+                });
+                supplierFactories = supplierFactories.OrderBy(x => x.Id).ToList();
+            }
+
+            var inventories = await _dbContext.Inventories
+                .AsNoTracking()
+                .Where(x => x.IsInventory)
+                .OrderBy(x => x.Name)
+                .ThenBy(x => x.Id)
+                .Select(x => new FilterOptionDto<int>
+                {
+                    Id = x.Id,
+                    Name = !string.IsNullOrWhiteSpace(x.Name) ? x.Name! : $"Lager {x.Id}",
+                    IsActive = true,
+                })
+                .ToListAsync();
+
+            if (context.InventoryId.HasValue && inventories.All(x => x.Id != context.InventoryId.Value))
+            {
+                var selectedInventory = await _dbContext.Inventories
+                    .AsNoTracking()
+                    .Where(x => x.Id == context.InventoryId.Value)
+                    .Select(x => new { x.Id, x.Name })
+                    .FirstOrDefaultAsync();
+
+                inventories.Add(new FilterOptionDto<int>
+                {
+                    Id = context.InventoryId.Value,
+                    Name = !string.IsNullOrWhiteSpace(selectedInventory?.Name)
+                        ? selectedInventory!.Name!
+                        : $"Lager {context.InventoryId.Value}",
+                    IsActive = true,
+                });
+                inventories = inventories.OrderBy(x => x.Id).ToList();
+            }
+
+            return Ok(new SupplierOrderFormOptionsDto
+            {
+                Users = users,
+                Costs = costs,
+                Currencies = currencies,
+                PalletFormats = palletFormats,
+                SupplierFactories = supplierFactories,
+                Inventories = inventories,
+            });
+        }
+
+        [HttpPut("{id:int}")]
+        public async Task<ActionResult<SupplierOrderDto>> Update(int id, [FromBody] UpdateSupplierOrderRequest request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+            if (legacyUser is null)
+            {
+                return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+            }
+
+            if (request.Id > 0 && request.Id != id)
+            {
+                return BadRequest(new { message = "Request id does not match route id." });
+            }
+
+            var entity = await _dbContext.SupplierOrders.FirstOrDefaultAsync(x => x.Id == id);
+            if (entity is null)
+            {
+                return NotFound();
+            }
+
+            ApplyUpdateRequestToEntity(entity, request);
+            entity.Edited = SwedishTime.Now;
+            entity.EditedBy = legacyUser.Id;
+
+            await SyncOrderCostsAsync(entity.Id, request.OrderCosts);
+            await _dbContext.SaveChangesAsync();
+
+            var saved = await BuildDetailsQuery().FirstAsync(x => x.Id == entity.Id);
+            return Ok(MapToDto(saved));
+        }
+
+        [HttpDelete("{id:int}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var entity = await _dbContext.SupplierOrders.FirstOrDefaultAsync(x => x.Id == id);
+            if (entity is null)
+            {
+                return NotFound();
+            }
+
+            var customerOrders = await _dbContext.CustomerOrders
+                .Where(x => x.SupplierOrderId == id)
+                .ToListAsync();
+            foreach (var customerOrder in customerOrders)
+            {
+                customerOrder.SupplierOrderId = null;
+            }
+
+            var orderCosts = await _dbContext.OrderCosts
+                .Where(x => x.SupplierOrderId == id)
+                .ToListAsync();
+            foreach (var orderCost in orderCosts)
+            {
+                orderCost.SupplierOrderId = null;
+            }
+
+            var deliveriesToCustomer = await _dbContext.DeliveryToCustomers
+                .Where(x => x.SupplierOrderId == id)
+                .ToListAsync();
+            foreach (var row in deliveriesToCustomer)
+            {
+                row.SupplierOrderId = null;
+            }
+
+            var deliveriesToStock = await _dbContext.DeliveryToStocks
+                .Where(x => x.SupplierOrderId == id)
+                .ToListAsync();
+            foreach (var row in deliveriesToStock)
+            {
+                row.SupplierOrderId = null;
+            }
+
+            var stockTakingItems = await _dbContext.StockTakingItems
+                .Where(x => x.SupplierOrderId == id)
+                .ToListAsync();
+            foreach (var row in stockTakingItems)
+            {
+                row.SupplierOrderId = null;
+            }
+
+            var documentFiles = await _dbContext.DocumentFiles
+                .Where(x => x.SupplierOrderId == id)
+                .ToListAsync();
+            foreach (var row in documentFiles)
+            {
+                row.SupplierOrderId = null;
+            }
+
+            var documentFileRelations = await _dbContext.DocumentFileRelations
+                .Where(x => x.SupplierOrderId == id)
+                .ToListAsync();
+            foreach (var row in documentFileRelations)
+            {
+                row.SupplierOrderId = null;
+            }
+
+            var basedOnReferences = await _dbContext.SupplierOrders
+                .Where(x => x.BasedOnSupplierOrderId == id)
+                .ToListAsync();
+            foreach (var row in basedOnReferences)
+            {
+                row.BasedOnSupplierOrderId = null;
+            }
+
+            var editionReferences = await _dbContext.SupplierOrders
+                .Where(x => x.EditionTakenFromSupplierOrderId == id)
+                .ToListAsync();
+            foreach (var row in editionReferences)
+            {
+                row.EditionTakenFromSupplierOrderId = null;
+            }
+
+            _dbContext.SupplierOrders.Remove(entity);
+            await _dbContext.SaveChangesAsync();
+
+            return NoContent();
+        }
+
         [HttpPost("search")]
         public async Task<ActionResult<PagedResultDto<SupplierOrderDto>>> Search([FromBody] SearchSupplierOrdersRequest? request)
         {
-            IQueryable<SupplierOrder> query = _dbContext.SupplierOrders.AsNoTracking();
+            IQueryable<SupplierOrder> query = _dbContext.SupplierOrders
+                .AsNoTracking()
+                .Include(x => x.Customer);
             var pagination = request?.Pagination ?? new PaginationRequest();
+
+            var searchTerm = request?.SearchTerm?.Trim();
+            if (!string.IsNullOrWhiteSpace(searchTerm))
+            {
+                var likePattern = $"%{EscapeLikePattern(searchTerm)}%";
+                var hasNumericId = int.TryParse(searchTerm, NumberStyles.Integer, CultureInfo.InvariantCulture, out var idValue);
+
+                query = query.Where(x =>
+                    (hasNumericId && x.Id == idValue) ||
+                    (x.SupplierOrderNr != null && EF.Functions.Like(x.SupplierOrderNr, likePattern)) ||
+                    (x.CustomerOrderNr != null && EF.Functions.Like(x.CustomerOrderNr, likePattern)) ||
+                    (x.Customer != null && x.Customer.Name != null && EF.Functions.Like(x.Customer.Name, likePattern)));
+            }
 
             if (request?.Filter?.Conditions?.Count > 0)
             {
@@ -98,6 +441,14 @@ namespace Econosys.Api.Controllers
             });
         }
 
+        private static string EscapeLikePattern(string value)
+        {
+            return value
+                .Replace("[", "[[")
+                .Replace("%", "[%]")
+                .Replace("_", "[_]");
+        }
+
         private static Dictionary<string, PropertyInfo> BuildFieldMap()
         {
             var map = new Dictionary<string, PropertyInfo>(StringComparer.OrdinalIgnoreCase);
@@ -145,8 +496,15 @@ namespace Econosys.Api.Controllers
 
             foreach (var sort in orderBy)
             {
-                var property = ResolveProperty(sort.Field);
                 var isDescending = string.Equals(sort.Direction, "desc", StringComparison.OrdinalIgnoreCase);
+
+                if (string.Equals(sort.Field, "customername", StringComparison.OrdinalIgnoreCase))
+                {
+                    ordered = ApplySort(ordered, query, x => x.Customer != null ? x.Customer.Name : null, isDescending);
+                    continue;
+                }
+
+                var property = ResolveProperty(sort.Field);
                 ordered = ApplySort(ordered, query, property, isDescending);
             }
 
@@ -174,6 +532,24 @@ namespace Econosys.Api.Controllers
 
             var result = method.Invoke(null, new object[] { ordered ?? source, lambda });
             return (IOrderedQueryable<SupplierOrder>)result!;
+        }
+
+        private static IOrderedQueryable<SupplierOrder> ApplySort<TKey>(
+            IOrderedQueryable<SupplierOrder>? ordered,
+            IQueryable<SupplierOrder> source,
+            Expression<Func<SupplierOrder, TKey>> keySelector,
+            bool isDescending)
+        {
+            if (ordered is null)
+            {
+                return isDescending
+                    ? source.OrderByDescending(keySelector)
+                    : source.OrderBy(keySelector);
+            }
+
+            return isDescending
+                ? ordered.ThenByDescending(keySelector)
+                : ordered.ThenBy(keySelector);
         }
 
         private static IQueryable<SupplierOrder> ApplyCondition(IQueryable<SupplierOrder> query, FilterConditionDto condition)
@@ -556,6 +932,7 @@ namespace Econosys.Api.Controllers
                 PostalAddress = source.PostalAddress,
                 Country = source.Country,
                 CustomerId = source.CustomerId,
+                CustomerName = source.Customer?.Name,
                 DeliveryAddressName = source.DeliveryAddressName,
                 DeliveryAddress = source.DeliveryAddress,
                 DeliveryPostalNr = source.DeliveryPostalNr,
@@ -577,10 +954,12 @@ namespace Econosys.Api.Controllers
                 GoodsMarking = source.GoodsMarking,
                 Preparation = source.Preparation,
                 UnitId = source.UnitId,
+                UnitName = source.Unit?.Name,
                 SelectedCalculationRowId = source.SelectedCalculationRowId,
                 Edition = source.Edition,
                 PurchasePrice = source.PurchasePrice,
                 PurchaseCurrencyId = source.PurchaseCurrencyId,
+                PurchaseCurrencyName = source.PurchaseCurrency?.Name,
                 Confirmed = source.Confirmed,
                 PuchDrawingAccepted = source.PuchDrawingAccepted,
                 PrintBasisAccepted = source.PrintBasisAccepted,
@@ -588,7 +967,9 @@ namespace Econosys.Api.Controllers
                 Created = source.Created,
                 Edited = source.Edited,
                 CreatedBy = source.CreatedBy,
+                CreatedByUserName = null,
                 EditedBy = source.EditedBy,
+                EditedByUserName = null,
                 ProductCode = source.ProductCode,
                 ConfirmedDeliveryDate = source.ConfirmedDeliveryDate,
                 PurchaseCurrencyRate = source.PurchaseCurrencyRate,
@@ -617,8 +998,205 @@ namespace Econosys.Api.Controllers
                 EditionTakenFromSupplierOrderId = source.EditionTakenFromSupplierOrderId,
                 EmailSentDateTime = source.EmailSentDateTime,
                 PackagingType = source.PackagingType,
-                CalculationId = source.CalculationId
+                CalculationId = source.CalculationId,
+                OrderCosts = source.OrderCosts
+                    .OrderBy(x => x.Id)
+                    .Select(MapOrderCostToDto)
+                    .ToList(),
             };
+        }
+
+        private IQueryable<SupplierOrder> BuildDetailsQuery()
+        {
+            return _dbContext.SupplierOrders
+                .AsNoTracking()
+                .Include(x => x.Customer)
+                .Include(x => x.Unit)
+                .Include(x => x.PurchaseCurrency)
+                .Include(x => x.OrderCosts)
+                    .ThenInclude(x => x.CustomerOrder)
+                .Include(x => x.OrderCosts)
+                    .ThenInclude(x => x.InvoiceRows);
+        }
+
+        private async Task SyncOrderCostsAsync(int supplierOrderId, List<UpsertSupplierOrderOrderCostRequest>? requestedCosts)
+        {
+            var requested = requestedCosts ?? new List<UpsertSupplierOrderOrderCostRequest>();
+
+            var requestedIds = requested
+                .Where(x => x.Id.HasValue && x.Id.Value > 0)
+                .Select(x => x.Id!.Value)
+                .ToHashSet();
+
+            var existing = await _dbContext.OrderCosts
+                .Where(x => x.SupplierOrderId == supplierOrderId)
+                .ToListAsync();
+
+            var toDelete = existing.Where(x => !requestedIds.Contains(x.Id)).ToList();
+            if (toDelete.Count > 0)
+            {
+                _dbContext.OrderCosts.RemoveRange(toDelete);
+            }
+
+            foreach (var req in requested)
+            {
+                if (req.Id.HasValue && req.Id.Value > 0)
+                {
+                    var entity = existing.FirstOrDefault(x => x.Id == req.Id.Value);
+                    if (entity != null)
+                    {
+                        ApplyOrderCostRequest(entity, req);
+                    }
+                }
+                else if (req.CostId.HasValue)
+                {
+                    var entity = new OrderCost { SupplierOrderId = supplierOrderId };
+                    ApplyOrderCostRequest(entity, req);
+                    _dbContext.OrderCosts.Add(entity);
+                }
+            }
+        }
+
+        private static void ApplyOrderCostRequest(OrderCost entity, UpsertSupplierOrderOrderCostRequest req)
+        {
+            entity.CustomerOrderId = req.CustomerOrderId;
+            entity.SupplierOrderId = req.SupplierOrderId;
+            entity.CostId = req.CostId;
+            entity.DoDebit = req.DoDebit;
+            entity.NrOf = req.NrOf;
+            entity.InPrice = req.InPrice;
+            entity.InPriceAttested = req.InPriceAttested;
+            entity.OutPrice = req.OutPrice;
+            entity.Note = req.Note;
+            entity.SupplierName = req.SupplierName;
+            entity.DoPrintOnQuotation = req.DoPrintOnQuotation;
+            entity.DoPrintOnCustomerOrder = req.DoPrintOnCustomerOrder;
+            entity.DoPrintOnSupplierOrder = req.DoPrintOnSupplierOrder;
+            entity.DoInvoiceSeparately = req.DoInvoiceSeparately;
+            entity.DoInvoiceSeparatelyImmediately = req.DoInvoiceSeparatelyImmediately;
+            entity.IsCostInvoicedSeparately = req.IsCostInvoicedSeparately;
+        }
+
+        private static SupplierOrderOrderCostDto MapOrderCostToDto(OrderCost source)
+        {
+            var invoiceRow = source.InvoiceRows
+                .Where(x => x.InvoiceId.HasValue)
+                .OrderByDescending(x => x.InvoiceId)
+                .FirstOrDefault();
+
+            return new SupplierOrderOrderCostDto
+            {
+                Id = source.Id,
+                CustomerOrderId = source.CustomerOrderId,
+                SupplierOrderId = source.SupplierOrderId,
+                CostId = source.CostId,
+                DoDebit = source.DoDebit,
+                NrOf = source.NrOf,
+                InPrice = source.InPrice,
+                InPriceAttested = source.InPriceAttested,
+                OutPrice = source.OutPrice,
+                OutPriceSEK = source.OutPrice.HasValue && source.CustomerOrder?.SalesCurrencyRate is > 0
+                    ? source.OutPrice * (decimal)source.CustomerOrder.SalesCurrencyRate.Value
+                    : source.OutPrice,
+                Markup = source.InPrice.HasValue && source.OutPrice.HasValue && source.InPrice != 0
+                    ? Math.Round((source.OutPrice.Value - source.InPrice.Value) / source.InPrice.Value * 100, 2)
+                    : null,
+                Note = source.Note,
+                SupplierName = source.SupplierName,
+                DoPrintOnQuotation = source.DoPrintOnQuotation,
+                DoPrintOnCustomerOrder = source.DoPrintOnCustomerOrder,
+                DoPrintOnSupplierOrder = source.DoPrintOnSupplierOrder,
+                DoInvoiceSeparately = source.DoInvoiceSeparately,
+                DoInvoiceSeparatelyImmediately = source.DoInvoiceSeparatelyImmediately,
+                IsCostInvoicedSeparately = source.IsCostInvoicedSeparately,
+                InvoiceId = invoiceRow?.InvoiceId,
+                InvoiceRowId = invoiceRow?.Id,
+            };
+        }
+
+        private static void ApplyCreateRequestToEntity(SupplierOrder entity, CreateSupplierOrderRequest request)
+        {
+            entity.SupplierOrderNr = request.SupplierOrderNr;
+            entity.BasedOnSupplierOrderId = request.BasedOnSupplierOrderId;
+            entity.SupplierId = request.SupplierId;
+            entity.SupplierFactoryId = request.SupplierFactoryId;
+            entity.InventoryId = request.InventoryId;
+            entity.SupplierName = request.SupplierName;
+            entity.CustomerId = request.CustomerId;
+            entity.Date = request.Date;
+            entity.TimeOfDelivery = request.TimeOfDelivery;
+            entity.CustomerOrderNr = request.CustomerOrderNr;
+            entity.DeliveryAddressName = request.DeliveryAddressName;
+            entity.DeliveryAddress = request.DeliveryAddress;
+            entity.DeliveryPostalNr = request.DeliveryPostalNr;
+            entity.DeliveryPostalAddress = request.DeliveryPostalAddress;
+            entity.DeliveryCountry = request.DeliveryCountry;
+            entity.YourReference = request.YourReference;
+            entity.OurReference = request.OurReference;
+            entity.TermsOfDelivery = request.TermsOfDelivery;
+            entity.TermsOfPayment = request.TermsOfPayment;
+            entity.Message = request.Message;
+            entity.Product = request.Product;
+            entity.Material = request.Material;
+            entity.Format = request.Format;
+            entity.Color = request.Color;
+            entity.Construction = request.Construction;
+            entity.GoodsMarking = request.GoodsMarking;
+            entity.HideCustomerInfoOnPrint = request.HideCustomerInfoOnPrint;
+            entity.HideCustomerNameOnPrint = request.HideCustomerNameOnPrint;
+            entity.HideProductNameOnPrint = request.HideProductNameOnPrint;
+            entity.IsFSC = request.IsFSC;
+            entity.Confirmed = request.Confirmed;
+            entity.EconopackTransportResponsible = request.EconopackTransportResponsible;
+            entity.DeliveryDate = request.DeliveryDate;
+            entity.DeliveryDateWeekMode = request.DeliveryDateWeekMode;
+            entity.ConfirmedDeliveryDate = request.ConfirmedDeliveryDate;
+            entity.ConfirmedDeliveryDateWeekMode = request.ConfirmedDeliveryDateWeekMode;
+            entity.PackagingType = request.PackagingType;
+            entity.PalletFormatId = request.PalletFormatId;
+            entity.EurPallet = request.EurPallet;
+        }
+
+        private static void ApplyUpdateRequestToEntity(SupplierOrder entity, UpdateSupplierOrderRequest request)
+        {
+            // Supplier/customer linkage is intentionally stable after create.
+            entity.SupplierOrderNr = request.SupplierOrderNr;
+            entity.BasedOnSupplierOrderId = request.BasedOnSupplierOrderId;
+            entity.SupplierFactoryId = request.SupplierFactoryId;
+            entity.InventoryId = request.InventoryId;
+            entity.Date = request.Date;
+            entity.TimeOfDelivery = request.TimeOfDelivery;
+            entity.CustomerOrderNr = request.CustomerOrderNr;
+            entity.DeliveryAddressName = request.DeliveryAddressName;
+            entity.DeliveryAddress = request.DeliveryAddress;
+            entity.DeliveryPostalNr = request.DeliveryPostalNr;
+            entity.DeliveryPostalAddress = request.DeliveryPostalAddress;
+            entity.DeliveryCountry = request.DeliveryCountry;
+            entity.YourReference = request.YourReference;
+            entity.OurReference = request.OurReference;
+            entity.TermsOfDelivery = request.TermsOfDelivery;
+            entity.TermsOfPayment = request.TermsOfPayment;
+            entity.Message = request.Message;
+            entity.Product = request.Product;
+            entity.Material = request.Material;
+            entity.Format = request.Format;
+            entity.Color = request.Color;
+            entity.Construction = request.Construction;
+            entity.GoodsMarking = request.GoodsMarking;
+            entity.HideCustomerInfoOnPrint = request.HideCustomerInfoOnPrint;
+            entity.HideCustomerNameOnPrint = request.HideCustomerNameOnPrint;
+            entity.HideProductNameOnPrint = request.HideProductNameOnPrint;
+            entity.IsFSC = request.IsFSC;
+            entity.Confirmed = request.Confirmed;
+            entity.EconopackTransportResponsible = request.EconopackTransportResponsible;
+            entity.DeliveryDate = request.DeliveryDate;
+            entity.DeliveryDateWeekMode = request.DeliveryDateWeekMode;
+            entity.ConfirmedDeliveryDate = request.ConfirmedDeliveryDate;
+            entity.ConfirmedDeliveryDateWeekMode = request.ConfirmedDeliveryDateWeekMode;
+            entity.PackagingType = request.PackagingType;
+            entity.PalletFormatId = request.PalletFormatId;
+            entity.EurPallet = request.EurPallet;
+            entity.ProducedEdition = request.ProducedEdition;
         }
     }
 }

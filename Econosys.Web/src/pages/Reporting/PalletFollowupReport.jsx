@@ -7,6 +7,7 @@ import SwitchSelector from 'react-switch-selector';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import DateRangePicker from '../../components/Daterangepicker';
 import apiClient from '../../config/apiClient';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const columns = [
     { key: 'supplier', label: 'Leverantör', align: 'left' },
@@ -58,26 +59,24 @@ const PalletFollowupReport = () => {
     const [sortConfig, setSortConfig] = useState({ key: 'supplier', direction: 'asc' });
 
     useEffect(() => {
-        const controller = new AbortController();
-        let disposed = false;
+        let isActive = true;
 
         const initialize = async () => {
-            await loadCustomers(controller.signal);
-            await loadReport(controller.signal, filters);
+            await loadCustomers(isActive);
+            await loadReport(isActive, filters);
 
-            if (!disposed) {
+            if (isActive) {
                 setInitialLoadCompleted(true);
             }
         };
 
-        initialize();
+        void initialize();
         return () => {
-            disposed = true;
-            controller.abort();
+            isActive = false;
         };
     }, []);
 
-    const loadCustomers = async (signal = null) => {
+    const loadCustomers = async (isActive = true) => {
         try {
             // API validates PageSize with an upper bound of 200.
             const pageSize = 200;
@@ -94,8 +93,9 @@ const PalletFollowupReport = () => {
                         sortDescending: false,
                         pagination: { pageNumber, pageSize },
                     },
-                    signal ? { signal } : {}
+                    {}
                 );
+                if (!isActive) return;
 
                 const data = response?.data;
                 const items = data?.items ?? [];
@@ -104,15 +104,16 @@ const PalletFollowupReport = () => {
                 pageNumber += 1;
             }
 
+            if (!isActive) return;
             setCustomerOptions(fetched.sort((a, b) => a.name.localeCompare(b.name, 'sv-SE')));
         } catch (error) {
-            if (error.code === 'ERR_CANCELED') return;
             console.error('Failed to load customers:', error);
+            if (!isActive) return;
             setCustomerOptions([]);
         }
     };
 
-    const loadReport = async (signal = null, overrideFilters = null) => {
+    const loadReport = async (isActive = true, overrideFilters = null) => {
         const f = overrideFilters ?? filters;
 
         if (f.perCustomer && !f.customerId) {
@@ -136,12 +137,10 @@ const PalletFollowupReport = () => {
                 endDate: toDateStr(f.endDate),
                 ...(f.perCustomer && f.customerId ? { customerId: f.customerId } : {}),
             };
+            const requestKey = `reporting:palletfollowup:${JSON.stringify(body)}`;
 
-            const response = await apiClient.post(
-                '/reporting/palletfollowup',
-                body,
-                signal ? { signal } : {}
-            );
+            const response = await getSharedRequest(requestKey, () => apiClient.post('/reporting/palletfollowup', body));
+            if (!isActive) return;
 
             setRows(
                 (response?.data?.rows ?? []).map((r) => ({
@@ -151,10 +150,11 @@ const PalletFollowupReport = () => {
                 }))
             );
         } catch (error) {
-            if (error.code === 'ERR_CANCELED') return;
             console.error('Failed to load pallet followup report:', error);
+            if (!isActive) return;
             setRows([]);
         } finally {
+            if (!isActive) return;
             clearTimeout(skeletonTimerRef.current);
             setLoading(false);
             setShowSkeleton(false);
@@ -169,7 +169,7 @@ const PalletFollowupReport = () => {
                 next.customerId = null;
             }
 
-            loadReport(null, next);
+            void loadReport(true, next);
             return next;
         });
     };

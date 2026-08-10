@@ -14,6 +14,7 @@ import apiClient from '../../config/apiClient';
 import { formatDateTime, fromDateInputToSwedishIso, toSwedishDateInputValue } from '../../helpers/dateUtils';
 import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
 import { parseNullableInt } from '../../helpers/numberUtils';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const COMPANY_ID = 1;
 
@@ -354,39 +355,49 @@ const Inquiry = () => {
     };
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadInquiry = async () => {
             setLoading(true);
 
             try {
-                setSelectedSupplierDetails(null);
+                if (isActive) {
+                    setSelectedSupplierDetails(null);
+                }
 
                 if (isNewInquiry) {
                     const emptyInquiry = createNewInquiryModel();
+                    if (!isActive) return;
                     setInquiry(emptyInquiry);
                     setOriginalInquiry(structuredClone(emptyInquiry));
                 } else {
-                    const response = await apiClient.get(`/inquiries/${id}`, { signal: controller.signal });
+                    const requestKey = `inquiries:${id}`;
+                    const response = await getSharedRequest(requestKey, () => apiClient.get(`/inquiries/${id}`));
+                    if (!isActive) return;
                     const data = response.data;
                     setInquiry(data ?? null);
                     setOriginalInquiry(structuredClone(data));
                 }
 
-                clearStale();
+                if (isActive) {
+                    clearStale();
+                }
             } catch (error) {
-                if (error.code === 'ERR_CANCELED') return;
                 console.error('Failed to load inquiry:', error);
+                if (!isActive) return;
                 setInquiry(null);
             } finally {
-                if (!controller.signal.aborted) {
+                if (isActive) {
                     setLoading(false);
                 }
             }
         };
 
         loadInquiry();
-        return () => controller.abort();
+
+        return () => {
+            isActive = false;
+        };
     }, [clearStale, id, isNewInquiry]);
 
     useEffect(() => {
@@ -398,16 +409,18 @@ const Inquiry = () => {
             return;
         }
 
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadSupplierDetails = async () => {
             try {
-                const response = await apiClient.get(`/suppliers/${supplierId}/details`, { signal: controller.signal });
+                const requestKey = `suppliers:${supplierId}:details`;
+                const response = await getSharedRequest(requestKey, () => apiClient.get(`/suppliers/${supplierId}/details`));
+                if (!isActive) return;
                 setSelectedSupplierDetails(response?.data ?? null);
                 setLoadedSupplierDetailsForId(supplierId);
             } catch (error) {
-                if (error?.code === 'ERR_CANCELED') return;
                 console.error('Failed to load supplier details:', error);
+                if (!isActive) return;
                 setSelectedSupplierDetails(null);
                 setLoadedSupplierDetailsForId(supplierId);
             }
@@ -415,7 +428,9 @@ const Inquiry = () => {
 
         loadSupplierDetails();
 
-        return () => controller.abort();
+        return () => {
+            isActive = false;
+        };
     }, [inquiry?.selectedSupplierId]);
 
     useEffect(() => {
@@ -427,16 +442,18 @@ const Inquiry = () => {
             return;
         }
 
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadCustomerDetails = async () => {
             try {
-                const response = await apiClient.get(`/customers/${customerId}`, { signal: controller.signal });
+                const requestKey = `customers:${customerId}`;
+                const response = await getSharedRequest(requestKey, () => apiClient.get(`/customers/${customerId}`));
+                if (!isActive) return;
                 setSelectedCustomerDetails(response?.data ?? null);
                 setLoadedCustomerDetailsForId(customerId);
             } catch (error) {
-                if (error?.code === 'ERR_CANCELED') return;
                 console.error('Failed to load customer details:', error);
+                if (!isActive) return;
                 setSelectedCustomerDetails(null);
                 setLoadedCustomerDetailsForId(customerId);
             }
@@ -444,15 +461,17 @@ const Inquiry = () => {
 
         loadCustomerDetails();
 
-        return () => controller.abort();
+        return () => {
+            isActive = false;
+        };
     }, [inquiry?.customerId]);
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadLegacyUserOptions = async () => {
             try {
-                const response = await apiClient.get('/legacyusers/active-options', { signal: controller.signal });
+                const response = await getSharedRequest('legacyusers:active-options', () => apiClient.get('/legacyusers/active-options'));
                 const options = Array.isArray(response?.data)
                     ? response.data
                         .map((item) => ({
@@ -462,17 +481,20 @@ const Inquiry = () => {
                         .filter((item) => item.id && item.name)
                     : [];
 
+                if (!isActive) return;
                 setLegacyUserOptions(options);
             } catch (error) {
-                if (error?.code === 'ERR_CANCELED') return;
                 console.error('Failed to load legacy user options:', error);
+                if (!isActive) return;
                 setLegacyUserOptions([]);
             }
         };
 
         loadLegacyUserOptions();
 
-        return () => controller.abort();
+        return () => {
+            isActive = false;
+        };
     }, []);
 
     useEffect(() => {
@@ -617,11 +639,6 @@ const Inquiry = () => {
                         </div>
                     </div>
 
-                    <OrderNavigationTree
-                        entityType="inquiry"
-                        entityId={Number.isInteger(inquiry?.id) && inquiry.id > 0 ? inquiry.id : null}
-                    />
-
                     <hr className="mt-5 border-gray-300 dark:border-white" />
                     <h2 className="text-sm text-center text-gray-700 mt-5">Meddelanden</h2>
                     {messages.length === 0 ? (
@@ -643,6 +660,11 @@ const Inquiry = () => {
                             ))}
                         </ul>
                     )}
+
+                    <OrderNavigationTree
+                        entityType="inquiry"
+                        entityId={Number.isInteger(inquiry?.id) && inquiry.id > 0 ? inquiry.id : null}
+                    />
 
                 </div>
 

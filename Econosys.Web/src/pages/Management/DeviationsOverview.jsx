@@ -8,6 +8,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 import apiClient from '../../config/apiClient';
 import LabeledSwitch from '../../components/LabeledSwitch';
 import { getSwedishTodayDateString } from '../../helpers/dateUtils';
+import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const PAGE_SIZE = 20;
 const DEVIATIONS_OVERVIEW_CACHE_KEY = 'deviations-overview-page-state';
@@ -226,13 +227,14 @@ const DeviationsOverview = () => {
     });
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadInitial = async () => {
             setOverviewLoading(true);
 
             try {
-                const response = await apiClient.get('/deviations/overview', { signal: controller.signal });
+                const response = await getSharedRequest('deviations:overview', () => apiClient.get('/deviations/overview'));
+                if (!isActive) return;
 
                 setOverview({
                     year: response?.data?.year ?? new Date().getFullYear(),
@@ -240,13 +242,13 @@ const DeviationsOverview = () => {
                     monthlyStats: response?.data?.monthlyStats ?? [],
                 });
             } catch (error) {
-                if (error.code === 'ERR_CANCELED') return;
                 console.error('Failed to load deviation overview data:', error);
+                if (!isActive) return;
                 if (!hasOverviewSnapshot) {
                     setOverview(defaultOverview);
                 }
             } finally {
-                if (!controller.signal.aborted) {
+                if (isActive) {
                     setHasOverviewSnapshot(true);
                     setOverviewLoading(false);
                 }
@@ -255,17 +257,22 @@ const DeviationsOverview = () => {
 
         loadInitial();
 
-        return () => controller.abort();
+        return () => {
+            isActive = false;
+        };
     }, []);
 
     useEffect(() => {
-        const controller = new AbortController();
+        let isActive = true;
 
         const loadRows = async () => {
             setSearchLoading(true);
+            const requestPayload = buildSearchPayload();
+            const requestKey = `deviations:search:${JSON.stringify(requestPayload)}`;
 
             try {
-                const response = await apiClient.post('/deviations/search', buildSearchPayload(), { signal: controller.signal });
+                const response = await getSharedRequest(requestKey, () => apiClient.post('/deviations/search', requestPayload));
+                if (!isActive) return;
 
                 const data = response?.data ?? {};
                 setRows(data.items ?? []);
@@ -279,8 +286,8 @@ const DeviationsOverview = () => {
                     hasNextPage: Boolean(data.hasNextPage),
                 }));
             } catch (error) {
-                if (error.code === 'ERR_CANCELED') return;
                 console.error('Failed to load deviations search:', error);
+                if (!isActive) return;
                 if (!hasSearchSnapshot) {
                     setRows([]);
                     setPagination((prev) => ({
@@ -292,7 +299,7 @@ const DeviationsOverview = () => {
                     }));
                 }
             } finally {
-                if (!controller.signal.aborted) {
+                if (isActive) {
                     setHasSearchSnapshot(true);
                     setSearchLoading(false);
                 }
@@ -302,7 +309,7 @@ const DeviationsOverview = () => {
         loadRows();
 
         return () => {
-            controller.abort();
+            isActive = false;
         };
     }, [filters, pagination.pageNumber, pagination.pageSize, sortConfig]);
 

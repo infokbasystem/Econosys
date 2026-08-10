@@ -30,3 +30,75 @@
   padding: 4px 1px 4px 1px;
   color: white;
 }
+
+.supplier-order-daypicker .rdp-root {
+  --rdp-accent-color: var(--color-green-600);
+  --rdp-day-width: 40px;
+  --rdp-day-height: 40px;
+  --rdp-day_button-width: 28px;
+  --rdp-day_button-height: 28px;
+  --rdp-week_number-width: 30px;
+  --rdp-week_number-height: 30px;
+  --rdp-nav_button-width: 22px;
+  --rdp-nav_button-height: 22px;
+  --rdp-nav-height: 30px;
+  --rdp-day_button-border-radius: 9999px;
+}
+
+.supplier-order-daypicker .rdp-day,
+.supplier-order-daypicker .rdp-week_number {
+  padding: 0;
+  vertical-align: middle;
+}
+
+.supplier-order-daypicker .rdp-day_button {
+  margin: 0 auto;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.supplier-order-daypicker .rdp-month_caption {
+  font-size: 0.88rem;
+  font-weight: 500;
+  height: 30px;
+  margin: 5px 10px 5px 10px;
+  text-transform: capitalize;
+}
+
+.supplier-order-daypicker .rdp-button_next,
+.supplier-order-daypicker .rdp-button_previous {
+  color: var(--color-green-700);
+  margin-top: 10px;
+}
+
+.supplier-order-daypicker .rdp-chevron {
+  width: 14px;
+  height: 14px;
+}
+
+.supplier-order-daypicker .rdp-weekday {
+  font-size: 0.62rem;
+  padding: 0.2rem 0;
+}
+
+.supplier-order-daypicker .rdp-week_number {
+  font-size: 0.62rem;
+  opacity: 1;
+}
+
+.supplier-order-daypicker .rdp-selected {
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.supplier-order-daypicker .rdp-selected .rdp-day_button {
+  background-color: var(--color-lime-600);
+  border-color: var(--color-lime-700);
+  border-width: 1px;
+  color: var(--color-emerald-50);
+}
+
+.outlet-leading-none,
+.outlet-leading-none * {
+  line-height: 1 !important;
+}

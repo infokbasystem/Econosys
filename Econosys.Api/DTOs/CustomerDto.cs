@@ -67,6 +67,15 @@ namespace Econosys.Api.DTOs
         public List<CustomerContactPersonDto> ContactPersons { get; set; } = new();
     }
 
+    public class CustomerFormOptionsDto
+    {
+        public IReadOnlyList<FilterOptionDto<int>> Users { get; set; } = Array.Empty<FilterOptionDto<int>>();
+        public IReadOnlyList<CurrencyDto> Currencies { get; set; } = Array.Empty<CurrencyDto>();
+        public IReadOnlyList<FilterOptionDto<string>> TermsOfDelivery { get; set; } = Array.Empty<FilterOptionDto<string>>();
+        public IReadOnlyList<FilterOptionDto<string>> TermsOfPayment { get; set; } = Array.Empty<FilterOptionDto<string>>();
+        public IReadOnlyList<FilterOptionDto<int>> Languages { get; set; } = Array.Empty<FilterOptionDto<int>>();
+    }
+
     public class CustomerDeliveryAddressDto
     {
         public int? Id { get; set; }
@@ -75,6 +84,17 @@ namespace Econosys.Api.DTOs
         public string? PostalNr { get; set; }
         public string? PostalAddress { get; set; }
         public string? Country { get; set; }
+        public string? PalletRegistrationNr { get; set; }
+        public bool IsDefault { get; set; }
+        public string? Address2 { get; set; }
+        public int? OldDbId { get; set; }
+        public int? PostalNrValue { get; set; }
+        public string? CountryCode { get; set; }
+        public string? LogisticsInfoInternal { get; set; }
+        public int? InventoryId { get; set; }
+        public int? NextTransportDeliveryAddressId { get; set; }
+        public int? PositionId { get; set; }
+        public string? AddressExtra { get; set; }
     }
 
     public class CustomerContactPersonDto
@@ -153,6 +173,8 @@ namespace Econosys.Api.DTOs
         public DateOnly? BudgetCountAsNewUntilMonth { get; set; }
         public bool InvoiceRowsInProductNameOrder { get; set; }
         public string? OrderNrPrefix { get; set; }
+        public List<CustomerDeliveryAddressUpsertDto>? DeliveryAddresses { get; set; }
+        public List<CustomerContactPersonUpsertDto>? ContactPersons { get; set; }
     }
 
     public class UpdateCustomerRequest
@@ -212,6 +234,45 @@ namespace Econosys.Api.DTOs
         public DateOnly? BudgetCountAsNewUntilMonth { get; set; }
         public bool? InvoiceRowsInProductNameOrder { get; set; }
         public string? OrderNrPrefix { get; set; }
+        public List<CustomerDeliveryAddressUpsertDto>? DeliveryAddresses { get; set; }
+        public List<CustomerContactPersonUpsertDto>? ContactPersons { get; set; }
+    }
+
+    public class CustomerDeliveryAddressUpsertDto
+    {
+        public int? Id { get; set; }
+        public string? Name { get; set; }
+        public string? Address { get; set; }
+        public string? PostalNr { get; set; }
+        public string? PostalAddress { get; set; }
+        public string? Country { get; set; }
+        public string? PalletRegistrationNr { get; set; }
+        public bool? IsDefault { get; set; }
+        public string? Address2 { get; set; }
+        public int? PostalNrValue { get; set; }
+        public string? CountryCode { get; set; }
+        public string? LogisticsInfoInternal { get; set; }
+        public int? InventoryId { get; set; }
+        public int? NextTransportDeliveryAddressId { get; set; }
+        public int? PositionId { get; set; }
+        public string? AddressExtra { get; set; }
+    }
+
+    public class CustomerContactPersonUpsertDto
+    {
+        public int? Id { get; set; }
+        public string? CustomerContactPersonName { get; set; }
+        public string? ContactPerson { get; set; }
+        public string? Email { get; set; }
+        public string? Telephone { get; set; }
+        public string? Cellphone { get; set; }
+        public bool MailQuotation { get; set; }
+        public bool MailCustomerOrder { get; set; }
+        public bool MailInvoice { get; set; }
+        public bool MailTransportOrder { get; set; }
+        public bool MailGeneralInfo { get; set; }
+        public bool MailCallOffConfirmation { get; set; }
+        public string? Title { get; set; }
     }
 
     public class SearchCustomersRequest
