@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip,
@@ -480,7 +481,14 @@ const FinanceOverview = () => {
                 ) : (
                   unbooked.items.map((row) => (
                     <tr key={row.invoiceId} className="h-6 border-b border-gray-100 hover:bg-lime-200/70">
-                      <td className="truncate px-2 py-1 text-gray-800">{row.invoiceNumber ?? "-"}</td>
+                      <td className="truncate px-2 py-1">
+                        <Link
+                          to={`/finance/invoice/${row.invoiceId}`}
+                          className="text-slate-700 hover:text-slate-900 hover:underline"
+                        >
+                          {row.invoiceNumber ?? "-"}
+                        </Link>
+                      </td>
                       <td className="truncate px-2 py-1 text-gray-800">{row.customerName ?? "-"}</td>
                       <td className="truncate px-2 py-1 text-right text-gray-800">{fmt(row.amount)}</td>
                       <td className="truncate px-2 py-1 text-right text-gray-800">{formatDateShort(row.invoiceDate)}</td>
