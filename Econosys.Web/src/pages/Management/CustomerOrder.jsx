@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowLeft, Save } from 'lucide-react';
 import { useBlocker, useNavigate, useParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import ConfirmationModal from '../../components/ConfirmationModal';
+import ActionButton from '../../components/ActionButton';
 import OrderNavigationTree from '../../components/OrderNavigationTree';
 import OrderCost from '../../components/OrderCost';
 import LabeledInput from '../../components/LabeledInput';
@@ -480,9 +482,9 @@ const CustomerOrder = () => {
                 isDestructive={false}
             />
 
-            <h2 className="ml-90 text-sm pt-2 pb-2 text-gray-700">
+            <h2 className="ml-96 text-sm pt-8 pb-2 text-gray-500 tracking-[0.10em] font-semibold uppercase">
                 {customerOrder?.id ? (
-                    <>Ordererkännande <span className="ml-2 text-red-500">{customerOrder.id}</span></>
+                    <>Ordererkännande <span className="ml-2">{customerOrder.id}</span></>
                 ) : (
                     'Nytt ordererkännande'
                 )}
@@ -526,23 +528,21 @@ const CustomerOrder = () => {
                     />
                 </div>
 
-                <div className="flex-grow ps-4 pe-10 py-2 max-w-350">
+                <div className="flex-grow ps-10 pe-10 py-2 max-w-350">
                     <div className="flex justify-between w-full mb-5">
-                        <div className="flex items-center space-x-4">
-                            <button
-                                type="button"
+                        <div className="flex items-center gap-6">
+                            <ActionButton
+                                label="Tillbaka"
+                                icon={ArrowLeft}
                                 onClick={handleBackClick}
-                                className="shadow-md/30 text-xs text-white bg-gray-500 hover:bg-gray-700 px-5 p-[5px]"
-                            >
-                                Tillbaka
-                            </button>
-                            <button
-                                type="button"
+                                accent="slate"
+                            />
+                            <ActionButton
+                                label="Spara"
+                                icon={Save}
                                 onClick={handleSave}
-                                className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-5 p-[5px]"
-                            >
-                                Spara
-                            </button>
+                                accent="lime"
+                            />
                         </div>
                     </div>
 

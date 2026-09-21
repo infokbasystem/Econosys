@@ -237,6 +237,87 @@ namespace Econosys.Api.Controllers
             });
         }
 
+        [HttpPost("supplier-report")]
+        public async Task<ActionResult<SupplierDeviationReportDto>> GetSupplierReport([FromBody] SupplierDeviationReportRequest? request)
+        {
+            var startDate = request?.StartDate?.Date;
+            var endDate = request?.EndDate?.Date.AddDays(1).AddTicks(-1);
+
+            var query = BuildBaseQuery()
+                .Where(x => !x.IsInternal && x.SupplierId.HasValue);
+
+            if (startDate.HasValue || endDate.HasValue)
+            {
+                var from = startDate ?? DateTime.MinValue;
+                var to = endDate ?? DateTime.MaxValue;
+
+                query = query.Where(x =>
+                    (x.DeviationClosedToSupplier.HasValue && x.DeviationClosedToSupplier.Value >= from && x.DeviationClosedToSupplier.Value <= to) ||
+                    (!x.DeviationClosedToSupplier.HasValue && x.DeviationOpened.HasValue && x.DeviationOpened.Value >= from && x.DeviationOpened.Value <= to));
+            }
+
+            var rows = await query
+                .Select(x => new
+                {
+                    SupplierId = x.SupplierId!.Value,
+                    SupplierName = x.Supplier != null ? x.Supplier.Name : null,
+                    Row = new SupplierDeviationReportRowDto
+                    {
+                        DeviationId = x.Id,
+                        DeviationNr = x.DeviationNr,
+                        CustomerOrderId = x.CustomerOrderId,
+                        CustomerOrderNr = x.CustomerOrder != null ? x.CustomerOrder.CustomerOrderNr : null,
+                        CustomerName = x.Customer != null
+                            ? x.Customer.Name
+                            : (x.CustomerOrder != null && x.CustomerOrder.Customer != null ? x.CustomerOrder.Customer.Name : null),
+                        DeviationOpened = x.DeviationOpened,
+                        DeviationClosedToSupplier = x.DeviationClosedToSupplier,
+                        DeviationClosed = x.DeviationClosed,
+                        DaysToCloseToSupplier = x.DeviationOpened.HasValue && x.DeviationClosedToSupplier.HasValue
+                            ? EF.Functions.DateDiffDay(x.DeviationOpened.Value, x.DeviationClosedToSupplier.Value)
+                            : (int?)null,
+                        DeviationTypeCode = x.DeviationTypeCode,
+                        DeviationProcessCode = x.DeviationProcessCode,
+                        Status = x.Status,
+                        Description = x.Description
+                    }
+                })
+                .ToListAsync();
+
+            var groups = rows
+                .GroupBy(x => new { x.SupplierId, x.SupplierName })
+                .Select(group =>
+                {
+                    var closedDays = group
+                        .Where(x => x.Row.DaysToCloseToSupplier.HasValue)
+                        .Select(x => (decimal)x.Row.DaysToCloseToSupplier!.Value)
+                        .ToList();
+
+                    return new SupplierDeviationReportGroupDto
+                    {
+                        SupplierId = group.Key.SupplierId,
+                        SupplierName = group.Key.SupplierName,
+                        DeviationCount = group.Count(),
+                        ClosedCount = closedDays.Count,
+                        AverageDaysToCloseToSupplier = closedDays.Count == 0 ? null : Math.Round(closedDays.Average(), 1),
+                        Deviations = group
+                            .Select(x => x.Row)
+                            .OrderByDescending(x => x.DeviationOpened)
+                            .ToList()
+                    };
+                })
+                .OrderByDescending(x => x.DeviationCount)
+                .ThenBy(x => x.SupplierName)
+                .ToList();
+
+            return Ok(new SupplierDeviationReportDto
+            {
+                StartDate = startDate,
+                EndDate = request?.EndDate?.Date,
+                Suppliers = groups
+            });
+        }
+
         [HttpGet("{id:int}")]
         public async Task<ActionResult<DeviationDto>> GetById(int id)
         {

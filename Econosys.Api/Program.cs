@@ -1,13 +1,17 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using System.IO;
 using System.Text;
 using System.Threading.RateLimiting;
 using Econosys.Api.Data;
 using Econosys.Api.Services;
+using QuestPDF.Infrastructure;
 
+QuestPDF.Settings.License = LicenseType.Community;
 var builder = WebApplication.CreateBuilder(args);
 
 // Configuration
@@ -15,6 +19,16 @@ var jwtSettings = builder.Configuration.GetSection("Jwt");
 
 // Add services to the container
 builder.Services.AddControllers();
+var dataProtectionPath = builder.Environment.IsProduction()
+    ? "/home/data-protection-keys"
+    : Path.Combine(builder.Environment.ContentRootPath, "data-protection-keys");
+
+Directory.CreateDirectory(dataProtectionPath);
+builder.Services
+    .AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
+    .SetApplicationName("Econosys.Api");
+builder.Services.AddHttpClient("Jeeves", client => client.Timeout = TimeSpan.FromSeconds(30));
 
 // Entity Framework
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -31,9 +45,10 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
     options.Password.RequireUppercase = true;
     options.Password.RequireNonAlphanumeric = true;
 
-    // Lockout settings
-    options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5);
-    options.Lockout.MaxFailedAccessAttempts = 5;
+    // Lockout settings: 10 failed attempts locks the account until an admin unlocks it
+    options.Lockout.AllowedForNewUsers = true;
+    options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromDays(36500);
+    options.Lockout.MaxFailedAccessAttempts = 10;
 
     // User settings
     options.User.RequireUniqueEmail = true;
@@ -140,6 +155,9 @@ builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<ILegacyUserResolutionService, LegacyUserResolutionService>();
 builder.Services.AddScoped<IPalletFormatOptionsService, PalletFormatOptionsService>();
+builder.Services.AddScoped<ITransportOrderCostCalculationService, TransportOrderCostCalculationService>();
+builder.Services.AddSingleton<IProtectedSecretService, ProtectedSecretService>();
+builder.Services.AddScoped<IJeevesAccountingService, JeevesAccountingService>();
 
 // Swagger/OpenAPI
 builder.Services.AddEndpointsApiExplorer();
@@ -308,5 +326,32 @@ app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = SwedishTime.Now }))
     .WithName("Health")
     .WithOpenApi();
+
+app.MapGet("/debug-db", (IConfiguration config, ApplicationDbContext db) =>
+{
+    try
+    {
+        var connectionString = config.GetConnectionString("DefaultConnection");
+        var conn = db.Database.GetDbConnection();
+        
+        // Försök öppna anslutningen för att verifiera status
+        conn.Open();
+        var databaseName = conn.Database;
+        var dataSource = conn.DataSource;
+        conn.Close();
+
+        return Results.Ok(new
+        {
+            Status = "Connected",
+            DataSource = dataSource,
+            Database = databaseName,
+            RawConnectionStringConfigured = !string.IsNullOrEmpty(connectionString)
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(detail: ex.Message, statusCode: 500, title: "Database Connection Error");
+    }
+});
 
 app.Run();

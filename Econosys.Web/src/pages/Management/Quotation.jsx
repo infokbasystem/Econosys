@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowLeft, Printer, Save, Trash2 } from 'lucide-react';
 import { useBlocker, useNavigate, useParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import { usePdf } from '../../contexts/PdfContext';
+import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import OrderNavigationTree from '../../components/OrderNavigationTree';
 import OrderCost from '../../components/OrderCost';
@@ -768,9 +770,9 @@ const Quotation = () => {
                 isDestructive={false}
             />
 
-            <h2 className="ml-90 text-sm pt-2 pb-2 text-gray-700">
+            <h2 className="ml-96 text-sm pt-8 pb-2 text-gray-500 tracking-[0.10em] font-semibold uppercase">
                 {quotation?.id ? (
-                    <>Offert <span className="ml-2 text-red-500">{quotation.id}</span></>
+                    <>Offert <span className="ml-2">{quotation.id}</span></>
                 ) : (
                     'Ny offert'
                 )}
@@ -841,42 +843,38 @@ const Quotation = () => {
 
                 </div>
 
-                <div className="flex-grow ps-4 pe-10 py-2 max-w-350">
+                <div className="flex-grow ps-10 pe-10 py-2 max-w-350">
                     <div className="flex justify-between w-full mb-5">
-                        <div className='flex items-center space-x-4'>
-                            <button
-                                type='button'
+                        <div className="flex items-center gap-6">
+                            <ActionButton
+                                label="Tillbaka"
+                                icon={ArrowLeft}
                                 onClick={handleBackClick}
-                                className="shadow-md/30 text-xs text-white bg-gray-500 hover:bg-gray-700 px-5 p-[5px]"
-                            >
-                                Tillbaka
-                            </button>
-                            <button
-                                type='button'
+                                accent="slate"
+                            />
+                            <ActionButton
+                                label="Spara"
+                                icon={Save}
                                 onClick={handleSave}
-                                className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-5 p-[5px]"
-                            >
-                                Spara
-                            </button>
+                                accent="lime"
+                            />
                             {quotation?.id !== 0 && (
-                                <button
-                                    type="button"
+                                <ActionButton
+                                    label="Skriv ut"
+                                    icon={Printer}
                                     onClick={() => void getPdf()}
-                                    className="shadow-md/30 text-xs text-gray bg-blue-200 hover:bg-blue-300 px-4 py-[5px]"
-                                >
-                                    Skriv ut
-                                </button>
+                                    accent="sky"
+                                />
                             )}
                         </div>
-                        <div className='flex items-center space-x-4'>
+                        <div className="flex items-center gap-6">
                             {quotation?.id !== 0 && (
-                                <button
-                                    type="button"
+                                <ActionButton
+                                    label="Radera"
+                                    icon={Trash2}
                                     onClick={() => setShowDeleteConfirm(true)}
-                                    className="shadow-md/30 text-xs text-white bg-red-700 hover:bg-red-800 px-5 p-[5px]"
-                                >
-                                    Radera
-                                </button>
+                                    accent="rose"
+                                />
                             )}
                         </div>
                     </div>

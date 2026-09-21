@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
+import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, ChevronsUpDown, Search } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
-import DateRangePicker from '../../components/Daterangepicker';
+import DateRangePicker from '../../components/DaterangePicker';
 import LabeledInput from '../../components/LabeledInput';
 import apiClient from '../../config/apiClient';
 import { getSharedRequest } from '../../helpers/sharedRequest';
@@ -336,8 +336,11 @@ const InvoiceSearch = () => {
 
     const getRowClass = (row) => {
         const isSelected = selectedRowId === row.id;
-        if (isSelected) return 'cursor-pointer border-b border-amber-200 bg-amber-100';
-        return 'cursor-pointer border-b border-gray-100 hover:bg-amber-50';
+        return [
+            'h-6 cursor-pointer border-b border-gray-100',
+            isSelected ? 'bg-lime-100/80' : '',
+            !isSelected ? 'hover:bg-lime-200/70' : 'hover:bg-lime-200/70',
+        ].join(' ');
     };
 
     const handleOpenInvoice = (event, invoiceId) => {
@@ -347,89 +350,78 @@ const InvoiceSearch = () => {
     };
 
     return (
-        <div className="flex flex-col h-full py-2 px-7">
-            <div className="ml-5 text-sm text-gray-500">Sök faktura</div>
+        <div className="flex h-full flex-col pt-3 pb-4 ps-10 pe-0">
+            <div className={`relative z-20 flex items-center gap-4 overflow-visible whitespace-nowrap pb-2 mt-2 pl-16 ${loading && !hasSearchSnapshot ? 'opacity-70 pointer-events-none' : ''}`}>
+                <DateRangePicker
+                    placeholder="Valj period"
+                    presets={['this-month', 'last-month', 'last-3-months', 'year-to-date']}
+                    initialPresetKey="year-to-date"
+                    onApply={({ startDate, endDate }) => {
+                        handleFilterChange({ startDate, endDate });
+                    }}
+                    triggerRadius="full"
+                    triggerClassName="h-7 w-[260px] border-lime-600 px-3 text-xs text-gray-700 focus:border-lime-700"
+                    openTriggerClassName="border-lime-700 ring-1 ring-lime-200"
+                    closedTriggerClassName="border-lime-600 hover:border-lime-700"
+                    widthClassName="w-60"
 
-            <div className={`flex flex-wrap items-center gap-8 mt-3 ml-5 ${loading && !hasSearchSnapshot ? 'opacity-70 pointer-events-none' : ''}`}>
-                <div>
-                    <DateRangePicker
-                        placeholder="Valj period"
-                        presets={['this-month', 'last-month', 'last-3-months', 'year-to-date']}
-                        initialPresetKey="year-to-date"
-                        onApply={({ startDate, endDate }) => {
-                            handleFilterChange({ startDate, endDate });
-                        }}
-                    />
-                </div>
+                />
 
-                <div className="w-40">
-                    <LabeledInput
-                        label="Fakturanr"
-                        margintop="0"
-                        name="invoiceNumber"
+                <div className="relative w-40 shrink-0">
+                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                    <input
+                        type="text"
                         value={filters.invoiceNumber}
-                        onChange={(value) => handleFilterChange({ invoiceNumber: String(value ?? '') })}
+                        onChange={(event) => handleFilterChange({ invoiceNumber: String(event.target.value ?? '') })}
+                        placeholder="Sök fakturanr"
+                        className="h-7 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
                     />
                 </div>
 
-                <div className="w-72">
-                    <LabeledInput
-                        label="Kundnamn"
-                        margintop="0"
-                        name="customerName"
+                <div className="relative w-56 shrink-0 mr-10">
+                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                    <input
+                        type="text"
                         value={filters.customerName}
-                        onChange={(value) => handleFilterChange({ customerName: value ?? '' })}
+                        onChange={(event) => handleFilterChange({ customerName: event.target.value ?? '' })}
+                        placeholder="Sök kundnamn"
+                        className="h-7 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
                     />
                 </div>
-                <div className="ml-10 text-xs text-center">
-                    <a
-                        href="#"
-                        onClick={(event) => {
-                            event.preventDefault();
-                            if (loading || totals.totalInvoices === 0) return;
-                            handleExport();
-                        }}
-                        aria-disabled={loading || totals.totalInvoices === 0}
-                        className={`inline-flex items-center whitespace-nowrap font-medium transition-colors ${loading || totals.totalInvoices === 0
-                            ? 'text-gray-300 cursor-not-allowed pointer-events-none'
-                            : 'text-slate-500 hover:text-slate-700'
-                            }`}
-                    >
-                        Exportera till EXCEL
-                    </a>
-                    {/* <button
-                        type="button"
-                        onClick={() => navigate('/finance/invoice/new')}
-                        className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-4 py-[5px] ml-10"
-                    >
-                        Ny faktura
-                    </button> */}
-                </div>
 
-                <div className="ml-auto flex items-center mr-4" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                <a
+                    href="#"
+                    onClick={(event) => {
+                        event.preventDefault();
+                        if (loading || totals.totalInvoices === 0) return;
+                        handleExport();
+                    }}
+                    aria-disabled={loading || totals.totalInvoices === 0}
+                    className={`text-xs inline-flex items-center whitespace-nowrap font-medium transition-colors ${loading || totals.totalInvoices === 0
+                        ? 'text-gray-300 cursor-not-allowed pointer-events-none'
+                        : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                >
+                    Exportera till EXCEL
+                </a>
 
+                <div className="ml-auto flex items-center gap-4 text-xs text-gray-600" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                     {initialLoadCompleted && (
-                        <div className="ml-auto flex items-center mr-4">
-                            <div className="ml-4 text-xs text-gray-500">
-                                Fakturor: <strong>{totals.totalInvoices}</strong>
-                            </div>
-                            <div className="ml-4 text-xs text-gray-500">
-                                Inkl moms SEK: <strong>{formatAmount(totals.sumInclVatSek)}</strong>
-                            </div>
-                        </div>
+                        <>
+                            <span>Fakturor <strong>{totals.totalInvoices}</strong></span>
+                            <span>Inkl moms SEK <strong>{formatAmount(totals.sumInclVatSek)}</strong></span>
+                        </>
                     )}
 
                     {initialLoadCompleted && (
-                        <div className="flex items-center ml-auto">
-                            <span className="mr-3 text-xs text-gray-700">
-                                Sida {pagination.pageNumber} av {Math.max(1, pagination.totalPages)}
-                            </span>
+                        <>
+                            <span>Sida {pagination.pageNumber} av {Math.max(1, pagination.totalPages)}</span>
                             <div className="flex gap-1">
                                 <button
                                     type="button"
                                     onClick={() => onPageChange(pagination.pageNumber - 1)}
                                     disabled={loading || !pagination.hasPreviousPage}
-                                    className="disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="disabled:cursor-not-allowed disabled:opacity-40"
                                 >
                                     <ArrowLeftCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
                                 </button>
@@ -437,58 +429,60 @@ const InvoiceSearch = () => {
                                     type="button"
                                     onClick={() => onPageChange(pagination.pageNumber + 1)}
                                     disabled={loading || !pagination.hasNextPage}
-                                    className="disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="disabled:cursor-not-allowed disabled:opacity-40"
                                 >
                                     <ArrowRightCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
                                 </button>
                             </div>
-                        </div>
+                        </>
                     )}
-
                 </div>
             </div>
 
-            <div ref={listRef} className="border-t border-gray-300 py-1 mt-4 flex-1 overflow-auto">
-                <table className="w-full border-collapse text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
-                    <thead>
-                        <tr>
+            <div ref={listRef} className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
+                <table className="table-fixed w-full border-collapse text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                    <colgroup>
+                        {columns.map((column) => (
+                            <col key={column.key} {...(column.width ? { style: { width: column.width } } : {})} />
+                        ))}
+                    </colgroup>
+                    <thead className="">
+                        <tr className="text-tiny text-gray-500">
                             {columns.map((col) => (
                                 <th
                                     key={col.key}
-                                    className={`${col.width} px-2 py-1.5 text-tiny font-medium text-gray-400 whitespace-nowrap ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'
-                                        }`}
+                                    onClick={() => (col.sortable ? handleSort(col.key) : undefined)}
+                                    className={`${col.sortable ? 'cursor-pointer' : ''} px-2 pt-1 pb-2 text-tiny font-medium text-gray-500 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
                                 >
-                                    {col.sortable ? (
-                                        <button
-                                            type="button"
-                                            onClick={() => handleSort(col.key)}
-                                            className={`inline-flex items-center gap-1 ${col.align === 'right' ? 'ml-auto' : ''} hover:text-gray-600`}
-                                        >
-                                            <span>{col.label}</span>
-                                            {renderSortIcon(col)}
-                                        </button>
-                                    ) : (
-                                        col.label
-                                    )}
+                                    <span className="inline-flex items-center gap-1">
+                                        {col.label}
+                                        {col.sortable && (
+                                            sortConfig.key === col.key ? (
+                                                sortConfig.direction === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                                            ) : (
+                                                <ChevronUp className="h-3 w-3 opacity-0" />
+                                            )
+                                        )}
+                                    </span>
                                 </th>
                             ))}
                         </tr>
                     </thead>
-                    <tbody className={`divide-y divide-gray-100 ${!loading && rows.length > 0 ? 'bg-white' : 'bg-transparent'}`}>
+                    <tbody className={`${!loading && rows.length > 0 ? 'bg-white' : 'bg-transparent'}`}>
                         {showSkeleton ? (
                             Array.from({ length: 12 }).map((_, i) => (
-                                <tr key={i} className="border-b border-gray-100">
+                                <tr key={i}>
                                     {columns.map((col) => (
                                         <td key={col.key} className="px-2 py-1">
-                                            <Skeleton height={14} />
+                                            <Skeleton height={16} />
                                         </td>
                                     ))}
                                 </tr>
                             ))
                         ) : rows.length === 0 && !loading && initialLoadCompleted ? (
                             <tr>
-                                <td colSpan={columns.length} className="px-4 py-6 text-center text-gray-400 text-xs">
-                                    Inga fakturor hittades for valt urval
+                                <td colSpan={columns.length} className="px-4 py-8 text-center text-gray-400 text-xs">
+                                    Inga fakturor hittades för valt urval
                                 </td>
                             </tr>
                         ) : (
@@ -498,37 +492,36 @@ const InvoiceSearch = () => {
                                     className={getRowClass(row)}
                                     onClick={() => setSelectedRowId((prev) => (prev === row.id ? null : row.id))}
                                 >
-                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">
+                                    <td className="truncate px-2 py-0 text-gray-800">
                                         <Link
                                             to={`/finance/invoice/${row.id}`}
                                             onClick={(event) => event.stopPropagation()}
-                                            className="underline-offset-2 hover:underline"
+                                            className="text-slate-700 hover:text-slate-900 hover:underline"
                                         >
                                             {row.invoiceNumber ?? row.id}
                                         </Link>
                                     </td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">{row.customerName}</td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">{formatDate(row.invoiceDate)}</td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">{formatDate(row.dueDate)}</td>
-                                    <td className="px-2 pt-[4px] pb-[4px] text-center text-xs text-gray-800">
+                                    <td className="truncate px-2 py-0 text-gray-800">{row.customerName}</td>
+                                    <td className="truncate px-2 py-0 text-gray-800">{formatDate(row.invoiceDate)}</td>
+                                    <td className="truncate px-2 py-0 text-gray-800">{formatDate(row.dueDate)}</td>
+                                    <td className="truncate px-2 py-0 text-center text-gray-800">
                                         {String(row.status ?? '').toLowerCase() === 'credit' ? (
-                                            <span className="inline-flex items-center rounded-full bg-red-400 text-white px-2 py-[1px] text-[10px] mr-2">
+                                            <span className="inline-flex items-center rounded-full bg-red-400 text-white px-2 py-[3px] text-tiny mr-2">
                                                 Kredit
                                             </span>
                                         ) : ''}
                                     </td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">{row.orderNumbers}</td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-right text-xs text-gray-800">{formatAmount(row.sumExVat)}</td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-right text-xs text-gray-800">{formatAmount(row.sumInclVat)}</td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">{row.currencyName}</td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-right text-xs text-gray-800">{formatAmount(row.sumInclVatSek)}</td>
+                                    <td className="truncate px-2 py-0 text-gray-800">{row.orderNumbers}</td>
+                                    <td className="truncate px-2 py-0 text-right text-gray-800">{formatAmount(row.sumExVat)}</td>
+                                    <td className="truncate px-2 py-0 text-right text-gray-800">{formatAmount(row.sumInclVat)}</td>
+                                    <td className="truncate px-2 py-0 text-gray-800">{row.currencyName}</td>
+                                    <td className="truncate px-2 py-0 text-right text-gray-800">{formatAmount(row.sumInclVatSek)}</td>
                                 </tr>
                             ))
                         )}
                     </tbody>
                 </table>
             </div>
-
         </div>
     );
 };

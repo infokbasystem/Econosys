@@ -1,3 +1,6 @@
+# Repository-specific exclusions
+legacy/
+
 ## --- .NET / C# ---
 bin/
 obj/
@@ -25,10 +28,12 @@ yarn-error.log*
 # Byggda filer
 dist/
 build/
+/deploy-backend/
 
 # Miljövariabler (Viktigt!)
 #.env
 .env.local
+.env.deploy.local
 .env.development.local
 .env.test.local
 .env.production.local

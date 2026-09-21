@@ -186,7 +186,7 @@ const ImprovementPropositionModal = ({ isOpen, onClose, onSaved, initialData = n
                         {/* Row 1: Created by + Date */}
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-[10px] text-gray-500 mb-1">Skapad av *</label>
+                                <label className="block text-tiny text-gray-500 mb-1">Skapad av *</label>
                                 <input
                                     type="text"
                                     name="createdByName"
@@ -197,7 +197,7 @@ const ImprovementPropositionModal = ({ isOpen, onClose, onSaved, initialData = n
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] text-gray-500 mb-1">Datum</label>
+                                <label className="block text-tiny text-gray-500 mb-1">Datum</label>
                                 <input
                                     type="date"
                                     name="createdTimestamp"
@@ -211,7 +211,7 @@ const ImprovementPropositionModal = ({ isOpen, onClose, onSaved, initialData = n
                         {/* Row 2: Responsible + Area + Status */}
                         <div className="grid grid-cols-3 gap-4">
                             <div>
-                                <label className="block text-[10px] text-gray-500 mb-1">Ansvarig *</label>
+                                <label className="block text-tiny text-gray-500 mb-1">Ansvarig *</label>
                                 <input
                                     type="text"
                                     name="responsible"
@@ -222,7 +222,7 @@ const ImprovementPropositionModal = ({ isOpen, onClose, onSaved, initialData = n
                                 />
                             </div>
                             <div>
-                                <label className="block text-[10px] text-gray-500 mb-1">Område *</label>
+                                <label className="block text-tiny text-gray-500 mb-1">Område *</label>
                                 <select
                                     name="areaCode"
                                     value={form.areaCode}
@@ -235,7 +235,7 @@ const ImprovementPropositionModal = ({ isOpen, onClose, onSaved, initialData = n
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-[10px] text-gray-500 mb-1">Status *</label>
+                                <label className="block text-tiny text-gray-500 mb-1">Status *</label>
                                 <select
                                     name="statusCode"
                                     value={form.statusCode}
@@ -251,7 +251,7 @@ const ImprovementPropositionModal = ({ isOpen, onClose, onSaved, initialData = n
 
                         {/* Description */}
                         <div>
-                            <label className="block text-[10px] text-gray-500 mb-1">Beskrivning *</label>
+                            <label className="block text-tiny text-gray-500 mb-1">Beskrivning *</label>
                             <textarea
                                 name="description"
                                 value={form.description}
@@ -264,7 +264,7 @@ const ImprovementPropositionModal = ({ isOpen, onClose, onSaved, initialData = n
 
                         {/* Proposed measure */}
                         <div>
-                            <label className="block text-[10px] text-gray-500 mb-1">Föreslagen åtgärd *</label>
+                            <label className="block text-tiny text-gray-500 mb-1">Föreslagen åtgärd *</label>
                             <textarea
                                 name="proposedMeasure"
                                 value={form.proposedMeasure}
@@ -277,7 +277,7 @@ const ImprovementPropositionModal = ({ isOpen, onClose, onSaved, initialData = n
 
                         {/* Note */}
                         <div>
-                            <label className="block text-[10px] text-gray-500 mb-1">Anteckning</label>
+                            <label className="block text-tiny text-gray-500 mb-1">Anteckning</label>
                             <textarea
                                 name="note"
                                 value={form.note}
@@ -290,7 +290,7 @@ const ImprovementPropositionModal = ({ isOpen, onClose, onSaved, initialData = n
 
                         {/* Follow-up */}
                         <div>
-                            <label className="block text-[10px] text-gray-500 mb-1">Uppföljning</label>
+                            <label className="block text-tiny text-gray-500 mb-1">Uppföljning</label>
                             <textarea
                                 name="followUp"
                                 value={form.followUp}

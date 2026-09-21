@@ -1,40 +1,41 @@
 import { useLocation, NavLink } from 'react-router-dom'
+import { User, ChartNoAxesCombined, ClipboardList, Truck, Coins, CircleAlert, BarChart3, Settings } from 'lucide-react'
 import './Navbar.css'
-import bg from '../assets/menu-bg.png'
-import bgdashboard from '../assets/menu-dashboard.png'
-import bgcalculation from '../assets/appbar.box.svg'
-import bgorder from '../assets/appbar.draw.pen.svg'
-import bglogistics from '../assets/appbar.forklift.svg'
-import bgfinance from '../assets/menu-finance.png'
-import bgmanagement from '../assets/appbar.clothes.tie.svg'
-import bgquality from '../assets/appbar.alien.svg'
-import bgreporting from '../assets/menu-reporting.png'
-import bgsettings from '../assets/appbar.settings.svg'
+
+const menuItems = [
+    { path: '', to: '/', label: 'MIN SIDA', icon: User },
+    { path: 'order', to: '/order', label: 'ORDER', icon: ClipboardList },
+    { path: 'logistics', to: '/logistics', label: 'LOGISTIK', icon: Truck },
+    { path: 'finance', to: '/finance', label: 'EKONOMI', icon: ChartNoAxesCombined },
+    { path: 'management', to: '/management', label: 'AVVIKELSER', icon: CircleAlert },
+    { path: 'reporting', to: '/reporting', label: 'RAPPORTER', icon: BarChart3 },
+    { path: 'settings', to: '/settings', label: 'INSTÄLLNINGAR', icon: Settings },
+]
 
 const Navbar = () => {
 
     const location = useLocation();
-    const getNavLinkClass = (path) => {
-        // console.log(location.pathname.split('/')[1], path);
-        const isActivePart = (location.pathname.split('/')[1] === path) ? ((path ==='' ? 'overview' : path) + '-backcolor') :'';
-        const className = (path === '' ? 'overview' : '') + path + ' ' + isActivePart;
-        return className;
-    };
+    const isActivePath = (path) => location.pathname.split('/')[1] === path;
 
     return (
-        <nav className=''>
+        <nav className='relative z-10 border-b border-gray-200'>
+            {/* shadow-[0_4px_8px_rgba(15,23,42,0.16)] */}
             {/* Primary navigation */}
-            <div id='menu' className='' style={{ backgroundImage: `url(${bg})` }}>
-                <ul className='flex justify-center'>
-                    <li className={getNavLinkClass('')}><NavLink to='/'><div className={'div-general'} style={{ backgroundImage: `url(${bgdashboard})` }}>ÖVERSIKT</div></NavLink></li>
-                    {/* <li className={getNavLinkClass('calculation')}><NavLink to='/calculation'><div className={'div-general calculation-item'}><img src={bgcalculation} alt='' aria-hidden='true' />KALKYL</div></NavLink></li> */}
-                    <li className={getNavLinkClass('order')}><NavLink to='/order'><div className={'div-general order-item'}><img src={bgorder} alt='' aria-hidden='true' />ORDER</div></NavLink></li>
-                    <li className={getNavLinkClass('logistics')}><NavLink to='/logistics'><div className={'div-general logistics-item'}><img src={bglogistics} alt='' aria-hidden='true' />LOGISTIK</div></NavLink></li>
-                    <li className={getNavLinkClass('finance')}><NavLink to='/finance'><div className={'div-general'} style={{ backgroundImage: `url(${bgfinance})` }}>EKONOMI</div></NavLink></li>
-                    <li className={getNavLinkClass('management')}><NavLink to='/management'><div className={'div-general management-item'}><img src={bgmanagement} alt='' aria-hidden='true' />LEDNING</div></NavLink></li>
-                    {/* <li className={getNavLinkClass('quality')}><NavLink to='/quality'><div className={'div-general quality-item'}><img src={bgquality} alt='' aria-hidden='true' />KVALITET</div></NavLink></li> */}
-                    <li className={getNavLinkClass('reporting')}><NavLink to='/reporting'><div className={'div-general'} style={{ backgroundImage: `url(${bgreporting})` }}>RAPPORTER</div></NavLink></li>
-                    <li className={getNavLinkClass('settings')}><NavLink to='/settings'><div className={'div-general settings-item'}><img src={bgsettings} alt='' aria-hidden='true' />INSTÄLLNINGAR</div></NavLink></li>
+            <div id='menu' style={{ backgroundColor: 'rgb(245,244,240)' }}>
+                <ul className='flex items-center justify-center'>
+                    {menuItems.map((item, index) => {
+                        const Icon = item.icon;
+                        const isActive = isActivePath(item.path);
+
+                        return (
+                            <li key={item.to} className={`menu-item ${index > 0 ? 'menu-item-divider' : ''}`}>
+                                <NavLink to={item.to} className={`menu-card ${isActive ? 'menu-card-active' : ''}`}>
+                                    <Icon className='menu-card-icon' strokeWidth={1.6} />
+                                    <span className='menu-card-label'>{item.label}</span>
+                                </NavLink>
+                            </li>
+                        );
+                    })}
                 </ul>
             </div>
         </nav>

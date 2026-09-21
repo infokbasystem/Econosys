@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Identity;
+using System.Data.Common;
+using System.Net.Sockets;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 
@@ -14,6 +16,8 @@ namespace Econosys.Api.Services
 
     public class AuthenticationService : IAuthenticationService
     {
+        private const int MaxFailedLoginAttempts = 10;
+
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly IJwtTokenService _jwtTokenService;
@@ -101,7 +105,7 @@ namespace Econosys.Api.Services
             try
             {
                 var user = await _userManager.FindByEmailAsync(request.Email);
-                if (user == null || !user.IsActive)
+                if (user == null)
                 {
                     return new AuthResponse 
                     { 
@@ -110,22 +114,14 @@ namespace Econosys.Api.Services
                     };
                 }
 
-                var result = await _signInManager.PasswordSignInAsync(
-                    user.UserName ?? user.Email ?? request.Email, request.Password, false, lockoutOnFailure: true);
-
-                if (result.IsLockedOut)
+                if (await _userManager.IsLockedOutAsync(user))
                 {
-                    _logger.LogWarning("Account locked out for user ID: {UserId}", user.Id);
-                    return new AuthResponse
-                    {
-                        Success = false,
-                        Message = "Account is temporarily locked due to multiple failed attempts. Try again later."
-                    };
+                    _logger.LogWarning("Login attempt on locked out account, user ID: {UserId}", user.Id);
+                    return BuildLockedOutResponse();
                 }
 
-                if (!result.Succeeded)
+                if (!user.IsActive)
                 {
-                    _logger.LogWarning("Failed login attempt for user ID: {UserId}", user.Id);
                     return new AuthResponse 
                     { 
                         Success = false, 
@@ -133,7 +129,21 @@ namespace Econosys.Api.Services
                     };
                 }
 
-                // Update last login
+                if (!await _userManager.CheckPasswordAsync(user, request.Password))
+                {
+                    var lockedOut = await RegisterFailedLoginAttemptAsync(user);
+                    if (lockedOut)
+                        return BuildLockedOutResponse();
+
+                    return new AuthResponse 
+                    { 
+                        Success = false, 
+                        Message = "Invalid email or password" 
+                    };
+                }
+
+                // Update last login and clear failed attempts
+                user.AccessFailedCount = 0;
                 user.LastLoginAt = SwedishTime.Now;
                 await _userManager.UpdateAsync(user);
 
@@ -151,6 +161,17 @@ namespace Econosys.Api.Services
             }
             catch (Exception ex)
             {
+                if (IsDatabaseUnavailable(ex))
+                {
+                    _logger.LogError(ex, "Database unavailable during login");
+                    return new AuthResponse
+                    {
+                        Success = false,
+                        IsDatabaseUnavailable = true,
+                        Message = "Kan inte ansluta till databasen. Kontakta administratören."
+                    };
+                }
+
                 _logger.LogError(ex, "Unexpected error during login");
                 return new AuthResponse 
                 { 
@@ -159,6 +180,47 @@ namespace Econosys.Api.Services
                 };
             }
         }
+
+        private static bool IsDatabaseUnavailable(Exception exception)
+        {
+            for (Exception? ex = exception; ex != null; ex = ex.InnerException)
+            {
+                if (ex is DbException || ex is SocketException || ex is TimeoutException)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Increments AccessFailedCount and locks the account permanently when the limit is reached.
+        /// </summary>
+        /// <returns>True if the account is now locked out.</returns>
+        private async Task<bool> RegisterFailedLoginAttemptAsync(ApplicationUser user)
+        {
+            user.LockoutEnabled = true;
+            user.AccessFailedCount++;
+
+            var lockedOut = user.AccessFailedCount >= MaxFailedLoginAttempts;
+            if (lockedOut)
+                user.LockoutEnd = DateTimeOffset.MaxValue;
+
+            await _userManager.UpdateAsync(user);
+
+            if (lockedOut)
+                _logger.LogWarning("Account locked out after {Attempts} failed attempts, user ID: {UserId}", user.AccessFailedCount, user.Id);
+            else
+                _logger.LogWarning("Failed login attempt {Attempts}/{Max} for user ID: {UserId}", user.AccessFailedCount, MaxFailedLoginAttempts, user.Id);
+
+            return lockedOut;
+        }
+
+        private static AuthResponse BuildLockedOutResponse() => new()
+        {
+            Success = false,
+            IsLockedOut = true,
+            Message = "Ditt konto är låst på grund av för många misslyckade inloggningsförsök. Kontakta administratören för att låsa upp kontot."
+        };
 
         public async Task<AuthResponse> ChangePasswordAsync(string userId, ChangePasswordRequest request)
         {

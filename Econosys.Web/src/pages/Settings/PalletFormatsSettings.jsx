@@ -6,6 +6,7 @@ import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledSelect from '../../components/LabeledSelect';
 import LabeledSwitch from '../../components/LabeledSwitch';
+import ActionButton from '../../components/ActionButton';
 
 const defaultTypeForm = {
     id: null,
@@ -431,13 +432,10 @@ const TypeSection = ({ palletTypes, isLoadingList, onRefresh, selectedTypeId, on
                                 fontColor="#374151"
                             />
                         </div>
-                        <button
-                            type="button"
+                        <ActionButton
+                            label="Ny"
                             onClick={handleCreateNew}
-                            className="shadow-md/30 text-xs text-gray-900 bg-blue-200 hover:bg-blue-300 px-6 p-[5px] rounded-sm"
-                        >
-                            Skapa ny
-                        </button>
+                        />
                     </div>
 
                     <div className="mt-5 border-t border-gray-200 pt-2 space-y-0.5 max-h-[calc(50vh-210px)] overflow-y-auto">
@@ -454,7 +452,7 @@ const TypeSection = ({ palletTypes, isLoadingList, onRefresh, selectedTypeId, on
                                         key={item.id}
                                         type="button"
                                         onClick={() => handleSelect(item)}
-                                        className={`w-full text-left text-xs px-2 py-0.5 rounded-sm ${isSelected ? 'bg-yellow-300 text-black' : 'hover:bg-gray-100 text-gray-900'}`}
+                                        className={`w-full h-6 items-center text-left text-xs px-2 py-0.5 rounded-sm ${isSelected ? 'bg-purple-200/50 text-black' : 'hover:bg-gray-100 text-gray-900'}`}
                                     >
                                         <span className="truncate">{item.name}</span>
                                     </button>
@@ -862,14 +860,11 @@ const FormatSection = ({ palletFormats, isLoadingList, onRefresh, selectedTypeId
                                 fontColor="#374151"
                             />
                         </div>
-                        <button
-                            type="button"
+                        <ActionButton
+                            label="Ny"
                             onClick={handleCreateNew}
-                            className="shadow-md/30 text-xs text-gray-900 bg-blue-200 hover:bg-blue-300 px-6 p-[5px] rounded-sm"
                             disabled={selectedTypeId == null}
-                        >
-                            Skapa ny
-                        </button>
+                        />
                     </div>
 
                     <div className="mt-5 border-t border-gray-200 pt-2 space-y-0.5 max-h-[calc(50vh-230px)] overflow-y-auto">
@@ -888,7 +883,7 @@ const FormatSection = ({ palletFormats, isLoadingList, onRefresh, selectedTypeId
                                         key={item.id}
                                         type="button"
                                         onClick={() => handleSelect(item.id)}
-                                        className={`w-full text-left text-xs px-2 py-0.5 rounded-sm ${isSelected ? 'bg-yellow-300 text-black' : 'hover:bg-gray-100 text-gray-900'}`}
+                                        className={`w-full h-6 items-center text-left text-xs px-2 py-0.5 rounded-sm ${isSelected ? 'bg-purple-200/50 text-black' : 'hover:bg-gray-100 text-gray-900'}`}
                                     >
                                         <span className="truncate">{item.name}</span>
                                     </button>

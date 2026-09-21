@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Link, Printer, Save, Trash2, Unlink } from 'lucide-react';
 import { useNavigate, useParams, useLocation, useBlocker } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import { usePdf } from '../../contexts/PdfContext';
+import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import FileList from '../../components/FileList';
 import LabeledInput from '../../components/LabeledInput';
@@ -533,7 +535,7 @@ const Deviation = () => {
                 isDestructive={false}
             />
 
-            <h2 className="ml-90 text-sm pt-2 pb-2 text-gray-700">{deviation?.id ? (<>Avvikelse <span className="ml-2 text-red-500">{deviation.deviationNr}</span></>) : ("Ny avvikelse")}</h2>
+            <h2 className="ml-96 text-sm pt-8 pb-2 text-gray-500 tracking-[0.10em] font-semibold uppercase">{deviation?.id ? (<>Avvikelse <span className="ml-2">{deviation.deviationNr}</span></>) : ("Ny avvikelse")}</h2>
 
             <div className="flex h-full items-stretch">
 
@@ -622,62 +624,55 @@ const Deviation = () => {
                 </div>
 
                 {/* Form */}
-                <div className="flex-grow ps-4 pe-10 py-2 max-w-350">
+                <div className="flex-grow ps-10 pe-10 py-2 max-w-350">
 
                     {/* Toolbar with actions */}
                     <div className="flex justify-between w-full mb-5">
-                        <div className='flex items-center space-x-4'>
-                            <button
-                                type='button'
+                        <div className="flex items-center gap-6">
+                            <ActionButton
+                                label="Tillbaka"
+                                icon={ArrowLeft}
                                 onClick={handleBackClick}
-                                className="shadow-md/30 text-xs text-white bg-gray-500 hover:bg-gray-700 px-5 p-[5px]"
-                            >
-                                Tillbaka
-                            </button>
-                            <button
-                                type='button'
+                                accent="slate"
+                            />
+                            <ActionButton
+                                label="Spara"
+                                icon={Save}
                                 onClick={handleSave}
-                                className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-5 p-[5px]"
-                            >
-                                Spara
-                            </button>
+                                accent="lime"
+                            />
                             {deviation?.customerOrderId ? (
-                                <button
-                                    type='button'
+                                <ActionButton
+                                    label="Ta bort koppling till order"
+                                    icon={Unlink}
                                     onClick={handleUnlinkOrder}
-                                    className="shadow-md/30 text-xs text-white bg-amber-500 hover:bg-amber-600 px-5 p-[5px]"
-                                    title={`Kopplad till order ${deviation.customerOrderNr ?? deviation.customerOrderId}`}
-                                >
-                                    Ta bort koppling till order
-                                </button>
+                                    accent="yellow"
+                                />
                             ) : (
-                                <button
-                                    type='button'
+                                <ActionButton
+                                    label="Koppla till order"
+                                    icon={Link}
                                     onClick={() => setShowLinkOrder(true)}
-                                    className="shadow-md/30 text-xs text-white bg-amber-500 hover:bg-amber-600 px-5 p-[5px]"
-                                >
-                                    Koppla till order
-                                </button>
+                                    accent="yellow"
+                                />
                             )}
                             {deviation?.id != 0 && (
-                                <button
-                                    type="button"
+                                <ActionButton
+                                    label="Skriv ut"
+                                    icon={Printer}
                                     onClick={getPdf}
-                                    className="shadow-md/30 text-xs text-gray bg-blue-200 hover:bg-blue-300 px-4 py-[5px] ml-10"
-                                >
-                                    Skriv ut
-                                </button>
+                                    accent="sky"
+                                />
                             )}
                         </div>
-                        <div className='flex items-center space-x-4'>
+                        <div className="flex items-center gap-6">
                             {deviation?.id != 0 && (
-                                <button
-                                    type="button"
+                                <ActionButton
+                                    label="Radera"
+                                    icon={Trash2}
                                     onClick={() => setShowDeleteConfirm(true)}
-                                    className="shadow-md/30 text-xs text-white bg-red-700 hover:bg-red-800 px-5 p-[5px]"
-                                >
-                                    Radera
-                                </button>
+                                    accent="rose"
+                                />
                             )}
                         </div>
                     </div>

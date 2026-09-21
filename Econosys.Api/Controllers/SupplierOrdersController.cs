@@ -999,6 +999,8 @@ namespace Econosys.Api.Controllers
                 EmailSentDateTime = source.EmailSentDateTime,
                 PackagingType = source.PackagingType,
                 CalculationId = source.CalculationId,
+                OverrideHandlingTimeDays = source.OverrideHandlingTimeDays,
+                ForceHandlingTimeCountAs = source.ForceHandlingTimeCountAs,
                 OrderCosts = source.OrderCosts
                     .OrderBy(x => x.Id)
                     .Select(MapOrderCostToDto)
@@ -1155,6 +1157,30 @@ namespace Econosys.Api.Controllers
             entity.PackagingType = request.PackagingType;
             entity.PalletFormatId = request.PalletFormatId;
             entity.EurPallet = request.EurPallet;
+            entity.OverrideHandlingTimeDays = request.OverrideHandlingTimeDays;
+            entity.ForceHandlingTimeCountAs = request.ForceHandlingTimeCountAs;
+        }
+
+        [HttpPut("{id:int}/handling-time-override")]
+        public async Task<IActionResult> UpdateHandlingTimeOverride(int id, [FromBody] UpdateSupplierOrderHandlingTimeOverrideRequest request)
+        {
+            var entity = await _dbContext.SupplierOrders.FirstOrDefaultAsync(x => x.Id == id);
+            if (entity is null)
+            {
+                return NotFound();
+            }
+
+            entity.OverrideHandlingTimeDays = request.OverrideHandlingTimeDays;
+            entity.ForceHandlingTimeCountAs = request.ForceHandlingTimeCountAs;
+            entity.Edited = SwedishTime.Now;
+
+            await _dbContext.SaveChangesAsync();
+            return Ok(new
+            {
+                id = entity.Id,
+                overrideHandlingTimeDays = entity.OverrideHandlingTimeDays,
+                forceHandlingTimeCountAs = entity.ForceHandlingTimeCountAs
+            });
         }
 
         private static void ApplyUpdateRequestToEntity(SupplierOrder entity, UpdateSupplierOrderRequest request)
@@ -1197,6 +1223,8 @@ namespace Econosys.Api.Controllers
             entity.PalletFormatId = request.PalletFormatId;
             entity.EurPallet = request.EurPallet;
             entity.ProducedEdition = request.ProducedEdition;
+            entity.OverrideHandlingTimeDays = request.OverrideHandlingTimeDays;
+            entity.ForceHandlingTimeCountAs = request.ForceHandlingTimeCountAs;
         }
     }
 }

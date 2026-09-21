@@ -25,7 +25,187 @@ namespace Econosys.Api.Controllers
         {
             return Ok(new
             {
-                reports = new[] { "inventory", "slowmovers", "order-costs-monthly", "selectable-years", "revenue-per-order", "non-delivered-warehouse-orders", "packaging-report" }
+                reports = new[] { "inventory", "slowmovers", "order-costs-monthly", "selectable-years", "revenue-per-order", "invoiced-articles", "non-delivered-warehouse-orders", "packaging-report", "supplier-overview", "handling-times-data" }
+            });
+        }
+
+        [HttpPost("invoiced-articles")]
+        public async Task<ActionResult<InvoicedArticlesReportResponseDto>> GetInvoicedArticlesReport([FromBody] InvoicedArticlesReportRequestDto? request)
+        {
+            if (request?.StartDate == null || request.EndDate == null)
+            {
+                return BadRequest(new { error = "StartDate and EndDate are required." });
+            }
+
+            var startDate = request.StartDate.Value.Date;
+            var endDate = request.EndDate.Value.Date;
+            if (endDate < startDate)
+            {
+                endDate = startDate;
+            }
+
+            var endDateExclusive = endDate.AddDays(1);
+            var invoiceRows = _context.InvoiceRows
+                .AsNoTracking()
+                .Where(invoiceRow =>
+                    invoiceRow.Invoice != null
+                    && invoiceRow.Invoice.InvoiceDate.HasValue
+                    && invoiceRow.Invoice.InvoiceDate.Value >= startDate
+                    && invoiceRow.Invoice.InvoiceDate.Value < endDateExclusive);
+
+            var rows =
+                from invoiceRow in invoiceRows
+                join delivery in _context.DeliveryToCustomers.AsNoTracking()
+                    on invoiceRow.DeliveryToCustomerId equals delivery.Id
+                where delivery.CustomerOrderId.HasValue
+                join customerOrder in _context.CustomerOrders.AsNoTracking()
+                    on delivery.CustomerOrderId!.Value equals customerOrder.Id
+                where customerOrder.CalculationId.HasValue
+                join calculation in _context.Calculations.AsNoTracking()
+                    on customerOrder.CalculationId!.Value equals calculation.Id
+                where calculation.ProductId.HasValue
+                join product in _context.Products.AsNoTracking()
+                    on calculation.ProductId!.Value equals product.Id
+                join unit in _context.Units.AsNoTracking()
+                    on invoiceRow.UnitId equals unit.Id into units
+                from unit in units.DefaultIfEmpty()
+                select new InvoicedArticlesReportRowDto
+                {
+                    InvoiceDate = invoiceRow.Invoice!.InvoiceDate!.Value,
+                    InvoiceNumber = invoiceRow.Invoice.InvoiceNumber,
+                    Customer = invoiceRow.Invoice.CustomerName ?? customerOrder.CustomerName ?? string.Empty,
+                    ProductCode = product.ProductCode ?? string.Empty,
+                    Product = product.Name ?? string.Empty,
+                    Quantity = invoiceRow.NrOf ?? 0,
+                    UnitPrice = invoiceRow.UnitPrice ?? 0,
+                    Unit = unit != null ? unit.Name ?? string.Empty : string.Empty,
+                    Sum = invoiceRow.Sum ?? 0,
+                };
+
+            var resultRows = await rows
+                .OrderBy(row => row.InvoiceDate)
+                .ThenBy(row => row.InvoiceNumber)
+                .ToListAsync();
+
+            return Ok(new InvoicedArticlesReportResponseDto
+            {
+                StartDate = startDate,
+                EndDate = endDate,
+                Rows = resultRows,
+            });
+        }
+
+        [HttpPost("supplier-overview")]
+        public async Task<ActionResult<SupplierOverviewReportResponseDto>> GetSupplierOverviewReport()
+        {
+            var reportDate = SwedishTime.Now.Date;
+            var currentYearStart = new DateTime(reportDate.Year, 1, 1);
+            var currentPeriodEndExclusive = reportDate.AddDays(1);
+            var previousYearStart = currentYearStart.AddYears(-1);
+            var previousYtdEndExclusive = reportDate.AddYears(-1).AddDays(1);
+
+            var sourceRows = await _context.CustomerOrders
+                .AsNoTracking()
+                .Where(customerOrder =>
+                    customerOrder.Created.HasValue
+                    && customerOrder.Created.Value >= previousYearStart
+                    && customerOrder.Created.Value < currentPeriodEndExclusive
+                    && customerOrder.SupplierOrder != null
+                    && customerOrder.SupplierOrder.Supplier != null)
+                .Select(customerOrder => new
+                {
+                    Created = customerOrder.Created!.Value,
+                    SupplierId = customerOrder.SupplierOrder!.Supplier!.Id,
+                    SupplierName = customerOrder.SupplierOrder.Supplier.Name ?? string.Empty,
+                    ProducedEdition = customerOrder.SupplierOrder.ProducedEdition ?? 0,
+                    PurchasePrice = customerOrder.SupplierOrder.PurchasePrice ?? 0,
+                    PurchaseCurrencyRate = customerOrder.SupplierOrder.PurchaseCurrencyRate ?? 0,
+                    SalesPrice = customerOrder.SalesPrice ?? 0,
+                    SalesCurrencyRate = customerOrder.SalesCurrencyRate ?? 0,
+                    TotalCostInSalesCurrency = customerOrder.TotalCostInSalesCurrency ?? 0,
+                    UnitMultiplicator = customerOrder.SupplierOrder.Unit != null
+                        ? customerOrder.SupplierOrder.Unit.Multiplicator
+                        : null,
+                    IsTransportResponsible = customerOrder.SupplierOrder.Supplier.EconopackTransportResponsible,
+                    FreightPerUnit = customerOrder.SupplierOrder.SelectedCalculationRow != null
+                        ? customerOrder.SupplierOrder.SelectedCalculationRow.FreightTotalPopupPerUnit
+                        : null,
+                })
+                .ToListAsync();
+
+            var aggregates = new Dictionary<int, SupplierOverviewAggregate>();
+
+            foreach (var sourceRow in sourceRows)
+            {
+                if (!aggregates.TryGetValue(sourceRow.SupplierId, out var aggregate))
+                {
+                    aggregate = new SupplierOverviewAggregate(sourceRow.SupplierId, sourceRow.SupplierName);
+                    aggregates.Add(sourceRow.SupplierId, aggregate);
+                }
+
+                var divisor = sourceRow.UnitMultiplicator.GetValueOrDefault() == 0
+                    ? 1m
+                    : sourceRow.UnitMultiplicator!.Value;
+                var producedEdition = (decimal)sourceRow.ProducedEdition;
+                var purchaseValue = producedEdition
+                    * (decimal)sourceRow.PurchasePrice
+                    * (decimal)sourceRow.PurchaseCurrencyRate
+                    / divisor;
+                var salesCurrencyRate = (decimal)sourceRow.SalesCurrencyRate;
+                var salesValue = producedEdition
+                    * (decimal)sourceRow.SalesPrice
+                    * salesCurrencyRate
+                    / divisor;
+                var totalCostValue = producedEdition
+                    * sourceRow.TotalCostInSalesCurrency
+                    * salesCurrencyRate
+                    / divisor;
+                var freightValue = sourceRow.IsTransportResponsible
+                    ? producedEdition
+                        * sourceRow.FreightPerUnit.GetValueOrDefault()
+                        * salesCurrencyRate
+                        / divisor
+                    : 0m;
+                var tbValue = salesValue - purchaseValue - totalCostValue;
+
+                if (sourceRow.Created >= currentYearStart)
+                {
+                    aggregate.CurrentYear.Add(purchaseValue, salesValue, freightValue, tbValue);
+                }
+                else
+                {
+                    aggregate.PreviousYear.Add(purchaseValue, salesValue, freightValue, tbValue);
+
+                    if (sourceRow.Created < previousYtdEndExclusive)
+                    {
+                        aggregate.PreviousYtd.Add(purchaseValue, salesValue, freightValue, tbValue);
+                    }
+                }
+            }
+
+            var rows = aggregates.Values
+                .Select(aggregate => new SupplierOverviewReportRowDto
+                {
+                    SupplierId = aggregate.SupplierId,
+                    SupplierName = aggregate.SupplierName,
+                    CurrentYear = aggregate.CurrentYear.ToDto(),
+                    CurrentVsPrevious = new SupplierOverviewComparisonDto
+                    {
+                        PurchaseValue = aggregate.CurrentYear.PurchaseValue - aggregate.PreviousYtd.PurchaseValue,
+                        SalesValue = aggregate.CurrentYear.SalesValue - aggregate.PreviousYtd.SalesValue,
+                        OrderCount = aggregate.CurrentYear.OrderCount - aggregate.PreviousYtd.OrderCount,
+                    },
+                    PreviousYtd = aggregate.PreviousYtd.ToDto(),
+                    PreviousYear = aggregate.PreviousYear.ToDto(),
+                })
+                .OrderByDescending(row => row.CurrentYear.PurchaseValue)
+                .ThenBy(row => row.SupplierName)
+                .ToList();
+
+            return Ok(new SupplierOverviewReportResponseDto
+            {
+                ReportDate = reportDate,
+                Rows = rows,
             });
         }
 
@@ -852,6 +1032,558 @@ namespace Econosys.Api.Controllers
                 TotalPages = totalPages,
             });
         }
+
+        [HttpGet("handling-times/suppliers")]
+        public async Task<ActionResult<IReadOnlyList<FilterOptionDto<int>>>> GetHandlingTimesSupplierOptions()
+        {
+            var suppliers = await _context.Suppliers
+                .AsNoTracking()
+                .Where(supplier => supplier.Name != null && supplier.Name != string.Empty)
+                .OrderBy(supplier => supplier.Name)
+                .Select(supplier => new FilterOptionDto<int>
+                {
+                    Id = supplier.Id,
+                    Name = supplier.Name!,
+                    IsActive = supplier.Active,
+                })
+                .ToListAsync();
+
+            return Ok(suppliers);
+        }
+
+        [HttpPost("handling-times/data")]
+        public async Task<ActionResult<PagedResultDto<HandlingTimesDataReportRowDto>>> GetHandlingTimesData([FromBody] HandlingTimesDataReportRequestDto? request)
+        {
+            var pagination = request?.Pagination ?? new PaginationRequest { PageSize = 100 };
+            var pageNumber = pagination.PageNumber < 1 ? 1 : pagination.PageNumber;
+            var pageSize = pagination.PageSize < 1 ? 100 : Math.Min(pagination.PageSize, 200);
+            var startDate = request?.StartDate?.Date;
+            var endDateExclusive = request?.EndDate?.Date.AddDays(1);
+            var supplierId = request?.SupplierId;
+
+            var rowsQuery = _context.SupplierOrders
+                .AsNoTracking()
+                .SelectMany(
+                    supplierOrder => supplierOrder.CustomerOrders
+                        .OrderBy(customerOrder => customerOrder.Id)
+                        .DefaultIfEmpty(),
+                    (supplierOrder, customerOrder) => new
+                    {
+                        SupplierOrderId = supplierOrder.Id,
+                        SupplierOrderNr = supplierOrder.SupplierOrderNr,
+                        SupplierName = supplierOrder.SupplierName,
+                        SupplierOrderCreatedDate = supplierOrder.Created,
+                        SupplierId = supplierOrder.SupplierId,
+                        OverrideHandlingTimeDays = supplierOrder.OverrideHandlingTimeDays,
+                        ForceHandlingTimeCountAs = supplierOrder.ForceHandlingTimeCountAs,
+                        CustomerOrderId = customerOrder != null ? (int?)customerOrder.Id : null,
+                        CustomerOrderNr = customerOrder != null ? customerOrder.CustomerOrderNr : null,
+                        CustomerOrderCreatedDate = customerOrder != null ? customerOrder.Created : null,
+                    });
+
+            if (startDate.HasValue)
+            {
+                rowsQuery = rowsQuery.Where(row => row.SupplierOrderCreatedDate.HasValue && row.SupplierOrderCreatedDate.Value >= startDate.Value);
+            }
+
+            if (endDateExclusive.HasValue)
+            {
+                rowsQuery = rowsQuery.Where(row => row.SupplierOrderCreatedDate.HasValue && row.SupplierOrderCreatedDate.Value < endDateExclusive.Value);
+            }
+
+            if (supplierId.HasValue)
+            {
+                rowsQuery = rowsQuery.Where(row => row.SupplierId == supplierId.Value);
+            }
+
+            var orderBy = request?.OrderBy?.FirstOrDefault();
+            var sortField = orderBy?.Field?.Trim().ToLowerInvariant();
+            var sortDirection = string.Equals(orderBy?.Direction, "desc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc";
+
+            rowsQuery = (sortField, sortDirection) switch
+            {
+                ("supplierordernr", "desc") => rowsQuery.OrderByDescending(row => row.SupplierOrderNr).ThenByDescending(row => row.SupplierOrderId).ThenByDescending(row => row.CustomerOrderId),
+                ("supplierordernr", _) => rowsQuery.OrderBy(row => row.SupplierOrderNr).ThenBy(row => row.SupplierOrderId).ThenBy(row => row.CustomerOrderId),
+                ("suppliername", "desc") => rowsQuery.OrderByDescending(row => row.SupplierName).ThenByDescending(row => row.SupplierOrderId).ThenByDescending(row => row.CustomerOrderId),
+                ("suppliername", _) => rowsQuery.OrderBy(row => row.SupplierName).ThenBy(row => row.SupplierOrderId).ThenBy(row => row.CustomerOrderId),
+                ("supplierordercreateddate", "desc") or ("suppliercreated", "desc") => rowsQuery.OrderByDescending(row => row.SupplierOrderCreatedDate).ThenByDescending(row => row.SupplierOrderId).ThenByDescending(row => row.CustomerOrderId),
+                ("supplierordercreateddate", _) or ("suppliercreated", _) => rowsQuery.OrderBy(row => row.SupplierOrderCreatedDate).ThenBy(row => row.SupplierOrderId).ThenBy(row => row.CustomerOrderId),
+                ("customerordernr", "desc") => rowsQuery.OrderByDescending(row => row.CustomerOrderNr).ThenByDescending(row => row.SupplierOrderId).ThenByDescending(row => row.CustomerOrderId),
+                ("customerordernr", _) => rowsQuery.OrderBy(row => row.CustomerOrderNr).ThenBy(row => row.SupplierOrderId).ThenBy(row => row.CustomerOrderId),
+                ("customerordercreateddate", "desc") or ("customercreated", "desc") => rowsQuery.OrderByDescending(row => row.CustomerOrderCreatedDate).ThenByDescending(row => row.SupplierOrderId).ThenByDescending(row => row.CustomerOrderId),
+                ("customerordercreateddate", _) or ("customercreated", _) => rowsQuery.OrderBy(row => row.CustomerOrderCreatedDate).ThenBy(row => row.SupplierOrderId).ThenBy(row => row.CustomerOrderId),
+                _ when sortDirection == "asc" => rowsQuery.OrderBy(row => row.SupplierOrderCreatedDate).ThenBy(row => row.SupplierOrderId).ThenBy(row => row.CustomerOrderId),
+                _ => rowsQuery.OrderByDescending(row => row.SupplierOrderCreatedDate).ThenByDescending(row => row.SupplierOrderId).ThenByDescending(row => row.CustomerOrderId),
+            };
+
+            var totalCount = await rowsQuery.CountAsync();
+            var totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pageSize);
+
+            var pageRows = await rowsQuery
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            var supplierOrderIds = pageRows
+                .Select(row => row.SupplierOrderId)
+                .Distinct()
+                .ToList();
+
+            var customerOrderIds = pageRows
+                .Where(row => row.CustomerOrderId.HasValue)
+                .Select(row => row.CustomerOrderId!.Value)
+                .Distinct()
+                .ToList();
+
+            var allLogIds = supplierOrderIds
+                .Concat(customerOrderIds)
+                .Distinct()
+                .ToList();
+
+            var latestSendMailByTypeAndItemId = allLogIds.Count == 0
+                ? new Dictionary<(string ItemType, int ItemId), DateTime?>()
+                : (await _context.LogEntries
+                    .AsNoTracking()
+                    .Where(log =>
+                        log.ItemId > 0
+                        && allLogIds.Contains(log.ItemId)
+                        && log.Action != null
+                        && log.Item != null
+                        && log.Action.ToUpper() == "SENDMAIL")
+                    .Select(log => new
+                    {
+                        log.ItemId,
+                        log.DateTime,
+                        log.Item,
+                    })
+                    .ToListAsync())
+                    .Select(log => new
+                    {
+                        log.ItemId,
+                        log.DateTime,
+                        ItemType = NormalizeItemType(log.Item),
+                    })
+                    .Where(log => log.ItemType != null)
+                    .GroupBy(log => new { log.ItemType, log.ItemId })
+                    .Select(group => new
+                    {
+                        group.Key.ItemType,
+                        group.Key.ItemId,
+                        SentAt = group.Max(item => (DateTime?)item.DateTime),
+                    })
+                    .ToDictionary(
+                        row => (row.ItemType!, row.ItemId),
+                        row => row.SentAt);
+
+            var items = pageRows.Select(row =>
+            {
+                var supplierSentAt = latestSendMailByTypeAndItemId.TryGetValue(("supplier-order", row.SupplierOrderId), out var supplierSentAtValue)
+                    ? supplierSentAtValue
+                    : null;
+                var customerSentAt = row.CustomerOrderId.HasValue
+                    && latestSendMailByTypeAndItemId.TryGetValue(("customer-order", row.CustomerOrderId.Value), out var customerSentAtValue)
+                    ? customerSentAtValue
+                    : null;
+
+                return new HandlingTimesDataReportRowDto
+                {
+                    SupplierOrderId = row.SupplierOrderId,
+                    SupplierOrderNr = row.SupplierOrderNr ?? row.SupplierOrderId.ToString(),
+                    SupplierName = row.SupplierName ?? string.Empty,
+                    SupplierOrderCreatedDate = row.SupplierOrderCreatedDate,
+                    SupplierOrderSentDateTime = supplierSentAt,
+                    CustomerOrderId = row.CustomerOrderId,
+                    CustomerOrderNr = row.CustomerOrderNr,
+                    CustomerOrderCreatedDate = row.CustomerOrderCreatedDate,
+                    CustomerOrderSentDateTime = customerSentAt,
+                    OverrideHandlingTimeDays = row.OverrideHandlingTimeDays,
+                    ForceHandlingTimeCountAs = row.ForceHandlingTimeCountAs,
+                    HandlingTimeDays = supplierSentAt.HasValue && customerSentAt.HasValue
+                        ? Math.Round((decimal)CalculateBusinessDays(supplierSentAt.Value, customerSentAt.Value), 1)
+                        : null,
+                };
+            }).ToList();
+
+            return Ok(new PagedResultDto<HandlingTimesDataReportRowDto>
+            {
+                Items = items,
+                PageNumber = pageNumber,
+                PageSize = pageSize,
+                TotalCount = totalCount,
+                TotalPages = totalPages,
+            });
+        }
+
+        [HttpGet("handling-times/repeat-orders-by-year")]
+        public async Task<ActionResult<HandlingTimesRepeatOrdersReportResponseDto>> GetHandlingTimesRepeatOrdersByYear([FromQuery] string? orderType)
+        {
+            var isRepeat = !string.Equals(orderType, "new", StringComparison.OrdinalIgnoreCase);
+            var (settings, repeatOrderDays) = await GetOrderTypeHandlingDaysAsync(isRepeat);
+
+            var goalDays = settings?.HandlingTimesGoalNrOfDays;
+            var kpiPercent = settings?.HandlingTimesPercentHandledUnderGoalNrOfDays;
+
+            var yearRows = repeatOrderDays
+                .GroupBy(row => row.Created.Year)
+                .OrderByDescending(group => group.Key)
+                .Select(group =>
+                {
+                    var handlingDays = group
+                        .Where(row => row.Days.HasValue)
+                        .Select(row => row.Days!.Value)
+                        .ToList();
+
+                    var averageDays = handlingDays.Count > 0 ? handlingDays.Average() : (decimal?)null;
+                    var percentUnderGoal = handlingDays.Count > 0 && goalDays.HasValue
+                        ? Math.Round(100m * handlingDays.Count(days => days <= goalDays.Value) / handlingDays.Count, 1)
+                        : (decimal?)null;
+
+                    return new HandlingTimesRepeatOrdersYearRowDto
+                    {
+                        Year = group.Key,
+                        OrderCount = group.Count(),
+                        AverageHandlingTimeDays = averageDays.HasValue ? Math.Round(averageDays.Value, 1) : null,
+                        PercentUnderGoalDays = percentUnderGoal,
+                        VarianceVsKpi = percentUnderGoal.HasValue && kpiPercent.HasValue
+                            ? Math.Round(percentUnderGoal.Value - kpiPercent.Value, 1)
+                            : null,
+                    };
+                })
+                .ToList();
+
+            return Ok(new HandlingTimesRepeatOrdersReportResponseDto
+            {
+                GoalNrOfDays = goalDays,
+                GoalPercentHandledUnderGoalNrOfDays = kpiPercent,
+                Years = yearRows,
+            });
+        }
+
+        [HttpGet("handling-times/repeat-orders-monthly")]
+        public async Task<ActionResult<HandlingTimesRepeatOrdersMonthlyReportResponseDto>> GetHandlingTimesRepeatOrdersMonthly([FromQuery] string? orderType)
+        {
+            var isRepeat = !string.Equals(orderType, "new", StringComparison.OrdinalIgnoreCase);
+            var (settings, repeatOrderDays) = await GetOrderTypeHandlingDaysAsync(isRepeat);
+
+            var goalDays = settings?.HandlingTimesGoalNrOfDays;
+            var kpiPercent = settings?.HandlingTimesPercentHandledUnderGoalNrOfDays;
+
+            var currentYear = SwedishTime.Now.Year;
+            var previousYear = currentYear - 1;
+
+            var currentYearRows = repeatOrderDays.Where(row => row.Created.Year == currentYear).ToList();
+            var previousYearRows = repeatOrderDays.Where(row => row.Created.Year == previousYear).ToList();
+
+            var months = new List<HandlingTimesRepeatOrdersMonthRowDto>();
+
+            for (var month = 1; month <= 12; month++)
+            {
+                var currentMonthRows = currentYearRows.Where(row => row.Created.Month == month).ToList();
+                var previousMonthRows = previousYearRows.Where(row => row.Created.Month == month).ToList();
+
+                var currentDays = currentMonthRows.Where(row => row.Days.HasValue).Select(row => row.Days!.Value).ToList();
+                var previousDays = previousMonthRows.Where(row => row.Days.HasValue).Select(row => row.Days!.Value).ToList();
+
+                var currentAverage = currentDays.Count > 0 ? currentDays.Average() : (decimal?)null;
+                var previousAverage = previousDays.Count > 0 ? previousDays.Average() : (decimal?)null;
+                var currentPercentUnderGoal = currentDays.Count > 0 && goalDays.HasValue
+                    ? Math.Round(100m * currentDays.Count(days => days <= goalDays.Value) / currentDays.Count, 1)
+                    : (decimal?)null;
+
+                months.Add(new HandlingTimesRepeatOrdersMonthRowDto
+                {
+                    MonthNumber = month,
+                    CurrentYearOrderCount = currentMonthRows.Count,
+                    CurrentYearAverageHandlingTimeDays = currentAverage.HasValue ? Math.Round(currentAverage.Value, 1) : null,
+                    CurrentYearPercentUnderGoalDays = currentPercentUnderGoal,
+                    PreviousYearOrderCount = previousMonthRows.Count,
+                    PreviousYearAverageHandlingTimeDays = previousAverage.HasValue ? Math.Round(previousAverage.Value, 1) : null,
+                });
+            }
+
+            return Ok(new HandlingTimesRepeatOrdersMonthlyReportResponseDto
+            {
+                CurrentYear = currentYear,
+                PreviousYear = previousYear,
+                GoalNrOfDays = goalDays,
+                GoalPercentHandledUnderGoalNrOfDays = kpiPercent,
+                Months = months,
+            });
+        }
+
+        [HttpGet("handling-times/orders-yearly-monthly")]
+        public async Task<ActionResult<HandlingTimesYearlyMonthlyReportResponseDto>> GetHandlingTimesOrdersYearlyMonthly([FromQuery] string? orderType)
+        {
+            var isRepeat = !string.Equals(orderType, "new", StringComparison.OrdinalIgnoreCase);
+            var (_, rows) = await GetOrderTypeHandlingDaysAsync(isRepeat);
+
+            var currentYear = SwedishTime.Now.Year;
+            var currentMonth = SwedishTime.Now.Month;
+
+            var yearRows = rows
+                .GroupBy(row => row.Created.Year)
+                .OrderBy(group => group.Key)
+                .Select(yearGroup =>
+                {
+                    var year = yearGroup.Key;
+                    var lastMonth = year == currentYear ? currentMonth : 12;
+
+                    var months = Enumerable.Range(1, lastMonth)
+                        .Select(month =>
+                        {
+                            var monthRows = yearGroup.Where(row => row.Created.Month == month).ToList();
+                            var monthDays = monthRows.Where(row => row.Days.HasValue).Select(row => row.Days!.Value).ToList();
+                            var averageDays = monthDays.Count > 0 ? monthDays.Average() : (decimal?)null;
+
+                            return new HandlingTimesYearlyMonthlyMonthCellDto
+                            {
+                                MonthNumber = month,
+                                OrderCount = monthRows.Count,
+                                AverageHandlingTimeDays = averageDays.HasValue ? Math.Round(averageDays.Value, 1) : null,
+                            };
+                        })
+                        .ToList();
+
+                    var yearDays = yearGroup.Where(row => row.Days.HasValue).Select(row => row.Days!.Value).ToList();
+                    var yearAverageDays = yearDays.Count > 0 ? yearDays.Average() : (decimal?)null;
+
+                    return new HandlingTimesYearlyMonthlyYearRowDto
+                    {
+                        Year = year,
+                        Months = months,
+                        TotalOrderCount = yearGroup.Count(),
+                        TotalAverageHandlingTimeDays = yearAverageDays.HasValue ? Math.Round(yearAverageDays.Value, 1) : null,
+                    };
+                })
+                .ToList();
+
+            return Ok(new HandlingTimesYearlyMonthlyReportResponseDto
+            {
+                Years = yearRows,
+            });
+        }
+
+        private async Task<(Setting? Settings, List<(DateTime Created, decimal? Days)> Rows)> GetOrderTypeHandlingDaysAsync(bool isRepeat)
+        {
+            var (settings, rows) = await GetClassifiedSupplierOrdersAsync();
+            var targetClassification = isRepeat ? "repeat" : "new";
+
+            var filtered = rows
+                .Where(row => row.Classification == targetClassification)
+                .Select(row => (row.Created, row.Days))
+                .ToList();
+
+            return (settings, filtered);
+        }
+
+        [HttpGet("handling-times/created-by")]
+        public async Task<ActionResult<HandlingTimesCreatedByReportResponseDto>> GetHandlingTimesCreatedBy([FromQuery] int? year)
+        {
+            var (settings, rows) = await GetClassifiedSupplierOrdersAsync();
+            var goalDays = settings?.HandlingTimesGoalNrOfDays;
+
+            var availableYears = rows.Select(row => row.Created.Year).Distinct().OrderByDescending(y => y).ToList();
+            var selectedYear = year ?? (availableYears.Count > 0 ? availableYears[0] : SwedishTime.Now.Year);
+
+            var yearRows = rows.Where(row => row.Created.Year == selectedYear).ToList();
+
+            var userIds = yearRows
+                .Where(row => row.CreatedBy.HasValue)
+                .Select(row => row.CreatedBy!.Value)
+                .Distinct()
+                .ToList();
+
+            var userLabelsById = await _context.LegacyUsers
+                .AsNoTracking()
+                .Where(user => userIds.Contains(user.Id))
+                .ToDictionaryAsync(user => user.Id, user => user.Initials ?? user.Name ?? user.Id.ToString());
+
+            var userRows = yearRows
+                .GroupBy(row => row.CreatedBy)
+                .Select(group =>
+                {
+                    var newCount = group.Count(row => row.Classification == "new");
+                    var repeatCount = group.Count(row => row.Classification == "repeat");
+                    var classifiedCount = newCount + repeatCount;
+
+                    var repeatDays = group
+                        .Where(row => row.Classification == "repeat" && row.Days.HasValue)
+                        .Select(row => row.Days!.Value)
+                        .ToList();
+
+                    var averageRepeatDays = repeatDays.Count > 0 ? repeatDays.Average() : (decimal?)null;
+                    var repeatPercentUnderGoal = repeatDays.Count > 0 && goalDays.HasValue
+                        ? Math.Round(100m * repeatDays.Count(days => days <= goalDays.Value) / repeatDays.Count, 1)
+                        : (decimal?)null;
+
+                    var userId = group.Key;
+                    var userLabel = userId.HasValue && userLabelsById.TryGetValue(userId.Value, out var label)
+                        ? label
+                        : userId?.ToString() ?? string.Empty;
+
+                    return new HandlingTimesCreatedByRowDto
+                    {
+                        UserId = userId,
+                        UserLabel = userLabel,
+                        TotalSupplierOrderCount = group.Count(),
+                        NewOrderCount = newCount,
+                        RepeatOrderCount = repeatCount,
+                        NewOrderSharePercent = classifiedCount > 0 ? Math.Round(100m * newCount / classifiedCount, 1) : null,
+                        AverageRepeatHandlingDays = averageRepeatDays.HasValue ? Math.Round(averageRepeatDays.Value, 1) : null,
+                        RepeatPercentUnderGoalDays = repeatPercentUnderGoal,
+                    };
+                })
+                .OrderBy(row => row.UserLabel)
+                .ToList();
+
+            var totalNewCount = yearRows.Count(row => row.Classification == "new");
+            var totalRepeatCount = yearRows.Count(row => row.Classification == "repeat");
+            var totalClassifiedCount = totalNewCount + totalRepeatCount;
+            var allRepeatDays = yearRows
+                .Where(row => row.Classification == "repeat" && row.Days.HasValue)
+                .Select(row => row.Days!.Value)
+                .ToList();
+            var totalAverageRepeatDays = allRepeatDays.Count > 0 ? allRepeatDays.Average() : (decimal?)null;
+            var totalRepeatPercentUnderGoal = allRepeatDays.Count > 0 && goalDays.HasValue
+                ? Math.Round(100m * allRepeatDays.Count(days => days <= goalDays.Value) / allRepeatDays.Count, 1)
+                : (decimal?)null;
+
+            var totalRow = new HandlingTimesCreatedByRowDto
+            {
+                UserLabel = "Totalt",
+                TotalSupplierOrderCount = yearRows.Count,
+                NewOrderCount = totalNewCount,
+                RepeatOrderCount = totalRepeatCount,
+                NewOrderSharePercent = totalClassifiedCount > 0 ? Math.Round(100m * totalNewCount / totalClassifiedCount, 1) : null,
+                AverageRepeatHandlingDays = totalAverageRepeatDays.HasValue ? Math.Round(totalAverageRepeatDays.Value, 1) : null,
+                RepeatPercentUnderGoalDays = totalRepeatPercentUnderGoal,
+            };
+
+            return Ok(new HandlingTimesCreatedByReportResponseDto
+            {
+                Year = selectedYear,
+                AvailableYears = availableYears,
+                GoalNrOfDays = goalDays,
+                Rows = userRows,
+                Total = totalRow,
+            });
+        }
+
+        private async Task<(Setting? Settings, List<SupplierOrderClassificationRow> Rows)> GetClassifiedSupplierOrdersAsync()
+        {
+            var settings = await _context.Settings
+                .AsNoTracking()
+                .Where(x => x.CompanyId == 1)
+                .OrderBy(x => x.Id)
+                .FirstOrDefaultAsync();
+
+            var thresholdDays = settings?.HandlingTimesThresholdNrOfDays;
+
+            var supplierOrders = await _context.SupplierOrders
+                .AsNoTracking()
+                .Where(so => so.Created.HasValue)
+                .Select(so => new
+                {
+                    so.Id,
+                    Created = so.Created!.Value,
+                    so.CreatedBy,
+                    so.BasedOnSupplierOrderId,
+                    so.OverrideHandlingTimeDays,
+                    so.ForceHandlingTimeCountAs,
+                    FirstCustomerOrderId = so.CustomerOrders.OrderBy(co => co.Id).Select(co => (int?)co.Id).FirstOrDefault(),
+                })
+                .ToListAsync();
+
+            var classifiedOrders = supplierOrders
+                .Select(so =>
+                {
+                    var forceCode = so.ForceHandlingTimeCountAs?.Trim().ToUpperInvariant();
+                    var isDontCount = forceCode == "DONTCOUNT";
+                    var isOrderRepeat = forceCode == "COUNTASREPEATE"
+                        || (forceCode != "COUNTASNEW" && so.BasedOnSupplierOrderId.HasValue);
+                    var classification = isDontCount ? "exclude" : (isOrderRepeat ? "repeat" : "new");
+
+                    return new { so.Id, so.Created, so.CreatedBy, so.OverrideHandlingTimeDays, so.FirstCustomerOrderId, Classification = classification };
+                })
+                .Where(so => so.Classification != "exclude")
+                .ToList();
+
+            var supplierOrderIds = classifiedOrders.Select(so => so.Id).ToList();
+            var customerOrderIds = classifiedOrders
+                .Where(so => so.FirstCustomerOrderId.HasValue)
+                .Select(so => so.FirstCustomerOrderId!.Value)
+                .Distinct()
+                .ToList();
+            var allLogIds = supplierOrderIds.Concat(customerOrderIds).Distinct().ToList();
+
+            var firstSendMailByTypeAndItemId = allLogIds.Count == 0
+                ? new Dictionary<(string ItemType, int ItemId), DateTime?>()
+                : (await _context.LogEntries
+                    .AsNoTracking()
+                    .Where(log =>
+                        log.ItemId > 0
+                        && allLogIds.Contains(log.ItemId)
+                        && log.Action != null
+                        && log.Item != null
+                        && log.Action.ToUpper() == "SENDMAIL")
+                    .Select(log => new
+                    {
+                        log.ItemId,
+                        log.DateTime,
+                        log.Item,
+                    })
+                    .ToListAsync())
+                    .Select(log => new
+                    {
+                        log.ItemId,
+                        log.DateTime,
+                        ItemType = NormalizeItemType(log.Item),
+                    })
+                    .Where(log => log.ItemType != null)
+                    .GroupBy(log => new { log.ItemType, log.ItemId })
+                    .Select(group => new
+                    {
+                        group.Key.ItemType,
+                        group.Key.ItemId,
+                        SentAt = group.Min(item => (DateTime?)item.DateTime),
+                    })
+                    .ToDictionary(
+                        row => (row.ItemType!, row.ItemId),
+                        row => row.SentAt);
+
+            var rows = classifiedOrders
+                .Select(so =>
+                {
+                    decimal? days = so.OverrideHandlingTimeDays;
+
+                    if (!days.HasValue)
+                    {
+                        firstSendMailByTypeAndItemId.TryGetValue(("supplier-order", so.Id), out var supplierSentAt);
+                        var customerSentAt = (DateTime?)null;
+                        if (so.FirstCustomerOrderId.HasValue)
+                        {
+                            firstSendMailByTypeAndItemId.TryGetValue(("customer-order", so.FirstCustomerOrderId.Value), out customerSentAt);
+                        }
+
+                        if (supplierSentAt.HasValue && customerSentAt.HasValue)
+                        {
+                            days = (decimal)CalculateBusinessDays(supplierSentAt.Value, customerSentAt.Value);
+                        }
+                    }
+
+                    if (days.HasValue && thresholdDays.HasValue && days.Value > thresholdDays.Value)
+                    {
+                        days = thresholdDays.Value;
+                    }
+
+                    return new SupplierOrderClassificationRow(so.CreatedBy, so.Created, days, so.Classification);
+                })
+                .ToList();
+
+            return (settings, rows);
+        }
+
+        private sealed record SupplierOrderClassificationRow(int? CreatedBy, DateTime Created, decimal? Days, string Classification);
 
         [HttpGet("slowmovers")]
         public async Task<ActionResult<SlowMoversReportResponseDto>> GetSlowMoversReport([FromQuery] int? inventoryId)
@@ -1803,6 +2535,32 @@ namespace Econosys.Api.Controllers
             return isDescending ? ordered.ThenByDescending(keySelector) : ordered.ThenBy(keySelector);
         }
 
+        private static double CalculateBusinessDays(DateTime start, DateTime end)
+        {
+            if (end <= start)
+            {
+                return 0;
+            }
+
+            var businessDays = 0d;
+            var current = start.Date;
+            var endDate = end.Date;
+
+            while (current <= endDate)
+            {
+                if (current.DayOfWeek != DayOfWeek.Saturday && current.DayOfWeek != DayOfWeek.Sunday)
+                {
+                    var dayStart = current == start.Date ? start : current;
+                    var dayEnd = current == endDate ? end : current.AddDays(1);
+                    businessDays += Math.Max(0, (dayEnd - dayStart).TotalDays);
+                }
+
+                current = current.AddDays(1);
+            }
+
+            return businessDays;
+        }
+
         private static string? NormalizeItemType(string? itemType)
         {
             var value = itemType?.Trim().ToLowerInvariant();
@@ -1829,5 +2587,52 @@ namespace Econosys.Api.Controllers
         }
 
 
+        private sealed class SupplierOverviewAggregate
+        {
+            public SupplierOverviewAggregate(int supplierId, string supplierName)
+            {
+                SupplierId = supplierId;
+                SupplierName = supplierName;
+            }
+
+            public int SupplierId { get; }
+            public string SupplierName { get; }
+            public SupplierOverviewPeriodAggregate CurrentYear { get; } = new();
+            public SupplierOverviewPeriodAggregate PreviousYtd { get; } = new();
+            public SupplierOverviewPeriodAggregate PreviousYear { get; } = new();
+        }
+
+        private sealed class SupplierOverviewPeriodAggregate
+        {
+            public decimal PurchaseValue { get; private set; }
+            public decimal SalesValue { get; private set; }
+            public decimal Freight { get; private set; }
+            public decimal Tb { get; private set; }
+            public int OrderCount { get; private set; }
+
+            public void Add(decimal purchaseValue, decimal salesValue, decimal freight, decimal tb)
+            {
+                PurchaseValue += purchaseValue;
+                SalesValue += salesValue;
+                Freight += freight;
+                Tb += tb;
+                OrderCount++;
+            }
+
+            public SupplierOverviewMetricsDto ToDto()
+            {
+                var additionBase = SalesValue - Tb;
+
+                return new SupplierOverviewMetricsDto
+                {
+                    PurchaseValue = PurchaseValue,
+                    SalesValue = SalesValue,
+                    Freight = Freight,
+                    Tb = Tb,
+                    OrderCount = OrderCount,
+                    Addition = additionBase == 0m ? 0m : SalesValue / additionBase - 1m,
+                };
+            }
+        }
     }
 }

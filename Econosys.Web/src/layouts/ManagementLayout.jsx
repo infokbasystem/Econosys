@@ -1,104 +1,119 @@
-import { useEffect, useState } from "react";
-import { Outlet, NavLink, useLocation } from "react-router-dom";
+import { useState } from "react";
+import { Outlet, useLocation } from "react-router-dom";
+import { BarChart3, CircleDollarSign, ClipboardList, Lightbulb, PanelLeftClose, PanelLeftOpen, ReceiptText } from "lucide-react";
 import Header from "../components/Header";
+import LeftMenu from "../components/LeftMenu";
 import Navbar from "../components/Navbar";
 import bg from "../assets/content.png";
+import { PdfProvider } from "../contexts/PdfContext";
+import PdfPanel from "../components/PdfPanel";
+
+const menuGroups = [
+    {
+        items: [{ to: "/management", label: "Översikt", icon: BarChart3, end: true }],
+    },
+    {
+        label: "Ledning",
+        items: [
+            { to: "/reporting/profitability", label: "Lönsamhet", icon: CircleDollarSign, disabled: true },
+            { to: "/reporting/invoiced", label: "Fakturerat", icon: ReceiptText, disabled: true },
+        ],
+    },
+    {
+        label: "Försäljning",
+        items: [
+            { label: "Budget", icon: CircleDollarSign, disabled: true },
+            { label: "Säljrapport", icon: BarChart3, disabled: true },
+        ],
+    },
+    {
+        label: "Kvalitet",
+        items: [
+            { to: "/management/deviations", label: "Avvikelser", icon: ClipboardList },
+            { to: "/management/improvement-propositions", label: "Förbättringsförslag", icon: Lightbulb },
+            { to: "/management/supplier-report", label: "Leverantörsrapport", icon: BarChart3 },
+            { label: "Kostnader", icon: CircleDollarSign, disabled: true },
+        ],
+    },
+    // {
+    //     label: "Register",
+    //     items: [{ label: "Budget, månadsfördelning", icon: CircleDollarSign, disabled: true }],
+    // },
+];
 
 const ManagementLayout = () => {
     const location = useLocation();
-    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [menuOpenPath, setMenuOpenPath] = useState(null);
+    const isMenuOpen = menuOpenPath === location.pathname;
     const pathSegments = location.pathname.split('/').filter(Boolean);
     const hasIdLikeLastSegment = /^\d+$/.test(pathSegments[pathSegments.length - 1] || '');
     const isDetailPage = pathSegments.length >= 3 || (pathSegments.length === 2 && hasIdLikeLastSegment);
 
-    const getNavLinkClass = (path) => {
-        let sub = location.pathname.split('/')[2];
-        if (!isNaN(sub))
-            sub = "overview";
-        if (!sub)
-            sub = "overview";
-        if (sub == path)
-            return "text-red-600";
-        return "text-gray-600 hover:text-gray-950";
-    };
-
-    useEffect(() => {
-        setIsMenuOpen(false);
-    }, [location.pathname]);
-
-    const menuContent = (
-        <ul className="flex flex-col pt-5">
-            <li className={"text-xs font-semibold px-6 py-1.5 " + getNavLinkClass('overview')}><NavLink to="/management" end>Översikt</NavLink></li>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink to="/reporting/profitability">Lönsamhet</NavLink></li>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink to="/reporting/invoiced">Fakturerat</NavLink></li>
-            <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Försäljning</p>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Budget</NavLink></li>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Säljrapport</NavLink></li>
-            <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Kvalitet</p>
-            <li className={"text-xs font-semibold px-6 py-1.5 " + getNavLinkClass('deviations')}><NavLink to="/management/deviations">Avvikelser</NavLink></li>
-            <li className={"text-xs font-semibold px-6 py-1.5 " + getNavLinkClass('improvement-propositions')}><NavLink to="/management/improvement-propositions">Förbättringsförslag</NavLink></li>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Palluppföljning</NavLink></li>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Kostnader</NavLink></li>
-            <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Register</p>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Budget, månadsfördelning</NavLink></li>
-        </ul>
-    );
+    const menuContent = <LeftMenu groups={menuGroups} />;
 
     return (
-        <div className="flex flex-col min-h-screen">
-            <Header />
-            <div className="sticky top-0 z-50">
-                <Navbar />
-            </div>
-            <div className="relative flex grow items-stretch bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50" style={{ backgroundImage: `url(${bg})` }}>
-                {!isDetailPage && (
-                    <div className="sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto flex flex-col w-50 shrink-0 border-r border-gray-300">
-                        {menuContent}
-                    </div>
-                )}
-
-                {isDetailPage && (
-                    <>
-                        <button
-                            type="button"
-                            onClick={() => setIsMenuOpen(true)}
-                            className="absolute left-4 top-5 z-20 inline-flex h-7 w-7 items-center justify-center rounded border border-gray-300 bg-white/95 text-gray-700 shadow-sm hover:bg-white"
-                            aria-label="Visa meny"
-                        >
-                            ≡
-                        </button>
-
-                        <div
-                            className={`absolute inset-0 z-30 bg-black/20 transition-opacity ${isMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
-                            onClick={() => setIsMenuOpen(false)}
-                        />
-
-                        <div
-                            className={`absolute left-0 top-0 z-40 flex h-full w-50 shrink-0 flex-col border-r border-gray-300 bg-gray-50 transition-transform duration-200 ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}
-                        >
-                            <div className="flex items-center justify-end border-b border-gray-200 px-2 py-1">
-                                <button
-                                    type="button"
-                                    onClick={() => setIsMenuOpen(false)}
-                                    className="inline-flex h-6 w-6 items-center justify-center rounded text-gray-600 hover:bg-gray-200"
-                                    aria-label="Dölj meny"
-                                >
-                                    ×
-                                </button>
+        <PdfProvider>
+            <div className="relative flex h-screen min-h-0 flex-col overflow-y-auto bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50" style={{ backgroundImage: `url(${bg})` }}>
+                <div className="shrink-0">
+                    <Header />
+                </div>
+                <div className="sticky top-0 z-50 shrink-0">
+                    <Navbar />
+                </div>
+                <div className="relative min-h-0 grow overflow-hidden">
+                    <div className="flex h-full min-h-0 items-stretch overflow-hidden md:px-[clamp(4px,3vw,3vw)]">
+                        {!isDetailPage && (
+                            <div className="mt-10 mb-20 flex min-h-0 w-50 shrink-0 flex-col overflow-y-auto border-r border-gray-300">
+                                {menuContent}
                             </div>
-                            {menuContent}
-                        </div>
-                    </>
-                )}
+                        )}
 
-                <div className="flex-grow min-w-0 pt-4 px-0 relative overflow-hidden">
-                    <div className="outlet-leading-none h-full">
-                        <Outlet />
+                        {isDetailPage && (
+                            <>
+                            <button
+                                type="button"
+                                onClick={() => setMenuOpenPath(location.pathname)}
+                                className="absolute left-4 top-5 z-20 inline-flex h-7 w-7 items-center justify-center text-gray-700 shadow-sm hover:bg-white"
+                                aria-label="Visa meny"
+                            >
+                                <PanelLeftOpen size={16} />
+                            </button>
+
+                            <div
+                                className={`absolute inset-0 z-30 bg-black/20 transition-opacity ${isMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+                                onClick={() => setMenuOpenPath(null)}
+                            />
+
+                            <div
+                                className={`absolute left-0 top-0 z-40 flex h-full w-50 shrink-0 flex-col border-r border-gray-300 bg-gray-50 transition-transform duration-200 ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}
+                            >
+                                <div className="flex items-center justify-end border-b border-gray-200 px-2 py-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setMenuOpenPath(null)}
+                                        className="inline-flex h-6 w-6 items-center justify-center rounded text-gray-600 hover:bg-gray-200"
+                                        aria-label="Dölj meny"
+                                    >
+                                        <PanelLeftClose size={16} />
+                                    </button>
+                                </div>
+                                {menuContent}
+                            </div>
+                            </>
+                        )}
+
+                        <div className="flex-grow min-w-0 pt-4 px-0 relative overflow-hidden">
+                            <div className="outlet-leading-none h-full pt-0">
+                                <Outlet />
+                            </div>
+                        </div>
                     </div>
+
+                    <PdfPanel />
                 </div>
             </div>
-        </div>
-    )
-}
+        </PdfProvider>
+    );
+};
 
-export default ManagementLayout
+export default ManagementLayout;

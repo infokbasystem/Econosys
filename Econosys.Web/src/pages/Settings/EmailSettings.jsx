@@ -189,7 +189,7 @@ const EmailSettings = () => {
                                         key={item.id}
                                         type="button"
                                         onClick={() => setSelectedId(item.id)}
-                                        className={`w-full text-left text-xs px-2 py-1 rounded-sm grid grid-cols-[100px_1fr] gap-2 items-center ${isSelected ? 'bg-yellow-300 text-black' : 'hover:bg-gray-100 text-gray-900'}`}
+                                        className={`w-full h-6 text-left text-xs px-2 py-1 rounded-sm grid grid-cols-[100px_1fr] gap-2 items-center ${isSelected ? 'bg-purple-200/50 text-black' : 'hover:bg-gray-100 text-gray-900'}`}
                                     >
                                         <span className="text-gray-600 truncate">{item.setting || '(tom)'}</span>
                                         <span className="truncate">{item.value || ''}</span>

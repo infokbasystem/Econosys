@@ -6,6 +6,42 @@ const AuthContext = createContext(null);
 const KEEP_ALIVE_INTERVAL_MS = 60 * 1000;
 const ACTIVE_WINDOW_MS = 5 * 60 * 1000;
 
+const getLoginErrorMessage = (error) => {
+  // Timeout, offline, DNS-fel eller blockerad CORS-förfrågan ger inget svar från servern.
+  if (!error.response) {
+    if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+      return 'Servern (API) svarade inte i tid. Försök igen eller kontakta administratören.';
+    }
+
+    return 'Kan inte nå servern (API). Kontrollera din internetanslutning eller kontakta administratören.';
+  }
+
+  const { status, data } = error.response;
+  const serverMessage = typeof data?.message === 'string' ? data.message : '';
+
+  if (status === 401) {
+    return serverMessage || 'Vänligen kontrollera dina inloggningsuppgifter och försök igen.';
+  }
+
+  if (status === 423) {
+    return serverMessage || 'Ditt konto är låst. Kontakta administratören för att låsa upp kontot.';
+  }
+
+  if (status === 429) {
+    return 'För många inloggningsförsök. Vänta en stund och försök igen.';
+  }
+
+  if (status === 503) {
+    return serverMessage || 'Servern kan inte ansluta till databasen. Kontakta administratören.';
+  }
+
+  if (status >= 500) {
+    return `Ett serverfel uppstod vid inloggning (status ${status}). Kontakta administratören.`;
+  }
+
+  return serverMessage || `Inloggningen misslyckades (status ${status}). Kontakta administratören.`;
+};
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -33,7 +69,12 @@ export const AuthProvider = ({ children }) => {
     if (!isAuthenticatedRef.current) return;
 
     updateAuthState(null);
-    // AuthProvider is outside RouterProvider, so redirect via location.
+    // AuthProvider is outside RouterProvider, so redirect via location (full reload),
+    // stash the current path so LoginPage can return the user here after re-login.
+    const currentPath = `${window.location.pathname}${window.location.search}`;
+    if (currentPath && currentPath !== '/login') {
+      sessionStorage.setItem('postLoginRedirect', currentPath);
+    }
     window.location.assign('/login');
   }, [updateAuthState]);
 
@@ -139,10 +180,11 @@ export const AuthProvider = ({ children }) => {
       
       return { success: true, data: response.data };
     } catch (error) {
-      console.error('❌ Login failed:', error.response?.data);
+      console.error('❌ Login failed:', error.response?.data || error.message);
+
       return {
         success: false,
-        error: error.response?.data?.message || 'Vänligen kontrollera dina inloggningsuppgifter och försök igen.',
+        error: getLoginErrorMessage(error),
       };
     }
   };

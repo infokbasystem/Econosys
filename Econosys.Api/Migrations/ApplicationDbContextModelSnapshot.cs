@@ -189,6 +189,58 @@ namespace Econosys.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Econosys.Api.Models.BudgetMonthDistribution", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal?>("Month1")
+                        .HasColumnType("decimal(10,8)");
+
+                    b.Property<decimal?>("Month10")
+                        .HasColumnType("decimal(10,8)");
+
+                    b.Property<decimal?>("Month11")
+                        .HasColumnType("decimal(10,8)");
+
+                    b.Property<decimal?>("Month12")
+                        .HasColumnType("decimal(10,8)");
+
+                    b.Property<decimal?>("Month2")
+                        .HasColumnType("decimal(10,8)");
+
+                    b.Property<decimal?>("Month3")
+                        .HasColumnType("decimal(10,8)");
+
+                    b.Property<decimal?>("Month4")
+                        .HasColumnType("decimal(10,8)");
+
+                    b.Property<decimal?>("Month5")
+                        .HasColumnType("decimal(10,8)");
+
+                    b.Property<decimal?>("Month6")
+                        .HasColumnType("decimal(10,8)");
+
+                    b.Property<decimal?>("Month7")
+                        .HasColumnType("decimal(10,8)");
+
+                    b.Property<decimal?>("Month8")
+                        .HasColumnType("decimal(10,8)");
+
+                    b.Property<decimal?>("Month9")
+                        .HasColumnType("decimal(10,8)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("BudgetMonthDistribution", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
             modelBuilder.Entity("Econosys.Api.Models.Calculation", b =>
                 {
                     b.Property<int>("Id")
@@ -959,6 +1011,110 @@ namespace Econosys.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Econosys.Api.Models.CalculationRowCost", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CalculationRowId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CostId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("CostTypeText")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("DoDebit")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("InPrice")
+                        .HasColumnType("decimal(15, 5)");
+
+                    b.Property<int?>("InPriceCurrencyId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("NrOf")
+                        .HasColumnType("decimal(10, 5)");
+
+                    b.Property<decimal?>("OutPrice")
+                        .HasColumnType("decimal(15, 5)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CalculationRowId");
+
+                    b.HasIndex("CostId");
+
+                    b.HasIndex("InPriceCurrencyId");
+
+                    b.ToTable("CalculationRowCost", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.CalculationVariable", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("lngCalculationVariable_ID");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<double?>("FreightFromStockPerPallet")
+                        .HasColumnType("float")
+                        .HasColumnName("dblFreightFromStockPerPallet");
+
+                    b.Property<double?>("FreightPerPallet")
+                        .HasColumnType("float")
+                        .HasColumnName("dblFreightPerPallet");
+
+                    b.Property<double?>("FreightPerVehicle")
+                        .HasColumnType("float")
+                        .HasColumnName("dblFreightPerVehicle");
+
+                    b.Property<short?>("Interest")
+                        .HasColumnType("smallint")
+                        .HasColumnName("intInterest");
+
+                    b.Property<double?>("LoadingPerDelivery")
+                        .HasColumnType("float")
+                        .HasColumnName("dblLoadingPerDelivery");
+
+                    b.Property<double?>("LoadingPerPallet")
+                        .HasColumnType("float")
+                        .HasColumnName("dblLoadingPerPallet");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<double?>("StoragePerM2")
+                        .HasColumnType("float")
+                        .HasColumnName("dblStoragePerM2");
+
+                    b.Property<int?>("TruckLoadingLengthMm")
+                        .HasColumnType("int")
+                        .HasColumnName("TruckLoadingLengthMm");
+
+                    b.Property<int?>("TruckLoadingWidthMm")
+                        .HasColumnType("int")
+                        .HasColumnName("TruckLoadingWidthMm");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("CalculationVariable", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
             modelBuilder.Entity("Econosys.Api.Models.CallOff", b =>
                 {
                     b.Property<int>("Id")
@@ -967,9 +1123,219 @@ namespace Econosys.Api.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDateTime")
+                        .HasColumnType("smalldatetime");
+
+                    b.Property<int?>("CustomerDeliveryAddressId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("DeliveryDate")
+                        .HasColumnType("date");
+
+                    b.Property<int?>("DeliveryStatus")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("DoDebitFreight")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("FreightCostToDebit")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<bool>("IsReportedBack")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSentToShipper")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Reference")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("ShipperId")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("CustomerDeliveryAddressId");
+
+                    b.HasIndex("ShipperId");
+
                     b.ToTable("CallOff", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.CallOffDelivery", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CallOffId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("DeliveryAddressFreeText")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int?>("DeliveryFromStockId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<decimal?>("NrOfPalletPlaces")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int?>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CallOffId");
+
+                    b.HasIndex("DeliveryFromStockId");
+
+                    b.ToTable("CallOffDelivery", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.CompanyInfo", b =>
+                {
+                    b.Property<int>("CompanyId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("CompanyId"));
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("strAddress");
+
+                    b.Property<string>("BG")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strBG");
+
+                    b.Property<string>("BIC")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strBIC");
+
+                    b.Property<string>("Bank")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strBank");
+
+                    b.Property<string>("CompanyName")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strCompanyName");
+
+                    b.Property<string>("DocumentFileBasePath")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("DocumentFileBasePath");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("Email");
+
+                    b.Property<string>("Fax1")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strFax1");
+
+                    b.Property<string>("Fax2")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strFax2");
+
+                    b.Property<string>("GoogleApiKey")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("GoogleApiKey");
+
+                    b.Property<string>("IBAN")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strIBAN");
+
+                    b.Property<string>("InvoiceMailENG")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("InvoiceMailENG");
+
+                    b.Property<string>("InvoiceMailSWE")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("InvoiceMailSWE");
+
+                    b.Property<string>("MailWrapper")
+                        .HasMaxLength(5000)
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("MailWrapper");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<string>("PG")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strPG");
+
+                    b.Property<string>("PostalAddress")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("strPostalAddress");
+
+                    b.Property<string>("Telephone1")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strTelephone1");
+
+                    b.Property<string>("Telephone2")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strTelephone2");
+
+                    b.Property<string>("VATNr")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("strVATNr");
+
+                    b.Property<string>("Web")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("Web");
+
+                    b.Property<string>("ZipCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strZipCode");
+
+                    b.HasKey("CompanyId");
+
+                    b.ToTable("CompanyInfo", null, t =>
                         {
                             t.ExcludeFromMigrations();
                         });
@@ -1030,9 +1396,19 @@ namespace Econosys.Api.Migrations
                     b.Property<int?>("AccountExport")
                         .HasColumnType("int");
 
+                    b.Property<bool>("AddAutomaicIfEconopackIsTransportReponsible")
+                        .HasColumnType("bit")
+                        .HasColumnName("AddAutomaicIfEconopackIsTransportResonsible");
+
                     b.Property<string>("CostTypeText")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal?>("DmtFixed")
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<decimal?>("DmtPercent")
+                        .HasColumnType("decimal(5,2)");
 
                     b.Property<bool>("DoPrintCustomerOrderDefault")
                         .HasColumnType("bit");
@@ -1419,6 +1795,184 @@ namespace Econosys.Api.Migrations
                     b.HasIndex("SupportEmployeeId");
 
                     b.ToTable("Customer", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.CustomerContactPerson", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("lngCustomerContactPerson_ID");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Cellphone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strCellphone");
+
+                    b.Property<string>("ContactPerson")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strContactPerson");
+
+                    b.Property<string>("CustomerContactPersonName")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strCustomerContactPerson");
+
+                    b.Property<int?>("CustomerId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngCustomer_ID");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strEmail");
+
+                    b.Property<bool>("MailCallOffConfirmation")
+                        .HasColumnType("bit")
+                        .HasColumnName("MailCallOffConfirmation");
+
+                    b.Property<bool>("MailCustomerOrder")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolMailCustomerOrder");
+
+                    b.Property<bool>("MailGeneralInfo")
+                        .HasColumnType("bit")
+                        .HasColumnName("MailGeneralInfo");
+
+                    b.Property<bool>("MailInvoice")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolMailInvoice");
+
+                    b.Property<bool>("MailQuotation")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolMailQuotation");
+
+                    b.Property<bool>("MailTransportOrder")
+                        .HasColumnType("bit")
+                        .HasColumnName("MailTransportOrder");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<string>("Telephone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strTelephone");
+
+                    b.Property<string>("Title")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("Title");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId");
+
+                    b.ToTable("CustomerContactPerson", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.CustomerDeliveryAddress", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("lngCustomerDeliveryAddress_ID");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strAddress");
+
+                    b.Property<string>("Address2")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("Address2");
+
+                    b.Property<string>("AddressExtra")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("AdressExtra");
+
+                    b.Property<string>("Country")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strCountry");
+
+                    b.Property<string>("CountryCode")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)")
+                        .HasColumnName("CountryCode");
+
+                    b.Property<int?>("CustomerId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngCustomer_ID");
+
+                    b.Property<int?>("InventoryId")
+                        .HasColumnType("int")
+                        .HasColumnName("InventoryId");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolDefault");
+
+                    b.Property<string>("LogisticsInfoInternal")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("LogisticsInfoInternal");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strCustomerDeliveryAddress");
+
+                    b.Property<int?>("NextTransportDeliveryAddressId")
+                        .HasColumnType("int")
+                        .HasColumnName("NextTransportDeliveryAddressId");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<string>("PalletRegistrationNr")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strPalletRegistrationNr");
+
+                    b.Property<int?>("PositionId")
+                        .HasColumnType("int")
+                        .HasColumnName("PositionId");
+
+                    b.Property<string>("PostalAddress")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strPostalAddress");
+
+                    b.Property<string>("PostalNr")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strPostalNr");
+
+                    b.Property<int?>("PostalNrValue")
+                        .HasColumnType("int")
+                        .HasColumnName("PostalNr");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId");
+
+                    b.ToTable("CustomerDeliveryAddress", null, t =>
                         {
                             t.ExcludeFromMigrations();
                         });
@@ -1939,6 +2493,83 @@ namespace Econosys.Api.Migrations
                     b.HasIndex("ParentDeliveryId");
 
                     b.ToTable("DeliveryFromStock", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.DeliveryLeg", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CallOffId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("DeliveryFromStockId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("DeliveryToCustomerId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("DeliveryToStockId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("DistanceKm")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int?>("FromPositionId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("FromPositionIdLeg")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("LatitudeEnd")
+                        .HasColumnType("decimal(12,8)");
+
+                    b.Property<decimal?>("LatitudeStart")
+                        .HasColumnType("decimal(12,8)");
+
+                    b.Property<decimal?>("LongitudeEnd")
+                        .HasColumnType("decimal(12,8)");
+
+                    b.Property<decimal?>("LongitudeStart")
+                        .HasColumnType("decimal(12,8)");
+
+                    b.Property<int?>("PositionDistanceId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ToPositionId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ToPositionIdLeg")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TransportOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TypeOfTransport")
+                        .HasColumnType("varchar(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FromPositionId");
+
+                    b.HasIndex("FromPositionIdLeg");
+
+                    b.HasIndex("ToPositionId");
+
+                    b.HasIndex("ToPositionIdLeg");
+
+                    b.HasIndex("TransportOrderId");
+
+                    b.ToTable("DeliveryLeg", null, t =>
                         {
                             t.ExcludeFromMigrations();
                         });
@@ -2518,6 +3149,261 @@ namespace Econosys.Api.Migrations
                     b.ToTable("ImprovementProposition", (string)null);
                 });
 
+            modelBuilder.Entity("Econosys.Api.Models.Inquiry", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("lngInquiry_ID");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("AnswerDueDate")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("dteAnswerDueDate");
+
+                    b.Property<bool>("AutoGenerated")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolAutoGenerated");
+
+                    b.Property<int?>("CalculationId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngCalculation_ID");
+
+                    b.Property<string>("Color")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strColor");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
+
+                    b.Property<string>("Construction")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strConstruction");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("dteCreated");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int")
+                        .HasColumnName("lngCreatedBy");
+
+                    b.Property<int?>("CustomerDeliveryAddressId")
+                        .HasColumnType("int")
+                        .HasColumnName("CustomerDeliveryAddressId");
+
+                    b.Property<int?>("CustomerId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngCustomer_ID");
+
+                    b.Property<string>("CustomerName")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strCustomer");
+
+                    b.Property<string>("DeliveryAddress")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strDeliveryAddress");
+
+                    b.Property<string>("DeliveryAddressName")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strDeliveryAddressName");
+
+                    b.Property<string>("DeliveryCountry")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strDeliveryCountry");
+
+                    b.Property<string>("DeliveryPostalAddress")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strDeliveryPostalAddress");
+
+                    b.Property<string>("DeliveryPostalNr")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strDeliveryPostalNr");
+
+                    b.Property<DateTime?>("EditedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("dteEdited");
+
+                    b.Property<int?>("EditedBy")
+                        .HasColumnType("int")
+                        .HasColumnName("lngEditedBy");
+
+                    b.Property<string>("Format")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strFormat");
+
+                    b.Property<bool>("HideCustomerInfoOnPrint")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolHideCustomerInfoOnPrint");
+
+                    b.Property<bool>("IsFSC")
+                        .HasColumnType("bit")
+                        .HasColumnName("IsFSC");
+
+                    b.Property<string>("Material")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("strMaterial");
+
+                    b.Property<string>("MaterialThickness")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strMaterialThickness");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<string>("OurRef")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strOurRef");
+
+                    b.Property<string>("Preparation")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strPreparation");
+
+                    b.Property<string>("Product")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strProduct");
+
+                    b.Property<int?>("SelectedInquiryRecipientId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngSelectedInquiryRecipient_ID");
+
+                    b.Property<string>("TimeOfDelivery")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strTimeOfDelivery");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CalculationId");
+
+                    b.HasIndex("CreatedBy");
+
+                    b.HasIndex("CustomerDeliveryAddressId");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("EditedBy");
+
+                    b.HasIndex("SelectedInquiryRecipientId");
+
+                    b.ToTable("Inquiry", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.InquiryRecipient", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("lngInquiryRecipient_ID");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
+
+                    b.Property<int?>("InquiryId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngInquiry_ID");
+
+                    b.Property<int?>("LanguageId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngLanguage_ID");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strNote");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<int?>("SupplierId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngSupplier_ID");
+
+                    b.Property<string>("TermsOfDelivery")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strTermsOfDelivery");
+
+                    b.Property<string>("TermsOfPayment")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strTermsOfPayment");
+
+                    b.Property<string>("YourRef")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strYourRef");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InquiryId");
+
+                    b.HasIndex("LanguageId");
+
+                    b.HasIndex("SupplierId");
+
+                    b.ToTable("InquiryRecipient", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.InquiryRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CalculationRowId")
+                        .HasColumnType("int")
+                        .HasColumnName("CalculationRowId");
+
+                    b.Property<int?>("Edition")
+                        .HasColumnType("int")
+                        .HasColumnName("Edition");
+
+                    b.Property<int?>("InquiryId")
+                        .HasColumnType("int")
+                        .HasColumnName("InquiryId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CalculationRowId");
+
+                    b.HasIndex("InquiryId");
+
+                    b.ToTable("InquiryRow", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
             modelBuilder.Entity("Econosys.Api.Models.Inventory", b =>
                 {
                     b.Property<int>("Id")
@@ -2589,6 +3475,29 @@ namespace Econosys.Api.Migrations
                         {
                             t.ExcludeFromMigrations();
                         });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.InventoryTransportCostPriceList", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("InventoryId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TransportCostPriceListId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InventoryId");
+
+                    b.HasIndex("TransportCostPriceListId");
+
+                    b.ToTable("InventoryTransportCostPriceList");
                 });
 
             modelBuilder.Entity("Econosys.Api.Models.Invoice", b =>
@@ -2816,7 +3725,11 @@ namespace Econosys.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedBy");
+
                     b.HasIndex("CustomerId");
+
+                    b.HasIndex("EditedBy");
 
                     b.HasIndex("LanguageId");
 
@@ -2901,6 +3814,10 @@ namespace Econosys.Api.Migrations
                     b.Property<bool>("Calculate")
                         .HasColumnType("bit")
                         .HasColumnName("bolCalculate");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
 
                     b.Property<bool>("CompareWithOrder")
                         .HasColumnType("bit")
@@ -3058,24 +3975,200 @@ namespace Econosys.Api.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolActive");
+
+                    b.Property<int>("AuthorizationLevel")
+                        .HasColumnType("int")
+                        .HasColumnName("AuthorizationLevel");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
+
+                    b.Property<string>("DirectPhone")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("DirectPhone");
+
                     b.Property<string>("Email")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("strEmail");
+
+                    b.Property<bool>("IncludeInBudget")
+                        .HasColumnType("bit")
+                        .HasColumnName("IncludeInBudget");
 
                     b.Property<string>("Initials")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("strLogin");
 
+                    b.Property<string>("MobilePhone")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("MobilePhone");
+
+                    b.Property<int?>("MyPage")
+                        .HasColumnType("int")
+                        .HasColumnName("MyPage");
+
                     b.Property<string>("Name")
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
                         .HasColumnName("strUser");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<string>("Password")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strPass");
+
+                    b.Property<bool>("SalesStat")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolSalesStat");
+
+                    b.Property<string>("Title")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("Title");
+
+                    b.Property<string>("TitleEnglish")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("TitleEnglish");
 
                     b.HasKey("Id");
 
                     b.ToTable("User", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.LogEntry", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Action")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime>("DateTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("EmployeeId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Info1")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Info2")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Item")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Log", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.MailSetting", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("lngMailSetting_ID");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
+
+                    b.Property<string>("MailWrapper")
+                        .HasMaxLength(5000)
+                        .HasColumnType("varchar(5000)")
+                        .HasColumnName("MailWrapper");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<string>("Setting")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strSetting");
+
+                    b.Property<string>("Value")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strValue");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("MailSetting", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.MailText", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("lngMailText_ID");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
+
+                    b.Property<string>("Item")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strItem");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<int?>("TranslationCode")
+                        .HasColumnType("int")
+                        .HasColumnName("lngTranslationCode");
+
+                    b.Property<string>("Type")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strType");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("MailText", null, t =>
                         {
                             t.ExcludeFromMigrations();
                         });
@@ -3318,6 +4411,8 @@ namespace Econosys.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CalculationRowId");
+
                     b.HasIndex("CostId");
 
                     b.HasIndex("CreatedById");
@@ -3327,6 +4422,8 @@ namespace Econosys.Api.Migrations
                     b.HasIndex("EditedById");
 
                     b.HasIndex("InPriceCurrencyId");
+
+                    b.HasIndex("QuotationId");
 
                     b.HasIndex("SupplierId");
 
@@ -3421,7 +4518,121 @@ namespace Econosys.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("PalletTypeId");
+
                     b.ToTable("PalletFormat", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.PalletFormatPrice", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CustomerId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("PalletFormatId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("PalletPrice")
+                        .HasColumnType("decimal(10, 2)");
+
+                    b.Property<int?>("SupplierId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("PalletFormatId");
+
+                    b.HasIndex("SupplierId");
+
+                    b.ToTable("PalletFormatPrice", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.PalletType", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit")
+                        .HasColumnName("IsActive");
+
+                    b.Property<bool>("IsEur")
+                        .HasColumnType("bit")
+                        .HasColumnName("IsEur");
+
+                    b.Property<bool>("IsPallet")
+                        .HasColumnType("bit")
+                        .HasColumnName("IsPallet");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("PalletType");
+
+                    b.Property<int?>("SortNr")
+                        .HasColumnType("int")
+                        .HasColumnName("SortNr");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("PalletType", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.Position", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Country")
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("CountryCode")
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<decimal?>("Latitude")
+                        .HasColumnType("decimal(12,8)");
+
+                    b.Property<decimal?>("Longitude")
+                        .HasColumnType("decimal(12,8)");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("PostalAddress")
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("PostalNr")
+                        .HasColumnType("varchar(50)");
+
+                    b.Property<string>("Street")
+                        .HasColumnType("varchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Position", null, t =>
                         {
                             t.ExcludeFromMigrations();
                         });
@@ -3595,6 +4806,512 @@ namespace Econosys.Api.Migrations
                     b.HasIndex("VarnishId");
 
                     b.ToTable("Product", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.Quotation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("lngQuotation_ID");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strAddress");
+
+                    b.Property<string>("Address2")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strAddress2");
+
+                    b.Property<bool>("AutoGenerated")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolAutoGenerated");
+
+                    b.Property<int?>("CalculationId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngCalculation_ID");
+
+                    b.Property<bool>("ChangeOfCliche")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolChangeOfCliche");
+
+                    b.Property<double?>("ChangeOfClicheValue")
+                        .HasColumnType("float")
+                        .HasColumnName("dblChangeOfCliche");
+
+                    b.Property<bool>("ChangeOfColor")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolChangeOfColor");
+
+                    b.Property<double?>("ChangeOfColorValue")
+                        .HasColumnType("float")
+                        .HasColumnName("dblChangeOfColor");
+
+                    b.Property<bool>("ChangeOfSheet")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolChangeOfSheet");
+
+                    b.Property<double?>("ChangeOfSheetValue")
+                        .HasColumnType("float")
+                        .HasColumnName("dblChangeOfSheet");
+
+                    b.Property<string>("Color")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strColor");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
+
+                    b.Property<string>("Construction")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strConstruction");
+
+                    b.Property<string>("Country")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strCountry");
+
+                    b.Property<DateTime?>("CreatedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("dteCreated");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int")
+                        .HasColumnName("lngCreatedBy");
+
+                    b.Property<int?>("CustomerDeliveryAddressId")
+                        .HasColumnType("int")
+                        .HasColumnName("CustomerDeliveryAddressId");
+
+                    b.Property<int?>("CustomerId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngCustomer_ID");
+
+                    b.Property<string>("CustomerName")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strCustomer");
+
+                    b.Property<DateTime?>("Date")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("dteDate");
+
+                    b.Property<string>("DeliveryAddress")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strDeliveryAddress");
+
+                    b.Property<string>("DeliveryAddressName")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strDeliveryAddressName");
+
+                    b.Property<string>("DeliveryCountry")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strDeliveryCountry");
+
+                    b.Property<string>("DeliveryPostalAddress")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strDeliveryPostalAddress");
+
+                    b.Property<string>("DeliveryPostalNr")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strDeliveryPostalNr");
+
+                    b.Property<DateTime?>("EditedAt")
+                        .HasColumnType("datetime2")
+                        .HasColumnName("dteEdited");
+
+                    b.Property<int?>("EditedBy")
+                        .HasColumnType("int")
+                        .HasColumnName("lngEditedBy");
+
+                    b.Property<bool>("EurPallet")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolEURPallet");
+
+                    b.Property<double?>("EurPalletValue")
+                        .HasColumnType("float")
+                        .HasColumnName("dblEURPallet");
+
+                    b.Property<string>("Format")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strFormat");
+
+                    b.Property<bool>("HideDeliveryAddressOnPrint")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolHideDeliveryAddressOnPrint");
+
+                    b.Property<int?>("InquiryId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngInquiry_ID");
+
+                    b.Property<bool>("IsFsc")
+                        .HasColumnType("bit")
+                        .HasColumnName("IsFSC");
+
+                    b.Property<string>("Material")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("strMaterial");
+
+                    b.Property<string>("MaterialThickness")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strMaterialThickness");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strMessage");
+
+                    b.Property<string>("NoteInternal")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strNoteInternal");
+
+                    b.Property<short?>("NrOfChangeOfCliche")
+                        .HasColumnType("smallint")
+                        .HasColumnName("intNrOfChangeOfCliche");
+
+                    b.Property<short?>("NrOfChangeOfColor")
+                        .HasColumnType("smallint")
+                        .HasColumnName("intNrOfChangeOfColor");
+
+                    b.Property<short?>("NrOfChangeOfSheet")
+                        .HasColumnType("smallint")
+                        .HasColumnName("intNrOfChangeOfSheet");
+
+                    b.Property<short?>("NrOfEurPallet")
+                        .HasColumnType("smallint")
+                        .HasColumnName("intNrOfEURPallet");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<bool>("OtherCost")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolOtherCost");
+
+                    b.Property<string>("OtherCostName")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strOtherCost");
+
+                    b.Property<double?>("OtherCostValue")
+                        .HasColumnType("float")
+                        .HasColumnName("dblOtherCost");
+
+                    b.Property<string>("OurReference")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strOurReference");
+
+                    b.Property<int?>("PalletFormatId")
+                        .HasColumnType("int")
+                        .HasColumnName("PalletFormatId");
+
+                    b.Property<bool>("PartOfPrintEdition")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolPartOfPrintEdition");
+
+                    b.Property<double?>("PartOfPrintEditionValue")
+                        .HasColumnType("float")
+                        .HasColumnName("dblPartOfPrintEdition");
+
+                    b.Property<bool>("PartOfPunchEdition")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolPartOfPunchEdition");
+
+                    b.Property<double?>("PartOfPunchEditionValue")
+                        .HasColumnType("float")
+                        .HasColumnName("dblPartOfPunchEdition");
+
+                    b.Property<short?>("PaymentDays")
+                        .HasColumnType("smallint")
+                        .HasColumnName("intPaymentDays");
+
+                    b.Property<bool>("PmsColor")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolPMSColor");
+
+                    b.Property<double?>("PmsColorValue")
+                        .HasColumnType("float")
+                        .HasColumnName("dblPMSColor");
+
+                    b.Property<string>("PostalAddress")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strPostalAddress");
+
+                    b.Property<string>("PostalNr")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strPostalNr");
+
+                    b.Property<bool>("Printed")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolPrinted");
+
+                    b.Property<string>("Product")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strProduct");
+
+                    b.Property<string>("ProductMessage")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strProductMessage");
+
+                    b.Property<int?>("PurchaseCurrencyId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngPurchaseCurrency_ID");
+
+                    b.Property<double?>("PurchaseCurrencyRate")
+                        .HasColumnType("float")
+                        .HasColumnName("dblPurchaseCurrencyRate");
+
+                    b.Property<int?>("SalesCurrencyId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngSalesCurrency_ID");
+
+                    b.Property<double?>("SalesCurrencyRate")
+                        .HasColumnType("float")
+                        .HasColumnName("dblSalesCurrencyRate");
+
+                    b.Property<string>("TermsOfDelivery")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strTermsOfDelivery");
+
+                    b.Property<string>("TermsOfPayment")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strTermsOfPayment");
+
+                    b.Property<string>("TimeOfDelivery")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strTimeOfDelivery");
+
+                    b.Property<int?>("UnitId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngUnit_ID");
+
+                    b.Property<string>("YourReference")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strYourReference");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CalculationId");
+
+                    b.HasIndex("CreatedBy");
+
+                    b.HasIndex("CustomerDeliveryAddressId");
+
+                    b.HasIndex("CustomerId");
+
+                    b.HasIndex("EditedBy");
+
+                    b.HasIndex("InquiryId");
+
+                    b.HasIndex("PalletFormatId");
+
+                    b.HasIndex("PurchaseCurrencyId");
+
+                    b.HasIndex("SalesCurrencyId");
+
+                    b.HasIndex("UnitId");
+
+                    b.ToTable("Quotation", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.QuotationRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("lngQuotationRow_ID");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CalculationRowId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngCalculationRow_ID");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
+
+                    b.Property<int?>("Edition")
+                        .HasColumnType("int")
+                        .HasColumnName("lngEdition");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<double?>("Price")
+                        .HasColumnType("float")
+                        .HasColumnName("dblPrice");
+
+                    b.Property<int?>("QuotationId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngQuotation_ID");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CalculationRowId");
+
+                    b.HasIndex("QuotationId");
+
+                    b.ToTable("QuotationRow", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.Setting", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("lngSettings_ID");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Company")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strCompany");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
+
+                    b.Property<string>("DefaultCustomerMessage")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strDefaultCustomerMessage");
+
+                    b.Property<string>("EUText")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strEUText");
+
+                    b.Property<string>("ExportText")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strExportText");
+
+                    b.Property<int?>("HandlingTimesGoalMaxNrOfDays")
+                        .HasColumnType("int")
+                        .HasColumnName("intHandlingTimesGoalMaxNrOfDays");
+
+                    b.Property<int?>("HandlingTimesGoalNrOfDays")
+                        .HasColumnType("int")
+                        .HasColumnName("intHandlingTimesGoalNrOfDays");
+
+                    b.Property<decimal?>("HandlingTimesPercentHandledUnderGoalNrOfDays")
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("decHandlingTimesPercentHandledUnderGoalNrOfDays");
+
+                    b.Property<int?>("HandlingTimesThresholdNrOfDays")
+                        .HasColumnType("int")
+                        .HasColumnName("intHandlingTimesThresholdNrOfDays");
+
+                    b.Property<int?>("InvoiceLastNr")
+                        .HasColumnType("int")
+                        .HasColumnName("lngInvoiceLastNr");
+
+                    b.Property<string>("JeevesApiEndpoint")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("JeevesApiEndpoint");
+
+                    b.Property<string>("JeevesApiKeyProtected")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("JeevesApiKeyProtected");
+
+                    b.Property<string>("JeevesTestApiEndpoint")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("JeevesTestApiEndpoint");
+
+                    b.Property<string>("JeevesTestApiKeyProtected")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("JeevesTestApiKeyProtected");
+
+                    b.Property<short?>("NrOfInquiryAnswerDays")
+                        .HasColumnType("smallint")
+                        .HasColumnName("intNrOfInquiryAnswerDays");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<string>("VATInfo")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strVATInfo");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
+
+                    b.ToTable("Settings", (string)null);
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.Shipper", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ContactPerson")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("ContactPErson");
+
+                    b.Property<string>("Mail")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Telephone")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Shipper", null, t =>
                         {
                             t.ExcludeFromMigrations();
                         });
@@ -3830,6 +5547,170 @@ namespace Econosys.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Econosys.Api.Models.SupplierContactPerson", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("lngSupplierContactPerson_ID");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Cellphone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strCellphone");
+
+                    b.Property<string>("ContactPerson")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strContactPerson");
+
+                    b.Property<bool>("DoMailTransportOrder")
+                        .HasColumnType("bit")
+                        .HasColumnName("DoMailTransportOrder");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strEmail");
+
+                    b.Property<bool>("MailInquiry")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolMailInquiry");
+
+                    b.Property<bool>("MailSupplierOrder")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolMailSupplierOrder");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<string>("SupplierContactPersonName")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strSupplierContactPerson");
+
+                    b.Property<int?>("SupplierId")
+                        .HasColumnType("int")
+                        .HasColumnName("lngSupplier_ID");
+
+                    b.Property<string>("Telephone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strTelephone");
+
+                    b.Property<string>("Title")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("Title");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SupplierId");
+
+                    b.ToTable("SupplierContactPerson", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.SupplierFactory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("Id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("Address");
+
+                    b.Property<string>("AddressExtra")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("AdressExtra");
+
+                    b.Property<string>("City")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("City");
+
+                    b.Property<string>("Country")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("Country");
+
+                    b.Property<string>("CountryCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("CountryCode");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit")
+                        .HasColumnName("IsDefault");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)")
+                        .HasColumnName("Name");
+
+                    b.Property<int?>("PositionId")
+                        .HasColumnType("int")
+                        .HasColumnName("PositionId");
+
+                    b.Property<string>("PostalNr")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("PostalNr");
+
+                    b.Property<int?>("SupplierId")
+                        .HasColumnType("int")
+                        .HasColumnName("SupplierId");
+
+                    b.Property<int?>("ViaInventoryId")
+                        .HasColumnType("int")
+                        .HasColumnName("ViaInventoryId");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SupplierId");
+
+                    b.HasIndex("ViaInventoryId");
+
+                    b.ToTable("SupplierFactory", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.SupplierFactoryTransportCostPriceList", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("SupplierFactoryId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TransportCostPriceListId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SupplierFactoryId");
+
+                    b.HasIndex("TransportCostPriceListId");
+
+                    b.ToTable("SupplierFactoryTransportCostPriceList");
+                });
+
             modelBuilder.Entity("Econosys.Api.Models.SupplierOrder", b =>
                 {
                     b.Property<int>("Id")
@@ -3969,6 +5850,10 @@ namespace Econosys.Api.Migrations
                         .HasColumnType("bit")
                         .HasColumnName("bolEURPallet");
 
+                    b.Property<string>("ForceHandlingTimeCountAs")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<string>("Format")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
@@ -4041,6 +5926,9 @@ namespace Econosys.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("strOurReference");
+
+                    b.Property<decimal?>("OverrideHandlingTimeDays")
+                        .HasColumnType("decimal(18,4)");
 
                     b.Property<string>("PackagingType")
                         .HasMaxLength(50)
@@ -4164,6 +6052,343 @@ namespace Econosys.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Econosys.Api.Models.TermOfDelivery", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("lngTermsOfDelivery_ID");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolActive");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolDefault");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strTermsOfDelivery");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<int?>("TranslationCode")
+                        .HasColumnType("int")
+                        .HasColumnName("lngTranslationCode");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("TermsOfDelivery", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TermOfPayment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("lngTermsOfPayment_ID");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Active")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolActive");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolDefault");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strTermsOfPayment");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<int?>("PaymentDays")
+                        .HasColumnType("int")
+                        .HasColumnName("intPaymentDays");
+
+                    b.Property<int?>("TranslationCode")
+                        .HasColumnType("int")
+                        .HasColumnName("lngTranslationCode");
+
+                    b.Property<int?>("TypeOf")
+                        .HasColumnType("int")
+                        .HasColumnName("intTypeOf");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("TermsOfPayment", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TranslationItem", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasColumnName("lngTranslationItem_ID");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("LangCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasColumnName("strLangCode");
+
+                    b.Property<int?>("OldDbId")
+                        .HasColumnType("int")
+                        .HasColumnName("OldDbId");
+
+                    b.Property<string>("Translation")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strTranslation");
+
+                    b.Property<int?>("TranslationCode")
+                        .HasColumnType("int")
+                        .HasColumnName("lngTranslationCode");
+
+                    b.Property<string>("TranslationHtml")
+                        .HasMaxLength(8000)
+                        .HasColumnType("varchar(8000)")
+                        .HasColumnName("TranslationHtml");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("TranslationItem", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportCostPriceList", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal?>("AdditionCurrencyPercentFtl")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<decimal?>("AdditionCurrencyPercentPallet")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<decimal?>("AdditionTotalPercentFtl")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<decimal?>("AdditionTotalPercentPallet")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<int?>("CurrencyId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("DmtPercentFtl")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<decimal?>("DmtPercentPallet")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<string>("ImportName")
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<bool>("IsStafflad")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("LastImportDateTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal?>("LoadingCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<decimal?>("OtherFtl")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("OtherPallet")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("OtherPercentFtl")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<decimal?>("OtherPercentPallet")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<decimal?>("PreCalcAdditionPercent")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<decimal?>("SecaMarpolFtl")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<decimal?>("SecaMarpolPallet")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<decimal?>("UnloadingCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CurrencyId");
+
+                    b.ToTable("TransportCostPriceList", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportCostPriceListData", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal?>("AdditionSekPerPallet")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<string>("CountryCode")
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<decimal?>("P1")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P10")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P11")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P12")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P13")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P14")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P15")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P16")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P17")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P18")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P19")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P2")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P20")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P21")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P22")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P23")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P24")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P25")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P26")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P27")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P28")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P29")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P3")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P30")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P31")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P32")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P4")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P5")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P6")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P7")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P8")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("P9")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("PFTL")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int?>("PostalNrFrom")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("PostalNrTo")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Transhipment")
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<int?>("TransportCostPriceListId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TransportCostPriceListId");
+
+                    b.ToTable("TransportCostPriceListData", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
             modelBuilder.Entity("Econosys.Api.Models.TransportOrder", b =>
                 {
                     b.Property<int>("Id")
@@ -4172,9 +6397,421 @@ namespace Econosys.Api.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedTimeStamp")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DateCreated")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DateDelivery")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DateLoading")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("DeliveryStatus")
+                        .HasColumnType("int")
+                        .HasColumnName("DeliveryStatus");
+
+                    b.Property<int?>("EditedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("EditedTimeStamp")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsReportedBack")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSentToShipper")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("SenderReference")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<int?>("ShipperId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TransportOrderNr")
+                        .HasColumnType("int");
+
                     b.HasKey("Id");
 
-                    b.ToTable("TransportOrder", null, t =>
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("EditedByUserId");
+
+                    b.HasIndex("ShipperId");
+
+                    b.ToTable("TransportOrder", (string)null);
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportOrderCostCalc", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CalcCityFrom")
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<int?>("CalcPostalNrTo")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CostCalcForcePriceListId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreatedAtStatus")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDateTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsLTL")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsManualCalc")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<decimal?>("ResultInternationalCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int?>("TransportOrderId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CostCalcForcePriceListId");
+
+                    b.HasIndex("TransportOrderId");
+
+                    b.ToTable("TransportOrderCostCalc", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportOrderCostCalcSupplierOrder", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal?>("CaclulationDomesticCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("CaclulationFtl")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("CaclulationInternationalCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("CaclulationTotal")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("CaclulationUnloading")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("CaclulationUsedTotal")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<string>("CalculationCalcInfo")
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<decimal?>("DiffResultCaclulation")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("DiffResultTransportOrder")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("DiffTransportOrderCaclulation")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("PalletFactor")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<decimal?>("ResultDomesticCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("ResultInternationalCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<string>("ResultNote")
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<decimal?>("ResultOther")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("ResultTotal")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int?>("SupplierOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("ToInternationalCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("TotalNrOfItems")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int?>("TotalNrOfPalletPlaces")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TotalNrOfPallets")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("TotalPalletArea")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<string>("TransportOrderCalcInfo")
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<int?>("TransportOrderCostCalcId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("TransportOrderDomesticCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("TransportOrderLoading")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("TransportOrderOther")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("TransportOrderTotal")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("TransportOrderUnloading")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SupplierOrderId");
+
+                    b.HasIndex("TransportOrderCostCalcId");
+
+                    b.ToTable("TransportOrderCostCalcSupplierOrder", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportOrderCostCalcSupplierOrderDelivery", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("DeliveryFromStockId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("DeliveryToCustomerId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("DeliveryToStockId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("EditionPerPallet")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsSlattPallet")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("NrOfItems")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<int?>("NrOfPallets")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("PalletCalcFactor")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<int?>("PalletFormatId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("PalletHeight")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("PalletIsStackable")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("PalletLength")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("PalletWidth")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ParentDeliveryId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TransportOrderCostCalcSupplierOrderId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeliveryFromStockId");
+
+                    b.HasIndex("DeliveryToCustomerId");
+
+                    b.HasIndex("DeliveryToStockId");
+
+                    b.HasIndex("PalletFormatId");
+
+                    b.HasIndex("TransportOrderCostCalcSupplierOrderId");
+
+                    b.ToTable("TransportOrderCostCalcSupplierOrderDelivery", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportOrderDelivery", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal?>("CostCalcFreightDomestic")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("CostCalcFreightDomesticCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("CostCalcFreightFtlCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("CostCalcFreightInternational")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("CostCalcFreightInternationalCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("CostCalcFreightLoading")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("CostCalcFreightOther")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("CostCalcFreightUnloading")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<decimal?>("CostCalcFreightUnloadingCost")
+                        .HasColumnType("decimal(10,2)");
+
+                    b.Property<string>("CustomerYourOrderNr")
+                        .HasColumnType("varchar(100)");
+
+                    b.Property<string>("DeliveryAddressFreeText")
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<int?>("DeliveryFromStockId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("DeliveryToCustomerId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("DeliveryToStockId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ForcedOmlastStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("varchar(200)");
+
+                    b.Property<DateTime?>("OmlastDeliveryDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime?>("OmlastInDate")
+                        .HasColumnType("date");
+
+                    b.Property<int?>("OmlastInventoryId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("OmlastNote")
+                        .HasColumnType("varchar(500)");
+
+                    b.Property<decimal?>("OmlastPalletPlaces")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<int?>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("SupplierOrderId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("TotalWeight")
+                        .HasColumnType("decimal(10,4)");
+
+                    b.Property<int?>("TransportOrderId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeliveryFromStockId");
+
+                    b.HasIndex("DeliveryToCustomerId");
+
+                    b.HasIndex("DeliveryToStockId");
+
+                    b.HasIndex("OmlastInventoryId");
+
+                    b.HasIndex("SupplierOrderId");
+
+                    b.HasIndex("TransportOrderId");
+
+                    b.ToTable("TransportOrderDelivery", (string)null);
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportOrderDeliveryPallet", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Height")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PosCmX")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PosCmY")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Rotation")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TransportOrderDeliveryId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Width")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TransportOrderDeliveryId");
+
+                    b.ToTable("TransportOrderDeliveryPallet", null, t =>
                         {
                             t.ExcludeFromMigrations();
                         });
@@ -4470,6 +7107,71 @@ namespace Econosys.Api.Migrations
                     b.Navigation("Calculation");
                 });
 
+            modelBuilder.Entity("Econosys.Api.Models.CalculationRowCost", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.CalculationRow", "CalculationRow")
+                        .WithMany("CalculationRowCosts")
+                        .HasForeignKey("CalculationRowId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Cost", "Cost")
+                        .WithMany("CalculationRowCosts")
+                        .HasForeignKey("CostId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Currency", "InPriceCurrency")
+                        .WithMany("InPriceCalculationRowCosts")
+                        .HasForeignKey("InPriceCurrencyId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("CalculationRow");
+
+                    b.Navigation("Cost");
+
+                    b.Navigation("InPriceCurrency");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.CallOff", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.LegacyUser", "CreatedByUser")
+                        .WithMany("CreatedCallOffs")
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.CustomerDeliveryAddress", "CustomerDeliveryAddress")
+                        .WithMany("CallOffs")
+                        .HasForeignKey("CustomerDeliveryAddressId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Shipper", "Shipper")
+                        .WithMany("CallOffs")
+                        .HasForeignKey("ShipperId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("CreatedByUser");
+
+                    b.Navigation("CustomerDeliveryAddress");
+
+                    b.Navigation("Shipper");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.CallOffDelivery", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.CallOff", "CallOff")
+                        .WithMany("CallOffDeliveries")
+                        .HasForeignKey("CallOffId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.DeliveryFromStock", "DeliveryFromStock")
+                        .WithMany("CallOffDeliveries")
+                        .HasForeignKey("DeliveryFromStockId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("CallOff");
+
+                    b.Navigation("DeliveryFromStock");
+                });
+
             modelBuilder.Entity("Econosys.Api.Models.Customer", b =>
                 {
                     b.HasOne("Econosys.Api.Models.Currency", "Currency")
@@ -4499,6 +7201,26 @@ namespace Econosys.Api.Migrations
                     b.Navigation("ResponsibleUser");
 
                     b.Navigation("SupportEmployee");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.CustomerContactPerson", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.Customer", "Customer")
+                        .WithMany("CustomerContactPersons")
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Customer");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.CustomerDeliveryAddress", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.Customer", "Customer")
+                        .WithMany("DeliveryAddresses")
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Customer");
                 });
 
             modelBuilder.Entity("Econosys.Api.Models.CustomerOrder", b =>
@@ -4592,6 +7314,44 @@ namespace Econosys.Api.Migrations
                     b.Navigation("Inventory");
 
                     b.Navigation("ParentDelivery");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.DeliveryLeg", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.Position", "FromPosition")
+                        .WithMany()
+                        .HasForeignKey("FromPositionId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Position", "LegFromPosition")
+                        .WithMany()
+                        .HasForeignKey("FromPositionIdLeg")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Position", "ToPosition")
+                        .WithMany()
+                        .HasForeignKey("ToPositionId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Position", "LegToPosition")
+                        .WithMany()
+                        .HasForeignKey("ToPositionIdLeg")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.TransportOrder", "TransportOrder")
+                        .WithMany()
+                        .HasForeignKey("TransportOrderId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("FromPosition");
+
+                    b.Navigation("LegFromPosition");
+
+                    b.Navigation("LegToPosition");
+
+                    b.Navigation("ToPosition");
+
+                    b.Navigation("TransportOrder");
                 });
 
             modelBuilder.Entity("Econosys.Api.Models.DeliveryToCustomer", b =>
@@ -4788,11 +7548,122 @@ namespace Econosys.Api.Migrations
                     b.Navigation("SupplierOrder");
                 });
 
+            modelBuilder.Entity("Econosys.Api.Models.Inquiry", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.Calculation", "Calculation")
+                        .WithMany()
+                        .HasForeignKey("CalculationId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.LegacyUser", "CreatedByUser")
+                        .WithMany("CreatedInquiries")
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.CustomerDeliveryAddress", "CustomerDeliveryAddress")
+                        .WithMany()
+                        .HasForeignKey("CustomerDeliveryAddressId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Customer", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.LegacyUser", "EditedByUser")
+                        .WithMany("EditedInquiries")
+                        .HasForeignKey("EditedBy")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.InquiryRecipient", "SelectedInquiryRecipient")
+                        .WithMany()
+                        .HasForeignKey("SelectedInquiryRecipientId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Calculation");
+
+                    b.Navigation("CreatedByUser");
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("CustomerDeliveryAddress");
+
+                    b.Navigation("EditedByUser");
+
+                    b.Navigation("SelectedInquiryRecipient");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.InquiryRecipient", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.Inquiry", "Inquiry")
+                        .WithMany("InquiryRecipients")
+                        .HasForeignKey("InquiryId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Language", "Language")
+                        .WithMany("InquiryRecipients")
+                        .HasForeignKey("LanguageId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Supplier", "Supplier")
+                        .WithMany("InquiryRecipients")
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Inquiry");
+
+                    b.Navigation("Language");
+
+                    b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.InquiryRow", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.CalculationRow", "CalculationRow")
+                        .WithMany()
+                        .HasForeignKey("CalculationRowId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Inquiry", "Inquiry")
+                        .WithMany("InquiryRows")
+                        .HasForeignKey("InquiryId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("CalculationRow");
+
+                    b.Navigation("Inquiry");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.InventoryTransportCostPriceList", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.Inventory", "Inventory")
+                        .WithMany("InventoryTransportCostPriceLists")
+                        .HasForeignKey("InventoryId");
+
+                    b.HasOne("Econosys.Api.Models.TransportCostPriceList", "TransportCostPriceList")
+                        .WithMany("InventoryTransportCostPriceLists")
+                        .HasForeignKey("TransportCostPriceListId");
+
+                    b.Navigation("Inventory");
+
+                    b.Navigation("TransportCostPriceList");
+                });
+
             modelBuilder.Entity("Econosys.Api.Models.Invoice", b =>
                 {
+                    b.HasOne("Econosys.Api.Models.LegacyUser", "CreatedByUser")
+                        .WithMany("CreatedInvoices")
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("Econosys.Api.Models.Customer", "Customer")
                         .WithMany("Invoices")
                         .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.LegacyUser", "EditedByUser")
+                        .WithMany("EditedInvoices")
+                        .HasForeignKey("EditedBy")
                         .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Econosys.Api.Models.Language", "Language")
@@ -4810,7 +7681,11 @@ namespace Econosys.Api.Migrations
                         .HasForeignKey("UnitId")
                         .OnDelete(DeleteBehavior.NoAction);
 
+                    b.Navigation("CreatedByUser");
+
                     b.Navigation("Customer");
+
+                    b.Navigation("EditedByUser");
 
                     b.Navigation("Language");
 
@@ -4886,6 +7761,11 @@ namespace Econosys.Api.Migrations
 
             modelBuilder.Entity("Econosys.Api.Models.OrderCost", b =>
                 {
+                    b.HasOne("Econosys.Api.Models.CalculationRow", "CalculationRow")
+                        .WithMany("OrderCosts")
+                        .HasForeignKey("CalculationRowId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("Econosys.Api.Models.Cost", "Cost")
                         .WithMany("OrderCosts")
                         .HasForeignKey("CostId")
@@ -4911,6 +7791,10 @@ namespace Econosys.Api.Migrations
                         .HasForeignKey("InPriceCurrencyId")
                         .OnDelete(DeleteBehavior.NoAction);
 
+                    b.HasOne("Econosys.Api.Models.Quotation", null)
+                        .WithMany("OrderCosts")
+                        .HasForeignKey("QuotationId");
+
                     b.HasOne("Econosys.Api.Models.Supplier", "Supplier")
                         .WithMany("OrderCosts")
                         .HasForeignKey("SupplierId")
@@ -4920,6 +7804,8 @@ namespace Econosys.Api.Migrations
                         .WithMany("OrderCosts")
                         .HasForeignKey("SupplierOrderId")
                         .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("CalculationRow");
 
                     b.Navigation("Cost");
 
@@ -4934,6 +7820,40 @@ namespace Econosys.Api.Migrations
                     b.Navigation("Supplier");
 
                     b.Navigation("SupplierOrder");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.PalletFormat", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.PalletType", "PalletType")
+                        .WithMany("PalletFormats")
+                        .HasForeignKey("PalletTypeId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("PalletType");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.PalletFormatPrice", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.Customer", "Customer")
+                        .WithMany("PalletFormatPrices")
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.PalletFormat", "PalletFormat")
+                        .WithMany("PalletFormatPrices")
+                        .HasForeignKey("PalletFormatId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Supplier", "Supplier")
+                        .WithMany("PalletFormatPrices")
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("PalletFormat");
+
+                    b.Navigation("Supplier");
                 });
 
             modelBuilder.Entity("Econosys.Api.Models.PriceType", b =>
@@ -4970,6 +7890,107 @@ namespace Econosys.Api.Migrations
                     b.Navigation("Varnish");
                 });
 
+            modelBuilder.Entity("Econosys.Api.Models.Quotation", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.Calculation", "Calculation")
+                        .WithMany("Quotations")
+                        .HasForeignKey("CalculationId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.LegacyUser", "CreatedByUser")
+                        .WithMany("CreatedQuotations")
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.CustomerDeliveryAddress", "CustomerDeliveryAddress")
+                        .WithMany("Quotations")
+                        .HasForeignKey("CustomerDeliveryAddressId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Customer", "Customer")
+                        .WithMany("Quotations")
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.LegacyUser", "EditedByUser")
+                        .WithMany("EditedQuotations")
+                        .HasForeignKey("EditedBy")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Inquiry", "Inquiry")
+                        .WithMany("Quotations")
+                        .HasForeignKey("InquiryId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.PalletFormat", "PalletFormat")
+                        .WithMany("Quotations")
+                        .HasForeignKey("PalletFormatId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Currency", "PurchaseCurrency")
+                        .WithMany("PurchaseQuotations")
+                        .HasForeignKey("PurchaseCurrencyId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Currency", "SalesCurrency")
+                        .WithMany("SalesQuotations")
+                        .HasForeignKey("SalesCurrencyId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Unit", "Unit")
+                        .WithMany("Quotations")
+                        .HasForeignKey("UnitId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Calculation");
+
+                    b.Navigation("CreatedByUser");
+
+                    b.Navigation("Customer");
+
+                    b.Navigation("CustomerDeliveryAddress");
+
+                    b.Navigation("EditedByUser");
+
+                    b.Navigation("Inquiry");
+
+                    b.Navigation("PalletFormat");
+
+                    b.Navigation("PurchaseCurrency");
+
+                    b.Navigation("SalesCurrency");
+
+                    b.Navigation("Unit");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.QuotationRow", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.CalculationRow", "CalculationRow")
+                        .WithMany("QuotationRows")
+                        .HasForeignKey("CalculationRowId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Quotation", "Quotation")
+                        .WithMany("QuotationRows")
+                        .HasForeignKey("QuotationId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("CalculationRow");
+
+                    b.Navigation("Quotation");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.Setting", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.CompanyInfo", "CompanyInfo")
+                        .WithMany("Settings")
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("CompanyInfo");
+                });
+
             modelBuilder.Entity("Econosys.Api.Models.StockTakingItem", b =>
                 {
                     b.HasOne("Econosys.Api.Models.StockTaking", "StockTaking")
@@ -4995,6 +8016,48 @@ namespace Econosys.Api.Migrations
                         .OnDelete(DeleteBehavior.NoAction);
 
                     b.Navigation("Language");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.SupplierContactPerson", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.Supplier", "Supplier")
+                        .WithMany("SupplierContactPersons")
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.SupplierFactory", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.Supplier", "Supplier")
+                        .WithMany("SupplierFactories")
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Inventory", "ViaInventory")
+                        .WithMany("SupplierFactories")
+                        .HasForeignKey("ViaInventoryId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Supplier");
+
+                    b.Navigation("ViaInventory");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.SupplierFactoryTransportCostPriceList", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.SupplierFactory", "SupplierFactory")
+                        .WithMany("SupplierFactoryTransportCostPriceLists")
+                        .HasForeignKey("SupplierFactoryId");
+
+                    b.HasOne("Econosys.Api.Models.TransportCostPriceList", "TransportCostPriceList")
+                        .WithMany("SupplierFactoryTransportCostPriceLists")
+                        .HasForeignKey("TransportCostPriceListId");
+
+                    b.Navigation("SupplierFactory");
+
+                    b.Navigation("TransportCostPriceList");
                 });
 
             modelBuilder.Entity("Econosys.Api.Models.SupplierOrder", b =>
@@ -5040,6 +8103,176 @@ namespace Econosys.Api.Migrations
                     b.Navigation("Supplier");
 
                     b.Navigation("Unit");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportCostPriceList", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.Currency", "Currency")
+                        .WithMany()
+                        .HasForeignKey("CurrencyId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("Currency");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportCostPriceListData", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.TransportCostPriceList", "TransportCostPriceList")
+                        .WithMany("TransportCostPriceListData")
+                        .HasForeignKey("TransportCostPriceListId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("TransportCostPriceList");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportOrder", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.LegacyUser", "CreatedByUser")
+                        .WithMany("CreatedTransportOrders")
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.LegacyUser", "EditedByUser")
+                        .WithMany("EditedTransportOrders")
+                        .HasForeignKey("EditedByUserId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Shipper", "Shipper")
+                        .WithMany()
+                        .HasForeignKey("ShipperId");
+
+                    b.Navigation("CreatedByUser");
+
+                    b.Navigation("EditedByUser");
+
+                    b.Navigation("Shipper");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportOrderCostCalc", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.TransportCostPriceList", "TransportCostPriceList")
+                        .WithMany("TransportOrderCostCalcs")
+                        .HasForeignKey("CostCalcForcePriceListId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.TransportOrder", "TransportOrder")
+                        .WithMany()
+                        .HasForeignKey("TransportOrderId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("TransportCostPriceList");
+
+                    b.Navigation("TransportOrder");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportOrderCostCalcSupplierOrder", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.SupplierOrder", "SupplierOrder")
+                        .WithMany()
+                        .HasForeignKey("SupplierOrderId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.TransportOrderCostCalc", "TransportOrderCostCalc")
+                        .WithMany("TransportOrderCostCalcSupplierOrders")
+                        .HasForeignKey("TransportOrderCostCalcId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("SupplierOrder");
+
+                    b.Navigation("TransportOrderCostCalc");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportOrderCostCalcSupplierOrderDelivery", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.DeliveryFromStock", "DeliveryFromStock")
+                        .WithMany()
+                        .HasForeignKey("DeliveryFromStockId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.DeliveryToCustomer", "DeliveryToCustomer")
+                        .WithMany()
+                        .HasForeignKey("DeliveryToCustomerId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.DeliveryToStock", "DeliveryToStock")
+                        .WithMany()
+                        .HasForeignKey("DeliveryToStockId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.PalletFormat", "PalletFormat")
+                        .WithMany()
+                        .HasForeignKey("PalletFormatId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.TransportOrderCostCalcSupplierOrder", "TransportOrderCostCalcSupplierOrder")
+                        .WithMany("TransportOrderCostCalcSupplierOrderDeliveries")
+                        .HasForeignKey("TransportOrderCostCalcSupplierOrderId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("DeliveryFromStock");
+
+                    b.Navigation("DeliveryToCustomer");
+
+                    b.Navigation("DeliveryToStock");
+
+                    b.Navigation("PalletFormat");
+
+                    b.Navigation("TransportOrderCostCalcSupplierOrder");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportOrderDelivery", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.DeliveryFromStock", "DeliveryFromStock")
+                        .WithMany()
+                        .HasForeignKey("DeliveryFromStockId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.DeliveryToCustomer", "DeliveryToCustomer")
+                        .WithMany()
+                        .HasForeignKey("DeliveryToCustomerId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.DeliveryToStock", "DeliveryToStock")
+                        .WithMany()
+                        .HasForeignKey("DeliveryToStockId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.Inventory", "OmlastInventory")
+                        .WithMany()
+                        .HasForeignKey("OmlastInventoryId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.SupplierOrder", "SupplierOrder")
+                        .WithMany()
+                        .HasForeignKey("SupplierOrderId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Econosys.Api.Models.TransportOrder", "TransportOrder")
+                        .WithMany()
+                        .HasForeignKey("TransportOrderId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("DeliveryFromStock");
+
+                    b.Navigation("DeliveryToCustomer");
+
+                    b.Navigation("DeliveryToStock");
+
+                    b.Navigation("OmlastInventory");
+
+                    b.Navigation("SupplierOrder");
+
+                    b.Navigation("TransportOrder");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportOrderDeliveryPallet", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.TransportOrderDelivery", "TransportOrderDelivery")
+                        .WithMany("TransportOrderDeliveryPallets")
+                        .HasForeignKey("TransportOrderDeliveryId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("TransportOrderDelivery");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -5106,18 +8339,33 @@ namespace Econosys.Api.Migrations
             modelBuilder.Entity("Econosys.Api.Models.Calculation", b =>
                 {
                     b.Navigation("CalculationRows");
+
+                    b.Navigation("Quotations");
                 });
 
             modelBuilder.Entity("Econosys.Api.Models.CalculationRow", b =>
                 {
+                    b.Navigation("CalculationRowCosts");
+
                     b.Navigation("CustomerOrders");
+
+                    b.Navigation("OrderCosts");
+
+                    b.Navigation("QuotationRows");
 
                     b.Navigation("SupplierOrders");
                 });
 
             modelBuilder.Entity("Econosys.Api.Models.CallOff", b =>
                 {
+                    b.Navigation("CallOffDeliveries");
+
                     b.Navigation("DocumentFiles");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.CompanyInfo", b =>
+                {
+                    b.Navigation("Settings");
                 });
 
             modelBuilder.Entity("Econosys.Api.Models.Construction", b =>
@@ -5127,6 +8375,8 @@ namespace Econosys.Api.Migrations
 
             modelBuilder.Entity("Econosys.Api.Models.Cost", b =>
                 {
+                    b.Navigation("CalculationRowCosts");
+
                     b.Navigation("OrderCosts");
                 });
 
@@ -5136,9 +8386,13 @@ namespace Econosys.Api.Migrations
 
                     b.Navigation("FreightCostDeviations");
 
+                    b.Navigation("InPriceCalculationRowCosts");
+
                     b.Navigation("InPriceOrderCosts");
 
                     b.Navigation("PurchaseCalculations");
+
+                    b.Navigation("PurchaseQuotations");
 
                     b.Navigation("PurchaseSupplierOrders");
 
@@ -5148,6 +8402,8 @@ namespace Econosys.Api.Migrations
 
                     b.Navigation("SalesInvoices");
 
+                    b.Navigation("SalesQuotations");
+
                     b.Navigation("SupplierPricePerEurPalletCustomerOrders");
                 });
 
@@ -5155,13 +8411,28 @@ namespace Econosys.Api.Migrations
                 {
                     b.Navigation("Calculations");
 
+                    b.Navigation("CustomerContactPersons");
+
                     b.Navigation("CustomerOrders");
+
+                    b.Navigation("DeliveryAddresses");
 
                     b.Navigation("Deviations");
 
                     b.Navigation("Invoices");
 
+                    b.Navigation("PalletFormatPrices");
+
+                    b.Navigation("Quotations");
+
                     b.Navigation("SupplierOrders");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.CustomerDeliveryAddress", b =>
+                {
+                    b.Navigation("CallOffs");
+
+                    b.Navigation("Quotations");
                 });
 
             modelBuilder.Entity("Econosys.Api.Models.CustomerOrder", b =>
@@ -5181,6 +8452,8 @@ namespace Econosys.Api.Migrations
 
             modelBuilder.Entity("Econosys.Api.Models.DeliveryFromStock", b =>
                 {
+                    b.Navigation("CallOffDeliveries");
+
                     b.Navigation("ChildDeliveries");
 
                     b.Navigation("InvoiceRows");
@@ -5217,8 +8490,21 @@ namespace Econosys.Api.Migrations
                     b.Navigation("DocumentFiles");
                 });
 
+            modelBuilder.Entity("Econosys.Api.Models.Inquiry", b =>
+                {
+                    b.Navigation("InquiryRecipients");
+
+                    b.Navigation("InquiryRows");
+
+                    b.Navigation("Quotations");
+                });
+
             modelBuilder.Entity("Econosys.Api.Models.Inventory", b =>
                 {
+                    b.Navigation("InventoryTransportCostPriceLists");
+
+                    b.Navigation("SupplierFactories");
+
                     b.Navigation("SupplierOrders");
                 });
 
@@ -5233,6 +8519,8 @@ namespace Econosys.Api.Migrations
                 {
                     b.Navigation("Customers");
 
+                    b.Navigation("InquiryRecipients");
+
                     b.Navigation("Invoices");
 
                     b.Navigation("Suppliers");
@@ -5240,15 +8528,33 @@ namespace Econosys.Api.Migrations
 
             modelBuilder.Entity("Econosys.Api.Models.LegacyUser", b =>
                 {
+                    b.Navigation("CreatedCallOffs");
+
                     b.Navigation("CreatedDeviations");
 
                     b.Navigation("CreatedDocumentFiles");
 
+                    b.Navigation("CreatedInquiries");
+
+                    b.Navigation("CreatedInvoices");
+
                     b.Navigation("CreatedOrderCosts");
+
+                    b.Navigation("CreatedQuotations");
+
+                    b.Navigation("CreatedTransportOrders");
 
                     b.Navigation("EditedDeviations");
 
+                    b.Navigation("EditedInquiries");
+
+                    b.Navigation("EditedInvoices");
+
                     b.Navigation("EditedOrderCosts");
+
+                    b.Navigation("EditedQuotations");
+
+                    b.Navigation("EditedTransportOrders");
 
                     b.Navigation("ResponsibleForCustomerOrders");
 
@@ -5277,6 +8583,15 @@ namespace Econosys.Api.Migrations
             modelBuilder.Entity("Econosys.Api.Models.PalletFormat", b =>
                 {
                     b.Navigation("Calculations");
+
+                    b.Navigation("PalletFormatPrices");
+
+                    b.Navigation("Quotations");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.PalletType", b =>
+                {
+                    b.Navigation("PalletFormats");
                 });
 
             modelBuilder.Entity("Econosys.Api.Models.PriceType", b =>
@@ -5291,15 +8606,40 @@ namespace Econosys.Api.Migrations
                     b.Navigation("DocumentFiles");
                 });
 
+            modelBuilder.Entity("Econosys.Api.Models.Quotation", b =>
+                {
+                    b.Navigation("OrderCosts");
+
+                    b.Navigation("QuotationRows");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.Shipper", b =>
+                {
+                    b.Navigation("CallOffs");
+                });
+
             modelBuilder.Entity("Econosys.Api.Models.Supplier", b =>
                 {
                     b.Navigation("Calculations");
 
                     b.Navigation("Deviations");
 
+                    b.Navigation("InquiryRecipients");
+
                     b.Navigation("OrderCosts");
 
+                    b.Navigation("PalletFormatPrices");
+
+                    b.Navigation("SupplierContactPersons");
+
+                    b.Navigation("SupplierFactories");
+
                     b.Navigation("SupplierOrders");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.SupplierFactory", b =>
+                {
+                    b.Navigation("SupplierFactoryTransportCostPriceLists");
                 });
 
             modelBuilder.Entity("Econosys.Api.Models.SupplierOrder", b =>
@@ -5319,9 +8659,35 @@ namespace Econosys.Api.Migrations
                     b.Navigation("StockTakingItems");
                 });
 
+            modelBuilder.Entity("Econosys.Api.Models.TransportCostPriceList", b =>
+                {
+                    b.Navigation("InventoryTransportCostPriceLists");
+
+                    b.Navigation("SupplierFactoryTransportCostPriceLists");
+
+                    b.Navigation("TransportCostPriceListData");
+
+                    b.Navigation("TransportOrderCostCalcs");
+                });
+
             modelBuilder.Entity("Econosys.Api.Models.TransportOrder", b =>
                 {
                     b.Navigation("DocumentFiles");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportOrderCostCalc", b =>
+                {
+                    b.Navigation("TransportOrderCostCalcSupplierOrders");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportOrderCostCalcSupplierOrder", b =>
+                {
+                    b.Navigation("TransportOrderCostCalcSupplierOrderDeliveries");
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.TransportOrderDelivery", b =>
+                {
+                    b.Navigation("TransportOrderDeliveryPallets");
                 });
 
             modelBuilder.Entity("Econosys.Api.Models.Unit", b =>
@@ -5333,6 +8699,8 @@ namespace Econosys.Api.Migrations
                     b.Navigation("InvoiceRows");
 
                     b.Navigation("Invoices");
+
+                    b.Navigation("Quotations");
 
                     b.Navigation("SupplierOrders");
                 });

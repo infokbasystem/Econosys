@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, Plus, Search } from 'lucide-react';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import apiClient from '../../config/apiClient';
+import ActionButton from '../../components/ActionButton';
 import ImprovementPropositionModal from '../../components/ImprovementPropositionModal';
+import SegmentedFilter from '../../components/SegmentedFilter';
 
 const PAGE_SIZE = 20;
 
@@ -252,7 +254,7 @@ const ImprovementPropositionsOverview = () => {
     const showClosedSkeleton = closedLoading && !hasClosedSnapshot;
 
     return (
-        <div className="flex h-full flex-col gap-5 pt-1 pb-4 ps-5 pe-10">
+        <div className="flex h-full flex-col gap-5 pt-3 pb-4 ps-10 pe-0">
 
             <ImprovementPropositionModal
                 isOpen={modalOpen}
@@ -339,42 +341,32 @@ const ImprovementPropositionsOverview = () => {
 
                 {/* Controls row */}
                 <div className="flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-1 flex-wrap">
-                    <button
-                        type="button"
+                    <ActionButton
+                        label="Skapa nytt förslag"
+                        icon={Plus}
                         onClick={() => { setEditItem(null); setModalOpen(true); }}
-                        className="w-40 shadow-md/30 text-xs text-white bg-lime-600 hover:bg-lime-700 px-4 py-[5px]"
-                    >
-                        Skapa nytt förslag
-                    </button>
+                        accent="lime"
+                    />
 
-                    <div className="relative w-44 ml-20">
+                    <div className="relative ml-20 w-56 shrink-0">
                         <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
                         <input
                             type="text"
                             value={searchInput}
                             onChange={(e) => setSearchInput(e.target.value)}
                             placeholder="Sök"
-                            className="w-full text-xs border border-gray-300 rounded-sm pl-7 pr-2 py-1 focus:outline-none bg-white"
+                            className="h-7 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
                         />
                     </div>
 
                     {/* Area code switches */}
-                    <div className="flex items-center bg-gray-700 rounded-full px-1 py-1 gap-0.5 ml-6">
-                        {AREA_CODE_OPTIONS.map((opt) => (
-                            <button
-                                key={opt.value ?? 'all'}
-                                type="button"
-                                onClick={() => handleAreaCodeChange(opt.value)}
-                                className={`px-3 py-1 text-xs rounded-full transition-colors font-medium ${
-                                    selectedAreaCode === opt.value
-                                        ? 'bg-amber-400 text-white'
-                                        : 'text-gray-300 hover:text-white'
-                                }`}
-                            >
-                                {opt.label}
-                            </button>
-                        ))}
-                    </div>
+                    <SegmentedFilter
+                        value={selectedAreaCode}
+                        options={AREA_CODE_OPTIONS}
+                        onChange={handleAreaCodeChange}
+                        theme="lime"
+                        className="ml-6"
+                    />
 
                     {/* Pagination info + controls */}
                     <div className="ml-auto flex items-center gap-4 text-xs text-gray-600">
@@ -420,7 +412,7 @@ const ImprovementPropositionsOverview = () => {
                                     <th
                                         key={col.key}
                                         onClick={col.sortable ? () => handleSort(col.key) : undefined}
-                                        className={`px-2 py-2 text-[10px] font-medium text-gray-500 text-left ${col.sortable ? 'cursor-pointer' : ''}`}
+                                        className={`px-2 py-2 text-tiny font-medium text-gray-500 text-left ${col.sortable ? 'cursor-pointer' : ''}`}
                                     >
                                         <span className="inline-flex items-center gap-1">
                                             {col.label}

@@ -39,6 +39,8 @@ namespace Econosys.Api.DTOs
         public string Message { get; set; } = string.Empty;
         public string? Token { get; set; }
         public UserDto? User { get; set; }
+        public bool IsLockedOut { get; set; }
+        public bool IsDatabaseUnavailable { get; set; }
     }
 
     public class UserDto

@@ -1,15 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowLeft, Printer, Save, Trash2 } from 'lucide-react';
 import { useBlocker, useNavigate, useParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
-import { DayPicker } from 'react-day-picker';
-import 'react-day-picker/style.css';
-import { sv } from 'date-fns/locale';
 
 import { usePdf } from '../../contexts/PdfContext';
+import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import OrderNavigationTree from '../../components/OrderNavigationTree';
 import OrderCost from '../../components/OrderCost';
+import LabeledDatePicker from '../../components/LabeledDatePicker';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import LabeledSwitch from '../../components/LabeledSwitch';
@@ -34,42 +34,6 @@ const toDateSwedishIso = (date) => {
     const yyyy = date.getFullYear();
     const mm = String(date.getMonth() + 1).padStart(2, '0');
     const dd = String(date.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}T00:00:00`;
-};
-const toWeekInputValue = (value) => {
-    if (!value) return '';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-
-    const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-    utcDate.setUTCDate(utcDate.getUTCDate() + 4 - (utcDate.getUTCDay() || 7));
-    const weekYear = utcDate.getUTCFullYear();
-    const yearStart = new Date(Date.UTC(weekYear, 0, 1));
-    const week = Math.ceil((((utcDate - yearStart) / 86400000) + 1) / 7);
-    return `${weekYear}-W${String(week).padStart(2, '0')}`;
-};
-const toWeekLabelValue = (value) => {
-    const weekInput = toWeekInputValue(value);
-    const match = weekInput.match(/^(\d{4})-W(\d{2})$/);
-    return match ? `v. ${match[2]} ${match[1]}` : '';
-};
-const fromWeekInputToSwedishIso = (value) => {
-    if (!value) return null;
-    const match = String(value).match(/^(\d{4})-W(\d{2})$/);
-    if (!match) return null;
-
-    const year = Number(match[1]);
-    const week = Number(match[2]);
-    if (!Number.isInteger(year) || !Number.isInteger(week) || week < 1 || week > 53) return null;
-
-    const jan4 = new Date(Date.UTC(year, 0, 4));
-    const dayOfWeek = jan4.getUTCDay() || 7;
-    const monday = new Date(jan4);
-    monday.setUTCDate(jan4.getUTCDate() - dayOfWeek + 1 + (week - 1) * 7);
-
-    const yyyy = monday.getUTCFullYear();
-    const mm = String(monday.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(monday.getUTCDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}T00:00:00`;
 };
 const parseNullableDecimal = (value) => {
@@ -233,12 +197,8 @@ const SupplierOrder = () => {
     const [orderCostOptions, setOrderCostOptions] = useState([]);
     const [currencyOptions, setCurrencyOptions] = useState([]);
     const [palletFormatOptions, setPalletFormatOptions] = useState([]);
-    const [showDeliveryDatePicker, setShowDeliveryDatePicker] = useState(false);
-    const [showConfirmedDeliveryDatePicker, setShowConfirmedDeliveryDatePicker] = useState(false);
 
     const skipUnsavedCheckRef = React.useRef(false);
-    const deliveryDatePickerRef = useRef(null);
-    const confirmedDeliveryDatePickerRef = useRef(null);
 
     const handleBackClick = () => {
         if (window.history.length > 1) {
@@ -452,46 +412,6 @@ const SupplierOrder = () => {
         updateSupplierOrder(patch);
     }, [updateSupplierOrder]);
 
-    const handleDeliveryDateSelect = useCallback((selectedDate) => {
-        if (!(selectedDate instanceof Date) || Number.isNaN(selectedDate.getTime())) {
-            return;
-        }
-
-        updateSupplierOrder({
-            deliveryDate: toDateSwedishIso(selectedDate),
-            deliveryDateWeekMode: false,
-        });
-        setShowDeliveryDatePicker(false);
-    }, [updateSupplierOrder]);
-
-    const handleDeliveryWeekSelect = useCallback((dates) => {
-        const firstDate = Array.isArray(dates) && dates.length > 0 ? dates[0] : null;
-        if (!(firstDate instanceof Date) || Number.isNaN(firstDate.getTime())) {
-            return;
-        }
-
-        updateSupplierOrder({
-            deliveryDate: toDateSwedishIso(firstDate),
-            deliveryDateWeekMode: true,
-        });
-        setShowDeliveryDatePicker(false);
-    }, [updateSupplierOrder]);
-
-    const handleConfirmedDeliveryDateSelect = useCallback((selectedDate) => {
-        if (!(selectedDate instanceof Date) || Number.isNaN(selectedDate.getTime())) {
-            return;
-        }
-
-        const nextConfirmedDeliveryDate = supplierOrder?.confirmedDeliveryDateWeekMode
-            ? fromWeekInputToSwedishIso(toWeekInputValue(selectedDate))
-            : toDateSwedishIso(selectedDate);
-
-        updateSupplierOrder({
-            confirmedDeliveryDate: nextConfirmedDeliveryDate,
-        });
-        setShowConfirmedDeliveryDatePicker(false);
-    }, [supplierOrder?.confirmedDeliveryDateWeekMode, updateSupplierOrder]);
-
     const handleGoodsMarkingToggle = useCallback((flag, checked, patch = {}) => {
         setMessages((prev) => prev.filter((message) => message.type !== 'success'));
         setSupplierOrder((prev) => {
@@ -692,23 +612,6 @@ const SupplierOrder = () => {
         setSelectedDeliveryAddressOption('');
     }, [supplierOrder?.customerId]);
 
-    useEffect(() => {
-        if (!showDeliveryDatePicker && !showConfirmedDeliveryDatePicker) return undefined;
-
-        const handleClickOutside = (event) => {
-            if (deliveryDatePickerRef.current && !deliveryDatePickerRef.current.contains(event.target)) {
-                setShowDeliveryDatePicker(false);
-            }
-
-            if (confirmedDeliveryDatePickerRef.current && !confirmedDeliveryDatePickerRef.current.contains(event.target)) {
-                setShowConfirmedDeliveryDatePicker(false);
-            }
-        };
-
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [showConfirmedDeliveryDatePicker, showDeliveryDatePicker]);
-
     if (loading) {
         return (
             <div className="pl-10 space-y-4 pt-1 ml-80 mr-60">
@@ -761,14 +664,6 @@ const SupplierOrder = () => {
     const showProductInGoodsMarking = goodsMarkingFlags.has('produkt') || !supplierOrder?.hideProductNameOnPrint;
     const showCustomerOrderNrInGoodsMarking = goodsMarkingFlags.has('kundordernr') || Boolean(supplierOrder?.customerOrderNr);
     const showCustomerNameInGoodsMarking = goodsMarkingFlags.has('kundnamn') || !supplierOrder?.hideCustomerNameOnPrint;
-    const deliveryDatePickerSelectedDate = supplierOrder?.deliveryDate ? new Date(supplierOrder.deliveryDate) : undefined;
-    const deliveryDateDisplayValue = supplierOrder?.deliveryDateWeekMode
-        ? toWeekLabelValue(supplierOrder?.deliveryDate)
-        : toSwedishDateInputValue(supplierOrder?.deliveryDate);
-    const confirmedDeliveryDatePickerSelectedDate = supplierOrder?.confirmedDeliveryDate ? new Date(supplierOrder.confirmedDeliveryDate) : undefined;
-    const confirmedDeliveryDateDisplayValue = supplierOrder?.confirmedDeliveryDateWeekMode
-        ? toWeekLabelValue(supplierOrder?.confirmedDeliveryDate)
-        : toSwedishDateInputValue(supplierOrder?.confirmedDeliveryDate);
     const unitLabel = supplierOrder?.unitName ?? (supplierOrder?.unitId ? `ID ${supplierOrder.unitId}` : '');
     const purchaseCurrencyLabel = supplierOrder?.purchaseCurrencyName ?? (supplierOrder?.purchaseCurrencyId ? `ID ${supplierOrder.purchaseCurrencyId}` : '');
     const editionLabel = formatNumber(supplierOrder?.edition, 0);
@@ -800,9 +695,9 @@ const SupplierOrder = () => {
                 isDestructive={false}
             />
 
-            <h2 className="ml-90 text-sm pt-2 pb-2 text-gray-700">
+            <h2 className="ml-96 text-sm pt-8 pb-2 text-gray-500 tracking-[0.10em] font-semibold uppercase">
                 {supplierOrder?.id ? (
-                    <>Beställning <span className="ml-2 text-red-500">{supplierOrder.id}</span></>
+                    <>Beställning <span className="ml-2">{supplierOrder.id}</span></>
                 ) : (
                     'Ny beställning'
                 )}
@@ -846,42 +741,38 @@ const SupplierOrder = () => {
                     />
                 </div>
 
-                <div className="flex-grow ps-4 pe-10 py-2 max-w-350">
+                <div className="flex-grow ps-10 pe-10 py-2 max-w-350">
                     <div className="flex justify-between w-full mb-5">
-                        <div className="flex items-center space-x-4">
-                            <button
-                                type="button"
+                        <div className="flex items-center gap-6">
+                            <ActionButton
+                                label="Tillbaka"
+                                icon={ArrowLeft}
                                 onClick={handleBackClick}
-                                className="shadow-md/30 text-xs text-white bg-gray-500 hover:bg-gray-700 px-5 p-[5px]"
-                            >
-                                Tillbaka
-                            </button>
-                            <button
-                                type="button"
+                                accent="slate"
+                            />
+                            <ActionButton
+                                label="Spara"
+                                icon={Save}
                                 onClick={handleSave}
-                                className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-5 p-[5px]"
-                            >
-                                Spara
-                            </button>
+                                accent="lime"
+                            />
                             {supplierOrder?.id !== 0 && (
-                                <button
-                                    type="button"
+                                <ActionButton
+                                    label="Skriv ut"
+                                    icon={Printer}
                                     onClick={() => void getPdf()}
-                                    className="shadow-md/30 text-xs text-gray bg-blue-200 hover:bg-blue-300 px-4 py-[5px]"
-                                >
-                                    Skriv ut
-                                </button>
+                                    accent="sky"
+                                />
                             )}
                         </div>
-                        <div className="flex items-center space-x-4">
+                        <div className="flex items-center gap-6">
                             {supplierOrder?.id !== 0 && (
-                                <button
-                                    type="button"
+                                <ActionButton
+                                    label="Radera"
+                                    icon={Trash2}
                                     onClick={() => setShowDeleteConfirm(true)}
-                                    className="shadow-md/30 text-xs text-white bg-red-700 hover:bg-red-800 px-5 p-[5px]"
-                                >
-                                    Radera
-                                </button>
+                                    accent="rose"
+                                />
                             )}
                         </div>
                     </div>
@@ -1099,104 +990,31 @@ const SupplierOrder = () => {
                                             marginTop={2}
                                         />
 
-                                        <div className="relative flex items-center text-xs pb-[1px]" ref={deliveryDatePickerRef}>
-                                            <label className="w-35 flex-none text-xs text-gray-700">Önskat lev.datum</label>
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowDeliveryDatePicker((prev) => !prev)}
-                                                className="w-30 flex items-center justify-between text-left text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none focus:ring-1 focus:ring-green-500"
-                                            >
-                                                <span>{deliveryDateDisplayValue || 'Välj datum/vecka'}</span>
-                                                <svg
-                                                    xmlns="http://www.w3.org/2000/svg"
-                                                    viewBox="0 0 24 24"
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    strokeWidth="1.8"
-                                                    className="h-4 w-4 text-gray-500"
-                                                    aria-hidden="true"
-                                                >
-                                                    <rect x="3" y="5" width="18" height="16" rx="2" />
-                                                    <path d="M16 3v4M8 3v4M3 10h18" />
-                                                </svg>
-                                            </button>
-                                            {/* <span className="ml-2 text-[11px] text-gray-500">{supplierOrder?.deliveryDateWeekMode ? 'Veckoläge' : 'Datumläge'}</span> */}
-                                            {showDeliveryDatePicker && (
-                                                <div className="supplier-order-daypicker absolute top-7 left-35 z-40 rounded-sm border border-gray-300 bg-white p-2 shadow-lg px-5">
-                                                    <DayPicker
-                                                        mode="single"
-                                                        locale={sv}
-                                                        selected={deliveryDatePickerSelectedDate}
-                                                        onSelect={handleDeliveryDateSelect}
-                                                        showWeekNumber
-                                                        ISOWeek
-                                                        weekStartsOn={1}
-                                                        components={{
-                                                            WeekNumber: ({ week, children }) => (
-                                                                <button
-                                                                    type="button"
-                                                                    className="mt-3 mr-2 inline-flex h-[18px] min-w-[40px] items-center justify-center rounded-md px-1 text-xs leading-none text-blue-700 hover:bg-blue-50"
-                                                                    title={`Välj vecka ${week?.weekNumber ?? ''}`}
-                                                                    onClick={(event) => {
-                                                                        event.preventDefault();
-                                                                        event.stopPropagation();
-                                                                        const weekDates = Array.isArray(week?.days)
-                                                                            ? week.days.map((day) => day?.date).filter((date) => date instanceof Date)
-                                                                            : [];
-                                                                        handleDeliveryWeekSelect(weekDates);
-                                                                    }}
-                                                                >
-                                                                    <span>{`v. ${children}`}</span>
-                                                                </button>
-                                                            ),
-                                                        }}
-                                                    />
-                                                </div>
-                                            )}
-                                        </div>
+                                        <LabeledDatePicker
+                                            label="Önskat lev.datum"
+                                            value={supplierOrder?.deliveryDate}
+                                            onChange={(nextValue) => updateSupplierOrder({ deliveryDate: nextValue })}
+                                            weekMode={Boolean(supplierOrder?.deliveryDateWeekMode)}
+                                            onWeekModeChange={(nextWeekMode) => updateSupplierOrder({ deliveryDateWeekMode: nextWeekMode })}
+                                            enableWeekSelect
+                                            labelWidth="w-35"
+                                            inputWidth="w-30"
+                                            margintop="0"
+                                            placeholder="Välj datum/vecka"
+                                        />
 
-                                        <div className="relative flex items-center text-xs" ref={confirmedDeliveryDatePickerRef}>
-                                            <label className="w-35 flex-none text-xs text-gray-700">Bekräftat lev.datum</label>
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowConfirmedDeliveryDatePicker((prev) => !prev)}
-                                                className="w-30 flex items-center justify-between text-left text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none focus:ring-1 focus:ring-green-500"
-                                            >
-                                                <span>{confirmedDeliveryDateDisplayValue || 'Välj datum'}</span>
-                                                <svg
-                                                    xmlns="http://www.w3.org/2000/svg"
-                                                    viewBox="0 0 24 24"
-                                                    fill="none"
-                                                    stroke="currentColor"
-                                                    strokeWidth="1.8"
-                                                    className="h-4 w-4 text-gray-500"
-                                                    aria-hidden="true"
-                                                >
-                                                    <rect x="3" y="5" width="18" height="16" rx="2" />
-                                                    <path d="M16 3v4M8 3v4M3 10h18" />
-                                                </svg>
-                                            </button>
-                                            {showConfirmedDeliveryDatePicker && (
-                                                <div className="supplier-order-daypicker absolute top-7 left-35 z-40 rounded-sm border border-gray-300 bg-white p-2 shadow-lg px-5">
-                                                    <DayPicker
-                                                        mode="single"
-                                                        locale={sv}
-                                                        selected={confirmedDeliveryDatePickerSelectedDate}
-                                                        onSelect={handleConfirmedDeliveryDateSelect}
-                                                        showWeekNumber
-                                                        ISOWeek
-                                                        weekStartsOn={1}
-                                                        components={{
-                                                            WeekNumber: ({ children }) => (
-                                                                <span className="mt-3 mr-2 inline-flex h-[18px] min-w-[40px] items-center justify-center rounded-md px-1 text-xs leading-none text-gray-500">
-                                                                    {`v. ${children}`}
-                                                                </span>
-                                                            ),
-                                                        }}
-                                                    />
-                                                </div>
-                                            )}
-                                        </div>
+                                        <LabeledDatePicker
+                                            label="Bekräftat lev.datum"
+                                            value={supplierOrder?.confirmedDeliveryDate}
+                                            onChange={(nextValue) => updateSupplierOrder({ confirmedDeliveryDate: nextValue })}
+                                            weekMode={Boolean(supplierOrder?.confirmedDeliveryDateWeekMode)}
+                                            onWeekModeChange={(nextWeekMode) => updateSupplierOrder({ confirmedDeliveryDateWeekMode: nextWeekMode })}
+                                            enableWeekSelect
+                                            labelWidth="w-35"
+                                            inputWidth="w-30"
+                                            margintop="0"
+                                            placeholder="Välj datum/vecka"
+                                        />
 
                                         <div className="mt-5 text-xs">
                                             <p className="text-gray-900 font-bold">Upplaga och pris</p>

@@ -102,7 +102,7 @@ const InventorySelectModal = ({
                                                             {item?.address ? ` | ${item.address}` : ''}
                                                         </div>
                                                     </div>
-                                                    <div className="shrink-0 text-[10px] text-gray-600">
+                                                    <div className="shrink-0 text-tiny text-gray-600">
                                                         {item?.isInventory ? 'Lager' : ''}
                                                         {item?.isInventory && item?.isOmlast ? ' / ' : ''}
                                                         {item?.isOmlast ? 'Omlast' : ''}

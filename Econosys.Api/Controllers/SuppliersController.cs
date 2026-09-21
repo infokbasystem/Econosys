@@ -232,7 +232,8 @@ namespace Econosys.Api.Controllers
                 Items = dtos,
                 TotalCount = totalCount,
                 PageNumber = pagination.PageNumber,
-                PageSize = pagination.PageSize
+                PageSize = pagination.PageSize,
+                TotalPages = (int)Math.Ceiling(totalCount / (double)pagination.PageSize)
             });
         }
 

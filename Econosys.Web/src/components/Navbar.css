@@ -1,179 +1,58 @@
 #menu {
-    height: 52px;
+    height: 72px;
     margin-bottom: 0px;
-    background-repeat: repeat-x;
     display: block;
-    font-size: 14px;
-    color: #999;
 }
 
 #menu ul {
-    font-size: 10px;
-    font-weight: bold;
     margin: 0;
     padding: 0px;
+    height: 100%;
 }
 
-#menu li {
-    float: left;
-    height: 52px;
-    width: 120px;
-    margin: 0px 1px 0px 1px;
-    display: inline;
+#menu .menu-item {
+    display: flex;
+    align-items: center;
+    /* height: 100%; */
     list-style: none;
-    text-align: center;
-    transition: background-color 0.4s ease;
-    -moz-transition: background-color 0.4s ease;
-    -o-transition: background-color 0.4s ease;
-    -webkit-transition: background-color 0.4s ease;
-    -ms-transition: background-color 0.4s ease;
 }
 
-#menu li:hover {
+#menu .menu-item-divider {
+    border-left: 1px solid rgba(15, 23, 42, 0.1);
 }
 
-#menu li a {
-    /*height: 50px;*/
-    background: none;
-    color: #FFF;
+#menu .menu-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 108px;
+    height: 58px;
+    margin: 0 14px;
+    border-radius: 16px;
+    background-color: transparent;
+    color: #6b7280;
     text-decoration: none;
+    transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-#menu .div-general {
-    /*height: 20px;*/
-    background-repeat: no-repeat;
-    background-position: center 7px;
-    padding-top: 34px;
+#menu .menu-card:hover {
+    background-color: rgb(223, 228, 220);
 }
 
-/* #menu .div-general.calculation-item {
-    background-image: none !important;
-    padding-top: 7px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
+#menu .menu-card-active {
+    background-color: rgb(223, 228, 220);
+    color: #374151;
 }
 
-#menu .div-general.calculation-item img {
-    width: 29px;
-    height: 25px;
-    display: block;
-    object-fit: contain;
-} */
-
-#menu .div-general.order-item {
-    background-image: none !important;
-    padding-top: 9px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
+#menu .menu-card-icon {
+    width: 22px;
+    height: 22px;
 }
 
-#menu .div-general.order-item img {
-    width: 28px;
-    height: 24px;
-    display: block;
-    object-fit: contain;
-}
-
-#menu .div-general.logistics-item {
-    background-image: none !important;
-    padding-top: 9px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-}
-
-#menu .div-general.logistics-item img {
-    width: 28px;
-    height: 24px;
-    display: block;
-    object-fit: contain;
-}
-
-#menu .div-general.management-item {
-    background-image: none !important;
-    padding-top: 9px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-}
-
-#menu .div-general.management-item img {
-    width: 28px;
-    height: 24px;
-    display: block;
-    object-fit: contain;
-}
-
-#menu .div-general.quality-item {
-    background-image: none !important;
-    padding-top: 9px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-}
-
-#menu .div-general.quality-item img {
-    width: 28px;
-    height: 24px;
-    display: block;
-    object-fit: contain;
-}
-
-#menu .div-general.settings-item {
-    background-image: none !important;
-    padding-top: 9px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1px;
-}
-
-#menu .div-general.settings-item img {
-    width: 28px;
-    height: 24px;
-    display: block;
-    object-fit: contain;
-}
-
-#menu .overview:hover, .overview-backcolor {
-    background-color: #6D7533;
-}
-
-#menu .order:hover, .order-backcolor {
-    background-color: #717EC3;
-}
-
-#menu .logistics:hover, .logistics-backcolor {
-    background-color: #33658A;
-}
-
-#menu .logistics:hover, .logistics-backcolor {
-    background-color: #33658A;
-}
-
-#menu .finance:hover, .finance-backcolor {
-    background-color: #F7B801;
-}
-
-#menu .management:hover, .management-backcolor {
-    background-color: #7FB800;
-}    
-
-#menu .reporting:hover, .reporting-backcolor {
-    background-color: #EF476F;
-}
-
-#menu .registers:hover, .registers-backcolor {
-    background-color: #98bf0d;
-}
-
-#menu .settings:hover, .settings-backcolor {
-    background-color: #98bf0d;
+#menu .menu-card-label {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
 }

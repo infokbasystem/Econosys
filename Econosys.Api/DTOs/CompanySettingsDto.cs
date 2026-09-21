@@ -34,9 +34,17 @@ namespace Econosys.Api.DTOs
         public string? VATInfo { get; set; }
         public string? SettingsCompany { get; set; }
         public int? InvoiceLastNr { get; set; }
+        public int? HandlingTimesGoalNrOfDays { get; set; }
+        public int? HandlingTimesGoalMaxNrOfDays { get; set; }
+        public decimal? HandlingTimesPercentHandledUnderGoalNrOfDays { get; set; }
+        public int? HandlingTimesThresholdNrOfDays { get; set; }
         public string? DefaultCustomerMessage { get; set; }
         public string? EUText { get; set; }
         public string? ExportText { get; set; }
+        public string? JeevesApiEndpoint { get; set; }
+        public bool HasJeevesApiKey { get; set; }
+        public string? JeevesTestApiEndpoint { get; set; }
+        public bool HasJeevesTestApiKey { get; set; }
         public int? SettingsOldDbId { get; set; }
     }
 
@@ -117,6 +125,14 @@ namespace Econosys.Api.DTOs
 
         public int? InvoiceLastNr { get; set; }
 
+        public int? HandlingTimesGoalNrOfDays { get; set; }
+
+        public int? HandlingTimesGoalMaxNrOfDays { get; set; }
+
+        public decimal? HandlingTimesPercentHandledUnderGoalNrOfDays { get; set; }
+
+        public int? HandlingTimesThresholdNrOfDays { get; set; }
+
         [MaxLength(255)]
         public string? DefaultCustomerMessage { get; set; }
 
@@ -125,6 +141,22 @@ namespace Econosys.Api.DTOs
 
         [MaxLength(255)]
         public string? ExportText { get; set; }
+
+        [MaxLength(500)]
+        [Url]
+        public string? JeevesApiEndpoint { get; set; }
+
+        [MaxLength(500)]
+        public string? JeevesApiKey { get; set; }
+
+        [MaxLength(500)]
+        [Url]
+        public string? JeevesTestApiEndpoint { get; set; }
+
+        [MaxLength(500)]
+        public string? JeevesTestApiKey { get; set; }
+
+        public List<string>? PropertiesToUpdate { get; set; }
 
         public int? SettingsOldDbId { get; set; }
     }
@@ -206,6 +238,14 @@ namespace Econosys.Api.DTOs
 
         public int? InvoiceLastNr { get; set; }
 
+        public int? HandlingTimesGoalNrOfDays { get; set; }
+
+        public int? HandlingTimesGoalMaxNrOfDays { get; set; }
+
+        public decimal? HandlingTimesPercentHandledUnderGoalNrOfDays { get; set; }
+
+        public int? HandlingTimesThresholdNrOfDays { get; set; }
+
         [MaxLength(255)]
         public string? DefaultCustomerMessage { get; set; }
 
@@ -214,6 +254,22 @@ namespace Econosys.Api.DTOs
 
         [MaxLength(255)]
         public string? ExportText { get; set; }
+
+        [MaxLength(500)]
+        [Url]
+        public string? JeevesApiEndpoint { get; set; }
+
+        [MaxLength(500)]
+        public string? JeevesApiKey { get; set; }
+
+        [MaxLength(500)]
+        [Url]
+        public string? JeevesTestApiEndpoint { get; set; }
+
+        [MaxLength(500)]
+        public string? JeevesTestApiKey { get; set; }
+
+        public List<string>? PropertiesToUpdate { get; set; }
 
         public int? SettingsOldDbId { get; set; }
     }

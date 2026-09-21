@@ -5,6 +5,7 @@ using Telerik.Reporting.Processing;
 using Telerik.Reporting.Drawing;
 using Telerik.Reporting.XmlSerialization;
 using Econosys.Api.Data;
+using Econosys.Api.Services;
 
 namespace Econosys.Api.Controllers
 {
@@ -142,16 +143,11 @@ namespace Econosys.Api.Controllers
         [HttpGet("invoice/{id:int}")]
         public async Task<IActionResult> GetInvoicePdfById(int id)
         {
-            var reportPath = Path.Combine(Directory.GetCurrentDirectory(), "", "Reports", "Invoice.trdx");
-
-            if (!System.IO.File.Exists(reportPath))
-            {
-                return NotFound("Report file not found.");
-            }
-
             var invoice = await _context.Invoices
                 .AsNoTracking()
+                .Include(x => x.SalesCurrency)
                 .Include(x => x.InvoiceRows)
+                    .ThenInclude(x => x.Unit)
                 .Include(x => x.InvoiceAccountRows)
                 .FirstOrDefaultAsync(x => x.Id == id);
 
@@ -160,27 +156,13 @@ namespace Econosys.Api.Controllers
                 return NotFound("Invoice not found.");
             }
 
-            Telerik.Reporting.Report report;
-            using (var fs = System.IO.File.OpenRead(reportPath))
-            {
-                var serializer = new ReportXmlSerializer();
-                report = (Telerik.Reporting.Report)serializer.Deserialize(fs);
-            }
-
-            report.DataSource = new[] { invoice };
-
-            var processor = new ReportProcessor();
-            var reportSource = new Telerik.Reporting.InstanceReportSource { ReportDocument = report };
-            var result = processor.RenderReport("PDF", reportSource, null);
-
-            if (result.HasErrors)
-            {
-                return Problem(string.Join("\n", result.Errors.Select(e => e.Message)));
-            }
+            var company = await _context.CompanyInfos
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.CompanyId == 1);
 
             var invoiceNumber = invoice.InvoiceNumber?.ToString() ?? invoice.Id.ToString();
             var fileName = $"invoice_{invoiceNumber}.pdf";
-            return File(result.DocumentBytes, "application/pdf", fileName, enableRangeProcessing: true);
+            return File(InvoicePdfDocument.Generate(invoice, company), "application/pdf", fileName, enableRangeProcessing: true);
         }
 
         [HttpGet("inquiry/{id:int}")]

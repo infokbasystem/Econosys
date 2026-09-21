@@ -1,11 +1,17 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, ChevronsUpDown, Mail } from 'lucide-react';
-import SwitchSelector from 'react-switch-selector';
-import LabeledReactSelect from '../../components/LabeledReactSelect';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, ChevronsUpDown, FileText, Mail } from 'lucide-react';
+import Select from 'react-select';
+import Skeleton from 'react-loading-skeleton';
+import 'react-loading-skeleton/dist/skeleton.css';
+import ActionButton from '../../components/ActionButton';
+import SegmentedFilter from '../../components/SegmentedFilter';
+import SelectCircleCheckbox from '../../components/SelectCircleCheckbox';
 import apiClient from '../../config/apiClient';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const DRAFT_STORAGE_KEY_PREFIX = 'invoice-draft:';
+const SKELETON_DELAY_MS = 200;
+const SIMULATED_LOADING_DELAY_MS = 0;
 
 const buildSelectionKey = (type, id) => {
     if (!type || id == null || id === '') return '';
@@ -385,41 +391,13 @@ const mergeListDeliveriesForDisplay = (rows) => {
 };
 
 const viewModeOptions = [
-    {
-        label: <span className="py-[1px]">Per kund</span>,
-        value: 'grouped',
-        id: 1,
-        index: 0,
-        selectedBackgroundColor: '#f59e0b',
-        fontColor: '#f5f6fa',
-    },
-    {
-        label: <span className="py-[1px]">Lista</span>,
-        value: 'list',
-        id: 2,
-        index: 1,
-        selectedBackgroundColor: '#f59e0b',
-        fontColor: '#f5f6fa',
-    },
+    { label: 'Per kund', value: 'grouped' },
+    { label: 'Lista', value: 'list' },
 ];
 
 const deliveryScopeOptions = [
-    {
-        label: <span className="py-[1px]">Skall faktureras nu</span>,
-        value: 'onlyDelivered',
-        id: 1,
-        index: 0,
-        selectedBackgroundColor: '#f59e0b',
-        fontColor: '#f5f6fa',
-    },
-    {
-        label: <span className="py-[1px]">Inkl. kommande</span>,
-        value: 'allDeliveries',
-        id: 2,
-        index: 1,
-        selectedBackgroundColor: '#f59e0b',
-        fontColor: '#f5f6fa',
-    },
+    { label: 'Skall faktureras nu', value: 'onlyDelivered' },
+    { label: 'Inkl. kommande', value: 'allDeliveries' },
 ];
 
 const listColumns = [
@@ -438,6 +416,52 @@ const listColumns = [
     { key: 'orderInfo', label: 'Orderinfo', align: 'left', width: 'w-[10%]', sortable: true, type: 'string' },
 ];
 
+const InvoiceTableSkeleton = ({ mode }) => {
+    const groupedRowWidths = [
+        ['w-4', 'w-3/4', 'w-2/3', 'w-1/2', 'w-3/4', 'w-1/2', 'w-2/3', 'w-1/3', 'w-1/2', 'w-2/3', 'w-3/4'],
+        ['w-4', 'w-2/3', 'w-1/2', 'w-2/3', 'w-1/2', 'w-2/3', 'w-1/2', 'w-1/2', 'w-1/3', 'w-3/4', 'w-1/2'],
+        ['w-4', 'w-3/4', 'w-3/4', 'w-1/2', 'w-2/3', 'w-1/3', 'w-2/3', 'w-1/3', 'w-1/2', 'w-1/2', 'w-2/3'],
+        ['w-4', 'w-1/2', 'w-2/3', 'w-3/4', 'w-1/2', 'w-3/4', 'w-1/2', 'w-2/3', 'w-1/3', 'w-2/3', 'w-1/2'],
+    ];
+    const listRowWidths = [
+        ['w-4', 'w-3/4', 'w-2/3', 'w-1/2', 'w-1/2', 'w-2/3', 'w-1/2', 'w-2/3', 'w-1/3', 'w-3/4', 'w-1/2', 'w-1/2', 'w-3/4'],
+        ['w-4', 'w-2/3', 'w-1/2', 'w-2/3', 'w-2/3', 'w-1/2', 'w-2/3', 'w-1/2', 'w-1/2', 'w-1/2', 'w-1/3', 'w-1/3', 'w-2/3'],
+        ['w-4', 'w-3/4', 'w-3/4', 'w-1/2', 'w-1/2', 'w-3/4', 'w-1/3', 'w-2/3', 'w-1/3', 'w-2/3', 'w-1/2', 'w-1/2', 'w-1/2'],
+        ['w-4', 'w-1/2', 'w-2/3', 'w-3/4', 'w-2/3', 'w-1/2', 'w-3/4', 'w-1/2', 'w-1/2', 'w-1/3', 'w-2/3', 'w-1/3', 'w-3/4'],
+    ];
+    const rowWidths = mode === 'grouped' ? groupedRowWidths : listRowWidths;
+
+    const skeletonRows = (
+        <>
+            {rowWidths.map((widths, rowIndex) => (
+                <tr key={rowIndex} className="h-8 border-b border-gray-100">
+                    {widths.map((width, cellIndex) => (
+                        <td key={cellIndex} className="px-3 py-2">
+                            <Skeleton height={14} className={width} />
+                        </td>
+                    ))}
+                </tr>
+            ))}
+        </>
+    );
+
+    if (mode === 'grouped') {
+        return (
+            <div className="overflow-x-auto">
+                <div className="px-4 py-2">
+                    <Skeleton width={160} height={14} />
+                    <Skeleton width={256} height={14} className="mt-2" />
+                </div>
+                <table className="w-full table-fixed text-xs" aria-label="Laddar fakturaunderlag">
+                    <tbody>{skeletonRows}</tbody>
+                </table>
+            </div>
+        );
+    }
+
+    return skeletonRows;
+};
+
 const InvoiceDeliveriesAndOrderCosts = () => {
     const [viewMode, setViewMode] = useState('grouped');
     const [selectedCustomerId, setSelectedCustomerId] = useState('all');
@@ -448,8 +472,11 @@ const InvoiceDeliveriesAndOrderCosts = () => {
     const [groupedDataError, setGroupedDataError] = useState('');
     const [listRows, setListRows] = useState([]);
     const [listDataError, setListDataError] = useState('');
+    const [isLoadingData, setIsLoadingData] = useState(true);
+    const [showSkeleton, setShowSkeleton] = useState(false);
     const [createInvoiceError, setCreateInvoiceError] = useState('');
     const [isCreatingDraft, setIsCreatingDraft] = useState(false);
+    const skeletonTimerRef = useRef(null);
 
     const handleViewModeChange = (nextMode) => {
         setViewMode(normalizeViewMode(nextMode));
@@ -463,6 +490,12 @@ const InvoiceDeliveriesAndOrderCosts = () => {
         let isActive = true;
 
         const loadData = async () => {
+            setIsLoadingData(true);
+            setShowSkeleton(false);
+            skeletonTimerRef.current = setTimeout(() => {
+                if (isActive) setShowSkeleton(true);
+            }, SKELETON_DELAY_MS);
+
             if (viewMode === 'grouped') {
                 try {
                     const requestConfig = {
@@ -472,6 +505,9 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                     };
                     const requestKey = `invoices:invoice-source:grouped:${deliveryScope === 'onlyDelivered'}`;
                     const response = await getSharedRequest(requestKey, () => apiClient.get('/invoices/invoice-source/grouped', requestConfig));
+                    if (SIMULATED_LOADING_DELAY_MS > 0) {
+                        await new Promise((resolve) => setTimeout(resolve, SIMULATED_LOADING_DELAY_MS));
+                    }
                     if (!isActive) return;
                     const customers = toArray(response?.data).map(normalizeGroupedCustomer);
                     setGroupedCustomers(customers);
@@ -481,6 +517,12 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                     if (!isActive) return;
                     setGroupedCustomers([]);
                     setGroupedDataError(getRequestErrorMessage(error));
+                } finally {
+                    if (isActive) {
+                        clearTimeout(skeletonTimerRef.current);
+                        setIsLoadingData(false);
+                        setShowSkeleton(false);
+                    }
                 }
                 return;
             }
@@ -493,6 +535,9 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                 };
                 const requestKey = `invoices:invoice-source:list:${deliveryScope === 'onlyDelivered'}`;
                 const response = await getSharedRequest(requestKey, () => apiClient.get('/invoices/invoice-source/list', requestConfig));
+                if (SIMULATED_LOADING_DELAY_MS > 0) {
+                    await new Promise((resolve) => setTimeout(resolve, SIMULATED_LOADING_DELAY_MS));
+                }
                 if (!isActive) return;
                 const rows = toArray(response?.data).map((row, index) => normalizeListRow(row, index));
                 setListRows(rows);
@@ -502,12 +547,19 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                 if (!isActive) return;
                 setListRows([]);
                 setListDataError(getRequestErrorMessage(error));
+            } finally {
+                if (isActive) {
+                    clearTimeout(skeletonTimerRef.current);
+                    setIsLoadingData(false);
+                    setShowSkeleton(false);
+                }
             }
         };
 
         void loadData();
         return () => {
             isActive = false;
+            clearTimeout(skeletonTimerRef.current);
         };
     }, [viewMode, deliveryScope]);
 
@@ -522,6 +574,16 @@ const InvoiceDeliveriesAndOrderCosts = () => {
 
         return [{ id: 'all', name: 'Alla kunder' }, ...fromApi];
     }, [groupedCustomers]);
+
+    const customerSelectOptions = useMemo(
+        () => customerSelectItems.map((item) => ({ value: item.id, label: item.name })),
+        [customerSelectItems],
+    );
+
+    const selectedCustomerOption = useMemo(
+        () => customerSelectOptions.find((option) => option.value === selectedCustomerId) ?? null,
+        [customerSelectOptions, selectedCustomerId],
+    );
 
     const visibleCustomers =
         selectedCustomerId === 'all'
@@ -705,6 +767,7 @@ const InvoiceDeliveriesAndOrderCosts = () => {
     };
 
     const toggleDelivery = (selectionKey) => {
+        setCreateInvoiceError('');
         setCheckedDeliveries((prev) => ({
             ...prev,
             [selectionKey]: !prev[selectionKey],
@@ -714,6 +777,7 @@ const InvoiceDeliveriesAndOrderCosts = () => {
     const toggleDeliveryGroup = (selectionKeys) => {
         if (!selectionKeys?.length) return;
 
+        setCreateInvoiceError('');
         setCheckedDeliveries((prev) => {
             const allChecked = selectionKeys.every((id) => prev[id]);
             const targetChecked = !allChecked;
@@ -731,6 +795,7 @@ const InvoiceDeliveriesAndOrderCosts = () => {
     const toggleAllForCustomer = (customer) => {
         const allIds = customer.deliveries.map((d) => d.selectionKey).filter(Boolean);
         const allChecked = allIds.every((id) => checkedDeliveries[id]);
+        setCreateInvoiceError('');
         setCheckedDeliveries((prev) => {
             const updated = { ...prev };
             allIds.forEach((id) => {
@@ -827,59 +892,121 @@ const InvoiceDeliveriesAndOrderCosts = () => {
     };
 
     return (
-        <div className="flex flex-col h-full py-2 px-7">
-            <div className="ml-5 text-sm text-gray-500">Fakturera leveranser och orderkostnader</div>
+        <div className="flex flex-col h-full py-2 pl-10">
+            {/* <div className="ml-5 text-sm text-gray-500">Fakturera leveranser och orderkostnader</div> */}
 
             {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-22 mt-3 ml-5">
 
                 <div className="flex items-center text-xs">
-                    <div className="w-36">
-                        <SwitchSelector
-                            name="viewMode"
+                    <div>
+                        <SegmentedFilter
+                            value={viewMode}
                             options={viewModeOptions}
-                            initialSelectedIndex={viewMode === 'grouped' ? 0 : 1}
                             onChange={handleViewModeChange}
-                            backgroundColor="#353b48"
-                            fontColor="#374151"
+                            theme="lime"
+                            className="w-36"
                         />
                     </div>
                 </div>
 
-                <div className='w-70'>
-                    <LabeledReactSelect
-                        name='customer'
-                        label='Kund'
-                        value={selectedCustomerId}
-                        items={customerSelectItems}
-                        onChange={(e) => setSelectedCustomerId(e)}
-                        disableInactive
-                        labelWidth="w-10"
+                <div className="w-[230px]">
+                    <Select
+                        value={selectedCustomerOption}
+                        onChange={(option) => setSelectedCustomerId(option?.value ?? 'all')}
+                        options={customerSelectOptions}
+                        isSearchable={false}
+                        isClearable
+                        placeholder="Alla kunder"
+                        classNamePrefix="invoice-customer-select"
+                        styles={{
+                            control: (base, state) => ({
+                                ...base,
+                                minHeight: 28,
+                                height: 28,
+                                borderRadius: 9999,
+                                borderColor: state.isFocused ? '#4d7c0f' : '#65a30d',
+                                boxShadow: 'none',
+                                ':hover': {
+                                    borderColor: state.isFocused ? '#4d7c0f' : '#65a30d',
+                                },
+                            }),
+                            valueContainer: (base) => ({
+                                ...base,
+                                height: 28,
+                                padding: '0 12px',
+                            }),
+                            indicatorsContainer: (base) => ({
+                                ...base,
+                                height: 28,
+                            }),
+                            indicatorSeparator: () => ({
+                                display: 'none',
+                            }),
+                            clearIndicator: (base, state) => ({
+                                ...base,
+                                padding: '0 0px 0 6px',
+                                color: state.isFocused ? '#d97706' : '#f59e0b',
+                                cursor: 'pointer',
+                                ':hover': {
+                                    color: '#d97706',
+                                },
+                            }),
+                            dropdownIndicator: (base, state) => ({
+                                ...base,
+                                padding: '0 8px 0 0px',
+                                color: state.isFocused ? '#6b7280' : '#9ca3af',
+                                ':hover': {
+                                    color: '#6b7280',
+                                },
+                            }),
+                            input: (base) => ({
+                                ...base,
+                                margin: 0,
+                                padding: 0,
+                            }),
+                            option: (base, state) => ({
+                                ...base,
+                                fontSize: '12px',
+                                backgroundColor: state.isFocused ? '#f7fee7' : 'white',
+                                color: '#374151',
+                            }),
+                            singleValue: (base) => ({
+                                ...base,
+                                fontSize: '12px',
+                                color: '#374151',
+                            }),
+                            placeholder: (base) => ({
+                                ...base,
+                                fontSize: '12px',
+                                color: '#374151',
+                                fontWeight: 400,
+                            }),
+                            menu: (base) => ({
+                                ...base,
+                                zIndex: 60,
+                            }),
+                        }}
                     />
                 </div>
 
-                <div className="flex items-center text-xs">
-                    <div className="w-60">
-                        <SwitchSelector
-                            name="deliveryScope"
-                            options={deliveryScopeOptions}
-                            initialSelectedIndex={deliveryScope === 'onlyDelivered' ? 0 : 1}
-                            onChange={handleDeliveryScopeChange}
-                            backgroundColor="#353b48"
-                            fontColor="#374151"
-                        />
-                    </div>
+                <div>
+                    <SegmentedFilter
+                        value={deliveryScope}
+                        options={deliveryScopeOptions}
+                        onChange={handleDeliveryScopeChange}
+                        theme="lime"
+                    />
                 </div>
 
 
-                <button
-                    type="button"
+                <ActionButton
+                    label={isCreatingDraft ? 'Skapar utkast...' : 'Skapa faktura'}
+                    icon={FileText}
                     onClick={handleCreateInvoice}
                     disabled={isCreatingDraft}
-                    className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-amber-600 px-5 p-[5px]"
-                >
-                    {isCreatingDraft ? 'Skapar utkast...' : 'Skapa faktura för valda leveranser och kostnader'}
-                </button>
+                    accent="lime"
+                />
             </div>
 
             {createInvoiceError && (
@@ -902,10 +1029,12 @@ const InvoiceDeliveriesAndOrderCosts = () => {
 
             {/* Customer groups */}
             {viewMode === 'grouped' && (
-                <div className="border-t border-gray-300 py-1 mt-4 flex-1 overflow-auto" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                <div className="py-1 mt-5 flex-1 overflow-auto" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
 
                     <div className="flex flex-col gap-2">
-                        {visibleCustomers.map((customer) => {
+                        {showSkeleton ? (
+                            <InvoiceTableSkeleton mode="grouped" />
+                        ) : visibleCustomers.map((customer) => {
                             const displayDeliveries = mergeDeliveriesForDisplay(customer.deliveries);
                             const allDeliveryIds = customer.deliveries.map((d) => d.selectionKey).filter(Boolean);
                             const allChecked =
@@ -920,7 +1049,7 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                                     className="overflow-hidden"
                                 >
                                     {/* Customer header */}
-                                    <div className="px-4 py-1 border-b border-gray-200">
+                                    <div className="px-4 py-1 ">
                                         <div className="text-xs text-gray-700 font-semibold">
                                             {customer.customerName}
                                         </div>
@@ -938,12 +1067,12 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                                                     <th className="w-[13%]"></th>
                                                     <th className="w-[9%]"></th>
                                                     <th className="w-[6%]"></th>
-                                                    <th className="w-[6%]"></th>
+                                                    <th className="w-[10%]"></th>
                                                     <th className="w-[12%]"></th>
                                                     <th className="w-[7%]"></th>
                                                     <th className="w-[8%]"></th>
                                                     <th className="w-[7%]"></th>
-                                                    <th className="w-[23%]"></th>
+                                                    <th className="w-[15%]"></th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -964,12 +1093,11 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                                                                             : 'bg-white')
                                                                 }
                                                             >
-                                                                <td className="px-4 pt-[8px] pb-[2px]">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        className="accent-red-600"
+                                                                <td className="px-4 pt-[6px] pb-[4px]">
+                                                                    <SelectCircleCheckbox
                                                                         checked={deliveryGroupChecked}
                                                                         onChange={() => toggleDeliveryGroup(deliveryIdsToToggle)}
+                                                                        ariaLabel={`Välj ${d.leveranstyp || 'post'} ${d.avropsnummer || d.ordernr || ''}`.trim() || 'Välj post'}
                                                                     />
                                                                 </td>
                                                                 <td title={d.leveranstyp} className="px-3 pt-[6px] pb-[4px] text-gray-700 whitespace-nowrap overflow-hidden truncate">
@@ -999,12 +1127,12 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                                                                     </div>
                                                                 </td>
                                                                 <td className="pl-5 pt-[6px] pb-[4px] text-gray-700 text-right whitespace-nowrap">
-                                                                    {d.nrOfPalletsToInvoice ? <>{d.nrOfPalletsToInvoice} <span className='text-gray-400 ml-1'>pallar att fakt.</span></>: ''}
+                                                                    {d.nrOfPalletsToInvoice ? <>{d.nrOfPalletsToInvoice} <span className='text-gray-400 ml-1'>pallar att fakt.</span></> : ''}
                                                                 </td>
                                                                 <td className="px-3 pt-[6px] pb-[4px] text-gray-700 text-right whitespace-nowrap">
                                                                     <div className="flex items-center gap-1 justify-end">
                                                                         {d.pills.map((pill) => (
-                                                                            <span key={pill.label} className={`inline-flex h-4 items-center rounded-full ${pill.color} text-white px-2 text-[10px] leading-none`}>
+                                                                            <span key={pill.label} className={`inline-flex h-4 items-center rounded-full ${pill.color} text-white px-2 text-tiny leading-none`}>
                                                                                 {pill.icon && <Mail className="w-3 h-3 mr-1" />}
                                                                                 {pill.label}
                                                                             </span>
@@ -1021,16 +1149,15 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                                                         <tr
                                                             key={oc.id}
                                                             className={
-                                                                'border-b border-gray-100 ' +
+                                                                'h-7 border-b border-gray-100 ' +
                                                                 (idx % 2 === 0 ? 'bg-white' : 'bg-white')
                                                             }
                                                         >
-                                                            <td className="px-4 pt-[8px] pb-[2px]">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    className="accent-red-600"
+                                                            <td className="px-4 ">
+                                                                <SelectCircleCheckbox
                                                                     checked={!!checkedDeliveries[oc.selectionKey]}
                                                                     onChange={() => toggleDelivery(oc.selectionKey)}
+                                                                    ariaLabel={`Välj orderkostnad ${oc.info || oc.ordernr || ''}`.trim() || 'Välj orderkostnad'}
                                                                 />
                                                             </td>
                                                             <td title={oc.info} className="px-3 py-2 text-gray-700 whitespace-nowrap overflow-hidden truncate">
@@ -1057,7 +1184,7 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                                                             <td className="px-3 pt-[6px] pb-[4px] text-gray-700 text-right whitespace-nowrap">
                                                                 <div className="flex items-center gap-1 justify-end">
                                                                     {oc.pills.map((pill) => (
-                                                                        <span key={pill.label} className={`inline-flex h-4 items-center rounded-full ${pill.color} text-white px-2 text-[10px] leading-none`}>
+                                                                        <span key={pill.label} className={`inline-flex h-4 items-center rounded-full ${pill.color} text-white px-2 text-tiny leading-none`}>
                                                                             {pill.icon && <Mail className="w-3 h-3 mr-1" />}
                                                                             {pill.label}
                                                                         </span>
@@ -1073,16 +1200,15 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                                                         <tr
                                                             key={so.id}
                                                             className={
-                                                                'border-b border-gray-100 ' +
+                                                                'h-7 border-b border-gray-100 ' +
                                                                 (idx % 2 === 0 ? 'bg-white' : 'bg-white')
                                                             }
                                                         >
-                                                            <td className="px-4 pt-[8px] pb-[2px]">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    className="accent-red-600"
+                                                            <td className="px-4 ">
+                                                                <SelectCircleCheckbox
                                                                     checked={!!checkedDeliveries[so.selectionKey]}
                                                                     onChange={() => toggleDelivery(so.selectionKey)}
+                                                                    ariaLabel={`Välj förskottsfaktura ${so.leverantor || so.leveranstyp || ''}`.trim() || 'Välj förskottsfaktura'}
                                                                 />
                                                             </td>
                                                             <td className="px-3 py-2 text-gray-700">
@@ -1107,7 +1233,7 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                                                             <td className="px-3 pt-[6px] pb-[4px] text-gray-700 text-right whitespace-nowrap">
                                                                 <div className="flex items-center gap-1 justify-end">
                                                                     {so.pills.map((pill) => (
-                                                                        <span key={pill.label} className={`inline-flex h-4 items-center rounded-full ${pill.color} text-white px-2 text-[10px] leading-none`}>
+                                                                        <span key={pill.label} className={`inline-flex h-4 items-center rounded-full ${pill.color} text-white px-2 text-tiny leading-none`}>
                                                                             {pill.icon && <Mail className="w-3 h-3 mr-1" />}
                                                                             {pill.label}
                                                                         </span>
@@ -1164,18 +1290,19 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 bg-white">
-                            {sortedListRows.map((row) => {
+                            {showSkeleton ? (
+                                <InvoiceTableSkeleton mode="list" />
+                            ) : sortedListRows.map((row) => {
                                 const rowSelectionIds = row.selectionKeys?.length ? row.selectionKeys : [buildSelectionKey(row.type, row.id)];
                                 const rowChecked = rowSelectionIds.every((id) => checkedDeliveries[id]);
 
                                 return (
-                                    <tr key={row.rowKey} className={'cursor-pointer border-b border-gray-100 hover:bg-amber-50 ' + (rowChecked ? 'bg-red-50 hover:bg-red-100' : '')}>
-                                        <td className="px-4 pt-[8px] pb-[2px]">
-                                            <input
-                                                type="checkbox"
-                                                className="accent-red-600"
+                                    <tr key={row.rowKey} className={'h-7 cursor-pointer border-b border-gray-100 hover:bg-amber-50 ' + (rowChecked ? 'bg-red-50 hover:bg-red-100' : '')}>
+                                        <td className="px-4 ">
+                                            <SelectCircleCheckbox
                                                 checked={rowChecked}
                                                 onChange={() => toggleDeliveryGroup(rowSelectionIds)}
+                                                ariaLabel={`Välj ${row.customerName || 'post'} ${row.avropsnummer || row.ordernr || ''}`.trim() || 'Välj post'}
                                             />
                                         </td>
                                         <td className="px-3 pt-[6px] pb-[4px] text-gray-700 whitespace-nowrap">{row.customerName}</td>
@@ -1197,7 +1324,7 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                                         <td className="px-3 pt-[6px] pb-[4px] whitespace-nowrap">
                                             <div className="flex items-center gap-1">
                                                 {row.pills.map((pill) => (
-                                                    <span key={pill.label} className={`inline-flex h-4 items-center rounded-full ${pill.color} text-white px-2 text-[10px] leading-none`}>
+                                                    <span key={pill.label} className={`inline-flex h-4 items-center rounded-full ${pill.color} text-white px-2 text-tiny leading-none`}>
                                                         {pill.icon && <Mail className="w-3 h-3 mr-1" />}
                                                         {pill.label}
                                                     </span>

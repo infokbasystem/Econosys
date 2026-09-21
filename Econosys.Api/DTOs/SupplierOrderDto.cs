@@ -128,6 +128,8 @@ namespace Econosys.Api.DTOs
         public DateTime? EmailSentDateTime { get; set; }
         public string? PackagingType { get; set; }
         public int? CalculationId { get; set; }
+        public decimal? OverrideHandlingTimeDays { get; set; }
+        public string? ForceHandlingTimeCountAs { get; set; }
         public List<SupplierOrderOrderCostDto> OrderCosts { get; set; } = new();
     }
 
@@ -191,6 +193,8 @@ namespace Econosys.Api.DTOs
         public int? PalletFormatId { get; set; }
         public bool EurPallet { get; set; }
         public int? ProducedEdition { get; set; }
+        public decimal? OverrideHandlingTimeDays { get; set; }
+        public string? ForceHandlingTimeCountAs { get; set; }
         public List<UpsertSupplierOrderOrderCostRequest> OrderCosts { get; set; } = new();
     }
 

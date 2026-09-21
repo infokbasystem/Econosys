@@ -1,7 +1,7 @@
 import Select, { components } from 'react-select';
 
 
-const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, value, items, onChange, disableInactive, allowRawValueLabel = false, ...props }) => {
+const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, value, items, onChange, disableInactive, allowRawValueLabel = false, filterStyle = false, ...props }) => {
     const normalizedItems = Array.isArray(items) ? items : [];
 
     const options = normalizedItems
@@ -39,9 +39,10 @@ const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, va
     const customStyles = {
         control: (provided, state) => ({
             ...provided,
-            minHeight: 25,
-            height: isMultiSelect ? 'auto' : 25,
-            borderColor: state.isFocused ? '#ccc' : '#ccc',
+            minHeight: filterStyle ? 28 : 25,
+            height: isMultiSelect ? 'auto' : filterStyle ? 28 : 25,
+            borderColor: filterStyle ? (state.isFocused ? '#65a30d' : '#65a30d') : '#ccc',
+            borderRadius: filterStyle ? 9999 : provided.borderRadius,
             boxShadow: state.isFocused ? 'none' : 'none',
             backgroundColor: state.isDisabled ? 'transparent' : '#fff',
             cursor: state.isDisabled ? 'not-allowed' : 'default',

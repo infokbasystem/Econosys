@@ -147,7 +147,7 @@ const LabeledInput = ({
                     disabled={disabled}
                     onChange={handleChange}
                     onBlur={handleBlur}
-                    className={`text-xs ${inputWidth || 'w-full'} border border-gray-300 rounded-sm px-2 py-1 focus:outline-none ${showCharCounter && maxLength ? 'pr-16' : ''} ${!disabled ? 'bg-white' : ''}`}
+                    className={`h-6.25 text-xs ${inputWidth || 'w-full'} border border-gray-300 rounded-sm px-2 py-1 focus:outline-none ${showCharCounter && maxLength ? 'pr-16' : ''} ${!disabled ? 'bg-white' : ''}`}
                     {...props}
                 />
                 {showCharCounter && maxLength && (

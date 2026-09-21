@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using System.Text.Json;
+using Econosys.Api.Common;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
@@ -64,8 +65,8 @@ namespace Econosys.Api.Controllers
                 VarnishId = request.VarnishId,
                 VarnishOther = request.VarnishOther,
                 NetWeightPer1000 = request.NetWeightPer1000,
-                CreatedAt = request.CreatedAt,
-                EditedAt = request.EditedAt,
+                CreatedAt = SwedishTime.Now,
+                EditedAt = SwedishTime.Now,
                 CreatedBy = request.CreatedBy,
                 EditedBy = request.EditedBy,
                 ProductCode = request.ProductCode,
@@ -111,8 +112,6 @@ namespace Econosys.Api.Controllers
             entity.VarnishId = request.VarnishId;
             entity.VarnishOther = request.VarnishOther;
             entity.NetWeightPer1000 = request.NetWeightPer1000;
-            entity.CreatedAt = request.CreatedAt;
-            entity.EditedAt = request.EditedAt;
             entity.CreatedBy = request.CreatedBy;
             entity.EditedBy = request.EditedBy;
             entity.ProductCode = request.ProductCode;
@@ -121,6 +120,7 @@ namespace Econosys.Api.Controllers
             entity.IsServicePackaging = request.IsServicePackaging;
             entity.LastSupplierOrderCreated = request.LastSupplierOrderCreated;
             entity.LastCustomerOrderCreated = request.LastCustomerOrderCreated;
+            entity.EditedAt = SwedishTime.Now;
 
             await _dbContext.SaveChangesAsync();
 

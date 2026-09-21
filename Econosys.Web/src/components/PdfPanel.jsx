@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
+import { Mail, Printer, X } from 'lucide-react';
 import EmailModal from './EmailModal';
+import ActionButton from './ActionButton';
 
 import { usePdf } from '../contexts/PdfContext';
 
@@ -23,9 +25,11 @@ export default function PdfPanel({ onOpenFileModal = null }) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(false);
     const [visible, setVisible] = useState(false);
+    const [mounted, setMounted] = useState(false);
     const [showDoc, setShowDoc] = useState(false);
     const [showLocalModal, setShowLocalModal] = useState(false);
     const delayRef = useRef(null);
+    const unmountTimerRef = useRef(null);
 
     const pdfOptions = useMemo(() => ({
         disableRange: true,
@@ -39,12 +43,27 @@ export default function PdfPanel({ onOpenFileModal = null }) {
 
     // Keep panel visibility synced
     useEffect(() => {
-        if (showPdfPanel) setVisible(true);
+        if (!showPdfPanel) return;
+
+        setMounted(true);
+        const frameId = requestAnimationFrame(() => setVisible(true));
+
+        return () => cancelAnimationFrame(frameId);
     }, [showPdfPanel]);
 
-    // Sync visibility when panel is closed externally
+    // Start the exit transition when the preview is closed externally.
     useEffect(() => {
-        if (!showPdfPanel) setVisible(false);
+        if (showPdfPanel) return undefined;
+
+        setVisible(false);
+        unmountTimerRef.current = setTimeout(() => setMounted(false), 500);
+
+        return () => {
+            if (unmountTimerRef.current) {
+                clearTimeout(unmountTimerRef.current);
+                unmountTimerRef.current = null;
+            }
+        };
     }, [showPdfPanel]);
 
     // Reset state on URL change, clear any pending delay
@@ -138,38 +157,40 @@ export default function PdfPanel({ onOpenFileModal = null }) {
     return (
         <>
             <div
-                className={`absolute right-0 w-[560px] bg-yellow-50 shadow-xl/30 z-50 pt-3 pl-3
-        transform transition-transform duration-300
-            ${visible ? 'translate-x-0 opacity-100 pointer-events-auto' : 'translate-x-full opacity-0 pointer-events-none hidden'}`}
+                className={`absolute right-0 w-[560px] overflow-hidden border-l border-slate-200/80 bg-yellow-50/95 shadow-2xl z-50 pl-7 pr-10 py-10 backdrop-blur-sm
+                    transform-gpu transition-[translate,scale,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform
+                    ${!mounted ? 'hidden' : visible ? 'translate-x-0 scale-100 opacity-100 pointer-events-auto' : 'translate-x-full scale-[0.985] opacity-0 pointer-events-none'}`}
                 aria-hidden={!visible}
                 style={{ top: 0, bottom: 0 }}
             >
-                <div className="flex items-center p-3">
-                    <button
-                        type="button"
-                        onClick={handleClose}
-                        className="shadow-md/30 text-xs text-white bg-red-700 hover:bg-red-900 px-5 p-[5px] w-20">
-                        Stäng
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handlePrint}
-                        disabled={isStale}
-                        className={`shadow-md/30 text-xs text-gray bg-blue-200 px-4 py-[5px] ml-10 w-20 ${isStale ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-300'}`}>
-                        Skriv ut
-                    </button>
-                    <button
-                        type="button"
-                        onClick={openEmailModal}
-                        disabled={isStale}
-                        className={`shadow-md/30 text-xs text-gray bg-blue-200 px-4 py-[5px] ml-3 w-20 ${isStale ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-300'}`}>
-                        Maila
-                    </button>
+                <div className="flex items-center pb-3 pl-5">
+                    <div className="flex items-center gap-6">
+                        <ActionButton
+                            label="Stäng"
+                            icon={X}
+                            onClick={handleClose}
+                            accent="rose"
+                        />
+                        <ActionButton
+                            label="Skriv ut"
+                            icon={Printer}
+                            onClick={handlePrint}
+                            disabled={isStale}
+                            accent="sky"
+                        />
+                        <ActionButton
+                            label="Maila"
+                            icon={Mail}
+                            onClick={openEmailModal}
+                            disabled={isStale}
+                            accent="sky"
+                        />
+                    </div>
                 </div>
 
                 <div className="relative">
                     
-                    {Array.isArray(badges) && badges.length > 0 && (
+                    {/* {Array.isArray(badges) && badges.length > 0 && (
                         <div className="flex items-center px-3 py-2">
                             {badges.map((b, i) => (
                                 <span
@@ -184,9 +205,9 @@ export default function PdfPanel({ onOpenFileModal = null }) {
                                 </span>
                             ))}
                         </div>
-                    )}
+                    )} */}
 
-                    <div className="px-3 pb-3 overflow-auto" style={{ height: 'calc(100% - 100px)' }}>
+                    <div className="pb-3 overflow-auto" style={{ height: 'calc(100% - 100px)' }}>
                         {showPdfPanel && !pdfUrl ? null : null}
 
                         {pdfUrl && (
@@ -205,7 +226,7 @@ export default function PdfPanel({ onOpenFileModal = null }) {
                                 {getPageNumbers().map((pageNumber) => (
                                     <div
                                         key={`wrapper_${pageNumber}`}
-                                        className="my-3"
+                                        className="my-3 max-w-full shadow-lg border border-gray-200"
                                         style={{
                                             background: 'transparent',
                                             visibility: showDoc ? 'visible' : 'hidden'
@@ -214,7 +235,7 @@ export default function PdfPanel({ onOpenFileModal = null }) {
                                         <Page
                                             key={`page_${pageNumber}`}
                                             pageNumber={pageNumber}
-                                            width={500}
+                                            width={480}
                                             renderTextLayer={false}
                                             renderAnnotationLayer={false}
                                         />

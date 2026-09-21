@@ -5,6 +5,7 @@ import apiClient from '../../config/apiClient';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledSwitch from '../../components/LabeledSwitch';
+import ActionButton from '../../components/ActionButton';
 
 const defaultForm = {
     id: null,
@@ -584,7 +585,7 @@ const CostsSettings = () => {
     };
 
     return (
-        <div className="relative flex flex-col h-full">
+        <div className="relative flex flex-col h-full py-5 pl-15">
             <ConfirmationModal
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
@@ -607,10 +608,10 @@ const CostsSettings = () => {
                 isDestructive={false}
             />
 
-            <h2 className="ml-5 text-sm pt-2 pb-2 text-gray-700">Kostnader</h2>
+            <h2 className="text-sm text-gray-500 tracking-[0.10em] font-semibold uppercase pt-2 pb-2">Kostnader</h2>
 
             <div className="flex h-full min-w-0 items-stretch">
-                <div className="w-[450px] shrink-0 mb-5 px-4 py-2 border-r border-gray-300">
+                <div className="w-[400px] shrink-0 mb-5 py-2 pr-5 border-r border-gray-300">
                     <div className="flex items-center gap-1">
                         <div className="mr-5 flex-grow">
                             <LabeledInput
@@ -632,13 +633,10 @@ const CostsSettings = () => {
                                 fontColor="#374151"
                             />
                         </div>
-                        <button
-                            type="button"
+                        <ActionButton
+                            label="Ny"
                             onClick={handleCreateNew}
-                            className="shadow-md/30 text-xs text-gray-900 bg-blue-200 hover:bg-blue-300 px-6 p-[5px] rounded-sm"
-                        >
-                            Skapa ny
-                        </button>
+                        />
                     </div>
 
                     <div className="mt-5 border-t border-gray-200 pt-2 space-y-0.5 max-h-[calc(100vh-230px)] overflow-y-auto">
@@ -654,7 +652,7 @@ const CostsSettings = () => {
                                         key={item.id}
                                         type="button"
                                         onClick={() => handleSelect(item.id)}
-                                        className={`w-full text-left text-xs px-2 py-0.5 rounded-sm ${isSelected ? 'bg-yellow-300 text-black' : 'hover:bg-gray-100 text-gray-900'}`}
+                                        className={`w-full h-6 items-center text-left text-xs px-0 py-0.5 rounded-sm ${isSelected ? 'bg-purple-200/50 text-black' : 'hover:bg-gray-100 text-gray-900'}`}
                                     >
                                         <span className="truncate">{item.name}</span>
                                     </button>
@@ -686,7 +684,7 @@ const CostsSettings = () => {
                     </div>
 
                     <div className={`min-w-0 mt-3 ${isEditDisabled ? 'opacity-70' : ''}`}>
-                        <div className="w-200 grid grid-cols-[400px_1fr] gap-x-20 gap-y-4">
+                        <div className="grid grid-cols-[400px_1fr] gap-x-20 gap-y-4">
                             <span>
                                 <LabeledInput
                                     label="Namn"
@@ -907,7 +905,7 @@ const CostsSettings = () => {
                                 <div key={section.key} className="mb-6">
                                     <h3 className="text-xs text-gray-700 mb-1">{section.title}</h3>
                                     <div className="border-t border-gray-300 pt-1">
-                                        <div className="grid grid-cols-[56px_1fr] gap-2 text-[10px] text-gray-500 pb-1">
+                                        <div className="grid grid-cols-[56px_1fr] gap-2 text-tiny text-gray-500 pb-1">
                                             <span>SPRAK</span>
                                             <span>OVERSATTNING</span>
                                         </div>

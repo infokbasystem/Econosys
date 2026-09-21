@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
+using Econosys.Api.Common;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
@@ -98,7 +99,7 @@ namespace Econosys.Api.Controllers
                 IsFSC = request.IsFSC,
             };
 
-            entity.CreatedAt ??= SwedishTime.Now;
+            entity.CreatedAt = SwedishTime.Now;
             entity.CreatedBy = legacyUser.Id;
             entity.EditedAt = SwedishTime.Now;
             entity.EditedBy = legacyUser.Id;
@@ -170,10 +171,6 @@ namespace Econosys.Api.Controllers
             entity.SelectedInquiryRecipientId = request.SelectedInquiryRecipientId;
             entity.AnswerDueDate = request.AnswerDueDate;
             entity.HideCustomerInfoOnPrint = request.HideCustomerInfoOnPrint;
-            entity.CreatedAt = request.CreatedAt;
-            entity.EditedAt = request.EditedAt;
-            entity.CreatedBy = request.CreatedBy;
-            entity.EditedBy = request.EditedBy;
             entity.CustomerDeliveryAddressId = request.CustomerDeliveryAddressId;
             entity.IsFSC = request.IsFSC;
 

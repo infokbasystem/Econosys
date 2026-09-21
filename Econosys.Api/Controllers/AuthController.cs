@@ -71,6 +71,12 @@ namespace Econosys.Api.Controllers
 
             var result = await _authService.LoginAsync(request);
 
+            if (result.IsDatabaseUnavailable)
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = result.Message, isDatabaseUnavailable = true });
+
+            if (result.IsLockedOut)
+                return StatusCode(StatusCodes.Status423Locked, new { message = result.Message, isLockedOut = true });
+
             if (!result.Success)
                 return Unauthorized(new { message = "Vänligen kontrollera dina inloggningsuppgifter och försök igen." });
 

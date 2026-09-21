@@ -30,12 +30,54 @@ const MONTHS = ["Januari","Februari","Mars","April","Maj","Juni","Juli","Augusti
 const DAYS   = ["Sö","Må","Ti","On","To","Fr","Lö"];
 
 const sameDay = (a,b) => a && b && a.toDateString() === b.toDateString();
+const sameMonthYear = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
 const between = (d,s,e) => {
   if (!d||!s||!e) return false;
   return d > new Date(Math.min(s,e)) && d < new Date(Math.max(s,e));
 };
-const fmt = d => d ? `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}` : null;
-const fmtShort = d => d ? `${MONTHS[d.getMonth()]} ${d.getDate()}` : null;
+const fmt = d => {
+  if (!d) return null;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(d).toLowerCase();
+};
+const fmtShort = fmt;
+
+function addMonths(year, month, delta) {
+  const date = new Date(year, month + delta, 1);
+  return { year: date.getFullYear(), month: date.getMonth() };
+}
+
+function getCalendarAnchors(start, end, fallbackYear, fallbackMonth) {
+  if (start && end && !sameMonthYear(start, end)) {
+    return {
+      leftYear: start.getFullYear(),
+      leftMonth: start.getMonth(),
+      rightYear: end.getFullYear(),
+      rightMonth: end.getMonth(),
+    };
+  }
+
+  if (start) {
+    const next = addMonths(start.getFullYear(), start.getMonth(), 1);
+    return {
+      leftYear: start.getFullYear(),
+      leftMonth: start.getMonth(),
+      rightYear: next.year,
+      rightMonth: next.month,
+    };
+  }
+
+  const next = addMonths(fallbackYear, fallbackMonth, 1);
+  return {
+    leftYear: fallbackYear,
+    leftMonth: fallbackMonth,
+    rightYear: next.year,
+    rightMonth: next.month,
+  };
+}
 
 /* ─── Month grid ─── */
 function MonthGrid({ year, month, startDate, endDate, hoverDate, onDay, onHover }) {
@@ -120,26 +162,58 @@ const CalIcon = () => (
  *                         Default: all. Pass [] to hide sidebar.
  *   onApply   {fn}        called with { startDate, endDate }
  *   placeholder {string}  trigger button label when nothing selected
+ *   widthClassName {string} Tailwind width utility for the component, e.g. "w-full"
  */
 export default function DateRangePicker({
   presets = DEFAULT_PRESET_KEYS,
   onApply,
   placeholder = "Select date range",
   initialPresetKey = null,
+  initialStartDate = null,
+  initialEndDate = null,
+  triggerClassName = "",
+  openTriggerClassName = "",
+  closedTriggerClassName = "",
+  widthClassName = "",
+  triggerRadius = "sm",
+  showClearPreset = false,
 }) {
   const today = new Date(); today.setHours(0,0,0,0);
+  const fallbackLeftMonth = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
+  const parseInitialDate = value => {
+    if (!value) return null;
+    const parsed = value instanceof Date ? new Date(value) : new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    parsed.setHours(0, 0, 0, 0);
+    return parsed;
+  };
+  const initialStart = parseInitialDate(initialStartDate);
+  const initialEnd = parseInitialDate(initialEndDate);
+  const initialRange = initialStart && initialEnd
+    ? { start: initialStart, end: initialEnd }
+    : initialPresetKey
+      ? getPresetRange(initialPresetKey)
+      : null;
+  const initialAnchors = getCalendarAnchors(
+    initialRange?.start ?? null,
+    initialRange?.end ?? null,
+    today.getFullYear(),
+    fallbackLeftMonth
+  );
 
   const [open,        setOpen]        = useState(false);
-  const [leftYear,    setLeftYear]    = useState(today.getFullYear());
-  const [leftMonth,   setLeftMonth]   = useState(today.getMonth() === 0 ? 11 : today.getMonth() - 1);
-  const [startDate,   setStartDate]   = useState(null);
-  const [endDate,     setEndDate]     = useState(null);
+  const [leftYear,    setLeftYear]    = useState(initialAnchors.leftYear);
+  const [leftMonth,   setLeftMonth]   = useState(initialAnchors.leftMonth);
+  const [rightYear,   setRightYear]   = useState(initialAnchors.rightYear);
+  const [rightMonth,  setRightMonth]  = useState(initialAnchors.rightMonth);
+  const [startDate,   setStartDate]   = useState(initialRange?.start ?? null);
+  const [endDate,     setEndDate]     = useState(initialRange?.end ?? null);
   const [hoverDate,   setHoverDate]   = useState(null);
   const [selecting,   setSelecting]   = useState(false);
-  const [activeKey,   setActiveKey]   = useState(null);
+  const [activeKey,   setActiveKey]   = useState(initialStart && initialEnd ? null : initialPresetKey);
 
   /* committed values shown in trigger */
-  const [committed, setCommitted] = useState({ start: null, end: null });
+  const [committed, setCommitted] = useState({ start: initialRange?.start ?? null, end: initialRange?.end ?? null });
 
   const findMatchingPresetKey = useCallback((start, end) => {
     if (!start || !end) return null;
@@ -152,24 +226,7 @@ export default function DateRangePicker({
     return null;
   }, [presets]);
 
-  useEffect(() => {
-    if (!initialPresetKey) return;
-    const initialRange = getPresetRange(initialPresetKey);
-    if (!initialRange) return;
-
-    setStartDate(initialRange.start);
-    setEndDate(initialRange.end);
-    setCommitted({ start: initialRange.start, end: initialRange.end });
-    setActiveKey(initialPresetKey);
-    setSelecting(false);
-    setHoverDate(null);
-    setLeftMonth(initialRange.start.getMonth());
-    setLeftYear(initialRange.start.getFullYear());
-  }, [initialPresetKey]);
-
   const wrapRef = useRef(null);
-  const rightMonth = leftMonth === 11 ? 0 : leftMonth + 1;
-  const rightYear  = leftMonth === 11 ? leftYear + 1 : leftYear;
 
   /* close on outside click */
   useEffect(() => {
@@ -179,12 +236,20 @@ export default function DateRangePicker({
   }, []);
 
   const goLeft = () => {
-    if (leftMonth === 0) { setLeftMonth(11); setLeftYear(y => y-1); }
-    else setLeftMonth(m => m-1);
+    const prevLeft = addMonths(leftYear, leftMonth, -1);
+    const prevRight = addMonths(rightYear, rightMonth, -1);
+    setLeftYear(prevLeft.year);
+    setLeftMonth(prevLeft.month);
+    setRightYear(prevRight.year);
+    setRightMonth(prevRight.month);
   };
   const goRight = () => {
-    if (leftMonth === 11) { setLeftMonth(0); setLeftYear(y => y+1); }
-    else setLeftMonth(m => m+1);
+    const nextLeft = addMonths(leftYear, leftMonth, 1);
+    const nextRight = addMonths(rightYear, rightMonth, 1);
+    setLeftYear(nextLeft.year);
+    setLeftMonth(nextLeft.month);
+    setRightYear(nextRight.year);
+    setRightMonth(nextRight.month);
   };
 
   const handleDay = useCallback(date => {
@@ -204,7 +269,11 @@ export default function DateRangePicker({
     const r = getPresetRange(key); if (!r) return;
     setStartDate(r.start); setEndDate(r.end);
     setActiveKey(key); setSelecting(false); setHoverDate(null);
-    setLeftMonth(r.start.getMonth()); setLeftYear(r.start.getFullYear());
+    const anchors = getCalendarAnchors(r.start, r.end, leftYear, leftMonth);
+    setLeftMonth(anchors.leftMonth);
+    setLeftYear(anchors.leftYear);
+    setRightMonth(anchors.rightMonth);
+    setRightYear(anchors.rightYear);
     setCommitted({ start: r.start, end: r.end });
     onApply?.({ startDate: r.start, endDate: r.end });
     setOpen(false);
@@ -218,9 +287,23 @@ export default function DateRangePicker({
   };
 
   const handleClear = e => {
+    e.preventDefault();
     e.stopPropagation();
     setStartDate(null); setEndDate(null); setCommitted({ start: null, end: null });
     setActiveKey(null); setSelecting(false);
+    setHoverDate(null);
+    onApply?.({ startDate: null, endDate: null });
+  };
+
+  const handleClearPreset = () => {
+    setStartDate(null);
+    setEndDate(null);
+    setCommitted({ start: null, end: null });
+    setActiveKey(null);
+    setSelecting(false);
+    setHoverDate(null);
+    onApply?.({ startDate: null, endDate: null });
+    setOpen(false);
   };
 
   const hasCommitted = committed.start && committed.end;
@@ -231,32 +314,42 @@ export default function DateRangePicker({
     setStartDate(committed.start); setEndDate(committed.end);
     setSelecting(false); setHoverDate(null);
     setActiveKey(findMatchingPresetKey(committed.start, committed.end));
-    if (committed.start) {
-      setLeftMonth(committed.start.getMonth());
-      setLeftYear(committed.start.getFullYear());
-    }
+    const anchors = getCalendarAnchors(committed.start, committed.end, leftYear, leftMonth);
+    setLeftMonth(anchors.leftMonth);
+    setLeftYear(anchors.leftYear);
+    setRightMonth(anchors.rightMonth);
+    setRightYear(anchors.rightYear);
     setOpen(v => !v);
   };
 
   const showSidebar = presets.length > 0;
+  const triggerRadiusClass = triggerRadius === "full" ? "rounded-full" : "rounded-sm";
+  const triggerWidthClass = widthClassName ? "w-full" : "w-60";
 
   return (
     <div
       ref={wrapRef}
-      className="relative inline-block"
+      className={[
+        "relative z-20 inline-block",
+        widthClassName,
+      ].join(" ")}
     >
       {/* ── Trigger button ── */}
       <button
         onClick={handleOpen}
         className={[
-          "flex items-center gap-2 px-2.5 border border-gray-300 rounded-sm px-2 py-1 w-60 text-xs transition-all duration-150 outline-none bg-white",
+          "flex items-center gap-2 px-2.5 border border-gray-300 px-2 py-1 text-xs transition-all duration-150 outline-none bg-white",
+          triggerWidthClass,
+          triggerRadiusClass,
           open
             ? "border-gray-400 ring-2 ring-gray-200"
             : "border-gray-300 hover:border-gray-400",
+          open ? openTriggerClassName : closedTriggerClassName,
+          triggerClassName,
         ].join(" ")}
       >
         <span className="text-gray-500 shrink-0"><CalIcon /></span>
-        <span className={hasCommitted ? "text-gray-800" : "text-gray-400"}>
+        <span className={["mt-[2px]", hasCommitted ? "text-gray-800" : "text-gray-700"].join(" ")}>
           {hasCommitted
             ? `${fmtShort(committed.start)} – ${fmtShort(committed.end)}`
             : placeholder}
@@ -264,7 +357,7 @@ export default function DateRangePicker({
         {hasCommitted && (
           <span
             onClick={handleClear}
-            className="ml-auto flex items-center justify-center w-4 h-4 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+            className="mt-[0px] ml-auto flex items-center justify-center w-4 h-4 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
           >
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </span>
@@ -275,7 +368,7 @@ export default function DateRangePicker({
       {open && (
         <div
           className={[
-            "absolute z-50 top-[calc(100%+6px)] left-0",
+            "absolute z-[60] top-[calc(100%+6px)] left-0",
             "bg-white rounded-2xl shadow-2xl border border-gray-100",
             "overflow-hidden",
             // animate in
@@ -297,6 +390,14 @@ export default function DateRangePicker({
             {/* Sidebar */}
             {showSidebar && (
               <div className="w-44 shrink-0 border-r border-gray-100 py-3 flex flex-col gap-0.5 mt-10">
+                {showClearPreset && (
+                  <button
+                    onClick={handleClearPreset}
+                    className="mx-2 mb-2 px-3 py-2 rounded-full text-xs text-center transition-colors duration-100 cursor-pointer border text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                  >
+                    Rensa datum
+                  </button>
+                )}
                 {presets.map(key => {
                   const label = ALL_PRESETS[key]; if (!label) return null;
                   const active = activeKey === key;

@@ -1,57 +1,68 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  AreaChart, Area, BarChart, Bar,
+  BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer,
+  ResponsiveContainer,
 } from "recharts";
+import { ArrowLeftCircle, ArrowRightCircle } from "lucide-react";
+import Skeleton from "react-loading-skeleton";
+import "react-loading-skeleton/dist/skeleton.css";
 
+import apiClient from "../../config/apiClient";
+import { getSharedRequest } from "../../helpers/sharedRequest";
+import { formatDateShort } from "../../helpers/dateUtils";
 
-const monthlyData = [
-  { month: "Jan", y2024: 42000, y2023: 35000, y2022: 28000, y2021: 22000, y2020: 18000 },
-  { month: "Feb", y2024: 58000, y2023: 41000, y2022: 33000, y2021: 27000, y2020: 21000 },
-  { month: "Mar", y2024: 51000, y2023: 47000, y2022: 38000, y2021: 31000, y2020: 25000 },
-  { month: "Apr", y2024: 74000, y2023: 52000, y2022: 44000, y2021: 36000, y2020: 29000 },
-  { month: "May", y2024: 63000, y2023: 59000, y2022: 50000, y2021: 41000, y2020: 33000 },
-  { month: "Jun", y2024: 89000, y2023: 64000, y2022: 57000, y2021: 46000, y2020: 38000 },
-  { month: "Jul", y2024: 71000, y2023: 55000, y2022: 48000, y2021: 39000, y2020: 31000 },
-  { month: "Aug", y2024: 95000, y2023: 68000, y2022: 61000, y2021: 50000, y2020: 42000 },
-  { month: "Sep", y2024: 82000, y2023: 73000, y2022: 65000, y2021: 53000, y2020: 45000 },
-  { month: "Oct", y2024: 108000, y2023: 79000, y2022: 70000, y2021: 58000, y2020: 49000 },
-  { month: "Nov", y2024: 97000, y2023: 85000, y2022: 76000, y2021: 63000, y2020: 54000 },
-  { month: "Dec", y2024: 0, y2023: 91000, y2022: 82000, y2021: 68000, y2020: 58000 },
+const TABLE_PAGE_SIZE = 10;
+const DEFAULT_SELECTED_YEARS = 5;
+const TABLE_FONT_STYLE = { fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" };
+
+const UNINVOICED_COLUMNS = [
+  { key: "customerOrderNr", label: "Order", align: "left", width: "14%" },
+  { key: "customerName", label: "Kund", align: "left", width: "32%" },
+  { key: "quantity", label: "Antal", align: "right", width: "12%" },
+  { key: "value", label: "Värde", align: "right", width: "22%" },
+  { key: "deliveryDate", label: "Datum", align: "right", width: "20%" },
 ];
 
-const YEARS = [
-  { key: "y2024", label: "2024", color: "#3b82f6" },
-  { key: "y2023", label: "2023", color: "#10b981" },
-  { key: "y2022", label: "2022", color: "#f59e0b" },
-  { key: "y2021", label: "2021", color: "#8b5cf6" },
-  { key: "y2020", label: "2020", color: "#94a3b8" },
+const UNBOOKED_COLUMNS = [
+  { key: "invoiceNumber", label: "Faktura", align: "left", width: "13%" },
+  { key: "customerName", label: "Kund", align: "left", width: "30%" },
+  { key: "amount", label: "Belopp", align: "right", width: "20%" },
+  { key: "invoiceDate", label: "Fakturadatum", align: "right", width: "19%" },
+  { key: "dueDate", label: "Förfaller", align: "right", width: "18%" },
 ];
 
-const pendingOrders = [
-  { id: "ORD-2024-0891", client: "Nordström & Co", items: 4, value: 18400, date: "2024-11-28" },
-  { id: "ORD-2024-0892", client: "Bergström Tech", items: 2, value: 7200, date: "2024-11-29" },
-  { id: "ORD-2024-0893", client: "Lindqvist AB", items: 7, value: 31500, date: "2024-12-01" },
-  { id: "ORD-2024-0894", client: "Svensson Group", items: 1, value: 4900, date: "2024-12-02" },
-  { id: "ORD-2024-0895", client: "Eriksson & Partners", items: 3, value: 12600, date: "2024-12-03" },
-];
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "Maj", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"];
+const YEAR_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#94a3b8", "#ec4899", "#14b8a6", "#ef4444"];
 
-const pendingAccounting = [
-  { id: "INV-2024-1142", client: "Mattsson Industries", amount: 22400, due: "2024-12-05" },
-  { id: "INV-2024-1148", client: "Johansson Retail", amount: 8750, due: "2024-12-10" },
-  { id: "INV-2024-1151", client: "Persson Logistics", amount: 34100, due: "2024-12-14" },
-  { id: "INV-2024-1156", client: "Gustafsson & Sons", amount: 15200, due: "2024-12-18" },
-  { id: "INV-2024-1161", client: "Karlsson Media", amount: 6300, due: "2024-12-22" },
-];
+const EMPTY_PAGE = {
+  items: [],
+  pageNumber: 1,
+  totalPages: 0,
+  totalCount: 0,
+  hasPreviousPage: false,
+  hasNextPage: false,
+  totals: null,
+};
 
 const fmt = (n) =>
-  new Intl.NumberFormat("sv-SE", { style: "currency", currency: "SEK", maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat("sv-SE", { style: "currency", currency: "SEK", maximumFractionDigits: 0 }).format(Number(n) || 0);
 
-const totalPendingOrders = pendingOrders.reduce((s, o) => s + o.value, 0);
-const totalPendingAccounting = pendingAccounting.reduce((s, i) => s + i.amount, 0);
-const invoicedNotDue = 142800;
-const TODAY = new Date("2024-12-04");
+const formatAxisTick = (value) => {
+  const amount = Number(value) || 0;
+  if (Math.abs(amount) >= 1000000) return `${Math.round(amount / 100000) / 10}M`;
+  return `${Math.round(amount / 1000)}k`;
+};
+
+const toPageState = (data) => ({
+  items: data?.items ?? [],
+  pageNumber: data?.pageNumber ?? 1,
+  totalPages: data?.totalPages ?? 0,
+  totalCount: data?.totalCount ?? 0,
+  hasPreviousPage: Boolean(data?.hasPreviousPage),
+  hasNextPage: Boolean(data?.hasNextPage),
+  totals: data?.totals?.values ?? null,
+});
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -65,18 +76,209 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
-const KpiCard = ({ label, value, sub, accentColor, bgColor, textColor }) => (
-  <div className="flex-none w-60 relative p-3 overflow-hidden border" style={{ background: bgColor, borderColor: accentColor + "33" }}>
-    <div className="absolute top-0 left-0 right-0 h-0.5" style={{ background: `${accentColor}` }} />
-    <p className="uppercase tracking-widest mb-1 font-semibold text-tiny" style={{ color: accentColor }}>{label}</p>
-    <p className="font-bold text-lg leading-tight" style={{ color: textColor }}>{value}</p>
-    <p className="mt-0.5 text-slate-400 text-tiny" style={{}}>{sub}</p>
-  </div>
-);
+const KPI_VARIANTS = {
+  emerald: {
+    card: "bg-lime-50 border-lime-500/20",
+    accent: "bg-lime-500",
+    label: "text-lime-500",
+    value: "text-lime-800",
+  },
+  amber: {
+    card: "bg-sky-50 border-sky-500/20",
+    accent: "bg-sky-500",
+    label: "text-sky-500",
+    value: "text-sky-800",
+  },
+  rose: {
+    card: "bg-rose-50 border-rose-500/20",
+    accent: "bg-rose-500",
+    label: "text-rose-500",
+    value: "text-rose-800",
+  },
+};
+
+const KpiCard = ({ label, value, sub, variant }) => {
+  const colors = KPI_VARIANTS[variant] ?? KPI_VARIANTS.emerald;
+
+  return (
+    <div className={`flex-none w-60 relative py-3 px-5 overflow-hidden border shadow-lg ${colors.card}`}>
+      <div className={`absolute top-0 left-0 right-0 h-0.5 ${colors.accent}`} />
+      <p className={`mt-1 uppercase tracking-widest mb-1 font-semibold text-tiny ${colors.label}`}>{label}</p>
+      <p className={`mt-2 font-bold text-lg leading-tight ${colors.value}`}>{value}</p>
+      <p className="mt-1.5 text-slate-700 text-tiny">{sub}</p>
+    </div>
+  );
+};
+
+const Pager = ({ page, loading, onPageChange }) => {
+  if (!page.totalCount) return null;
+
+  return (
+    <div className="flex items-center gap-4 text-xs text-gray-600" style={TABLE_FONT_STYLE}>
+      <span>Rader <strong>{page.totalCount}</strong></span>
+      <span>Sida {page.pageNumber} av {Math.max(1, page.totalPages)}</span>
+      <div className="flex gap-1">
+        <button
+          type="button"
+          onClick={() => onPageChange(page.pageNumber - 1)}
+          disabled={loading || !page.hasPreviousPage}
+          className="disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <ArrowLeftCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onPageChange(page.pageNumber + 1)}
+          disabled={loading || !page.hasNextPage}
+          className="disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <ArrowRightCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
+        </button>
+      </div>
+    </div>
+  );
+};
 
 
 const FinanceOverview = () => {
-const [activeYears, setActiveYears] = useState(new Set(["y2024", "y2023", "y2022", "y2021", "y2020"]));
+  const [overview, setOverview] = useState(null);
+  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [activeYears, setActiveYears] = useState(() => new Set());
+
+  const [uninvoiced, setUninvoiced] = useState(EMPTY_PAGE);
+  const [uninvoicedLoading, setUninvoicedLoading] = useState(true);
+  const [uninvoicedPage, setUninvoicedPage] = useState(1);
+
+  const [unbooked, setUnbooked] = useState(EMPTY_PAGE);
+  const [unbookedLoading, setUnbookedLoading] = useState(true);
+  const [unbookedPage, setUnbookedPage] = useState(1);
+
+  const didSelectDefaultYears = useRef(false);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const load = async () => {
+      setOverviewLoading(true);
+
+      try {
+        const response = await getSharedRequest("finance:overview", () => apiClient.get("/finance/overview"));
+        if (!isActive) return;
+        setOverview(response?.data ?? null);
+      } catch (error) {
+        console.error("Failed to load finance overview:", error);
+        if (isActive) setOverview(null);
+      } finally {
+        if (isActive) setOverviewLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const load = async () => {
+      setUninvoicedLoading(true);
+
+      try {
+        const requestBody = { pageNumber: uninvoicedPage, pageSize: TABLE_PAGE_SIZE };
+        const response = await getSharedRequest(
+          `finance:uninvoiced-deliveries:${uninvoicedPage}`,
+          () => apiClient.post("/finance/uninvoiced-deliveries", requestBody)
+        );
+        if (!isActive) return;
+        setUninvoiced(toPageState(response?.data));
+      } catch (error) {
+        console.error("Failed to load uninvoiced deliveries:", error);
+        if (isActive) setUninvoiced(EMPTY_PAGE);
+      } finally {
+        if (isActive) setUninvoicedLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      isActive = false;
+    };
+  }, [uninvoicedPage]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const load = async () => {
+      setUnbookedLoading(true);
+
+      try {
+        const requestBody = { pageNumber: unbookedPage, pageSize: TABLE_PAGE_SIZE };
+        const response = await getSharedRequest(
+          `finance:unbooked-invoices:${unbookedPage}`,
+          () => apiClient.post("/finance/unbooked-invoices", requestBody)
+        );
+        if (!isActive) return;
+        setUnbooked(toPageState(response?.data));
+      } catch (error) {
+        console.error("Failed to load unbooked invoices:", error);
+        if (isActive) setUnbooked(EMPTY_PAGE);
+      } finally {
+        if (isActive) setUnbookedLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      isActive = false;
+    };
+  }, [unbookedPage]);
+
+  // The API returns years newest first, so the palette index doubles as a recency rank.
+  const years = useMemo(() => {
+    return (overview?.years ?? []).map((year, index) => ({
+      key: `y${year}`,
+      year,
+      label: String(year),
+      color: YEAR_COLORS[index % YEAR_COLORS.length],
+      opacity: Math.max(0.35, 1 - index * 0.13),
+    }));
+  }, [overview]);
+
+  // Chart and toggles render oldest-to-newest; `years` stays newest-first for the default selection.
+  const displayYears = useMemo(() => [...years].reverse(), [years]);
+
+  useEffect(() => {
+    if (didSelectDefaultYears.current || years.length === 0) return;
+    didSelectDefaultYears.current = true;
+    setActiveYears(new Set(years.slice(0, DEFAULT_SELECTED_YEARS).map((entry) => entry.key)));
+  }, [years]);
+
+  const monthlyData = useMemo(() => {
+    const rows = MONTH_LABELS.map((month) => ({ month }));
+
+    (overview?.monthly ?? []).forEach((point) => {
+      const row = rows[point.month - 1];
+      if (row) {
+        row[`y${point.year}`] = Number(point.amount) || 0;
+      }
+    });
+
+    return rows;
+  }, [overview]);
+
+  const chartTitle = useMemo(() => {
+    const selected = years.filter((entry) => activeYears.has(entry.key)).map((entry) => entry.year);
+    if (selected.length === 0) return "fakturering per månad";
+
+    const min = Math.min(...selected);
+    const max = Math.max(...selected);
+    return `fakturering per månad (${min === max ? min : `${min}-${max}`})`;
+  }, [years, activeYears]);
 
   const toggleYear = (key) => {
     setActiveYears((prev) => {
@@ -87,62 +289,56 @@ const [activeYears, setActiveYears] = useState(new Set(["y2024", "y2023", "y2022
     });
   };
 
+  const ytdChange = overview?.ytdChangePercent;
+  const ytdSub = ytdChange === null || ytdChange === undefined
+    ? "Ingen jämförelse mot föregående år"
+    : `${ytdChange > 0 ? "+" : ""}${ytdChange}% vs föregående år`;
 
+  const uninvoicedTotal = uninvoiced.totals?.totalValue ?? overview?.notInvoicedTotal ?? 0;
+  const uninvoicedCount = uninvoiced.totals?.totalDeliveries ?? overview?.notInvoicedCount ?? 0;
+  const unbookedTotal = unbooked.totals?.totalAmount ?? overview?.notBookedTotal ?? 0;
+  const unbookedCount = unbooked.totals?.totalInvoices ?? overview?.notBookedCount ?? 0;
 
   return (
-    <div className="flex flex-col h-full mt-2 p-2 gap-2">
+    <div className="flex flex-col h-full mt-2 p-5 gap-2">
 
       {/* ── KPI Row ── */}
       <div className="flex gap-10 justify-center">
         <KpiCard
           label="Fakturerat YTD"
-          value="830 000 SEK"
-          sub="+22% vs föregående år"
-          accentColor="#10b981"
-          bgColor="#f0fdf4"
-          textColor="#065f46"
+          value={overviewLoading ? "—" : fmt(overview?.invoicedYtd)}
+          sub={overviewLoading ? "Laddar…" : ytdSub}
+          variant="emerald"
         />
         <KpiCard
           label="Ej fakturerade"
-          value={fmt(totalPendingOrders)}
-          sub={`${pendingOrders.length} leveranser att fakturera`}
-          accentColor="#f59e0b"
-          bgColor="#fffbeb"
-          textColor="#92400e"
-        />
-        <KpiCard
-          label="Skickat, ännu ej förfallet"
-          value={fmt(invoicedNotDue)}
-          sub="Väntar på betalning"
-          accentColor="#3b82f6"
-          bgColor="#eff6ff"
-          textColor="#1e3a8a"
+          value={fmt(uninvoicedTotal)}
+          sub={`${uninvoicedCount} leveranser att fakturera`}
+          variant="amber"
         />
         <KpiCard
           label="Ännu ej bokförda fakturor"
-          value={fmt(totalPendingAccounting)}
-          sub={`${pendingAccounting.length} fakturor att bokföra`}
-          accentColor="#f43f5e"
-          bgColor="#fff1f2"
-          textColor="#9f1239"
+          value={fmt(unbookedTotal)}
+          sub={`${unbookedCount} fakturor att bokföra`}
+          variant="rose"
         />
       </div>
 
       {/* ── Chart ── */}
-      <div className="mx-20 mt-5 bg-slate-50 border border-slate-200 px-7 py-5 shadow-sm">
+      <div className="mx-20 mt-8 bg-stone-200/50 border border-slate-200 px-7 py-5">
         <div className="flex items-center justify-between mb-2">
-          <p className="text-tiny text-slate-400 uppercase tracking-widest font-semibold" style={{  }}>
-            fakturering per månad (2020-2024)
+          <p className="text-tiny text-slate-700 uppercase tracking-widest font-semibold">
+            {chartTitle}
           </p>
           {/* Year toggles */}
-          <div className="flex gap-1.5 items-center">
-            {YEARS.map(({ key, label, color }) => {
+          <div className="flex gap-1.5 items-center flex-wrap justify-end">
+            {displayYears.map(({ key, label, color }) => {
               const active = activeYears.has(key);
               return (
                 <button
                   key={key}
                   onClick={() => toggleYear(key)}
-                  className="flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all"
+                  className="flex items-center gap-1 px-2 py-1 rounded-full border transition-all"
                   style={{
                     fontSize: 9,
                     borderColor: active ? color : "#e2e8f0",
@@ -161,118 +357,146 @@ const [activeYears, setActiveYears] = useState(new Set(["y2024", "y2023", "y2022
             })}
           </div>
         </div>
-        <ResponsiveContainer width="100%" height={255}>
-          <BarChart data={monthlyData} margin={{ top: 4, right: 8, left: -22, bottom: 0 }} barGap={1} barCategoryGap="20%">
-            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-            <XAxis dataKey="month" tick={{ fill: "#94a3b8", fontSize: 9 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: "#94a3b8", fontSize: 9 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v / 1000}k`} />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: "#f8fafc" }} />
-            {YEARS.map(({ key, label, color }) =>
-              activeYears.has(key) ? (
-                <Bar key={key} dataKey={key} name={label} fill={color} radius={[2, 2, 0, 0]}
-                  opacity={key === "y2024" ? 1 : key === "y2023" ? 0.75 : key === "y2022" ? 0.6 : key === "y2021" ? 0.5 : 0.35}
-                />
-              ) : null
-            )}
-          </BarChart>
-        </ResponsiveContainer>
+        {overviewLoading ? (
+          <Skeleton height={300} />
+        ) : (
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={monthlyData} margin={{ top: 4, right: 8, left: 4, bottom: 0 }} barGap={1} barCategoryGap="20%">
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: "#94a3b8", fontSize: 9 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#94a3b8", fontSize: 9 }} axisLine={false} tickLine={false} width={44} tickFormatter={formatAxisTick} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: "#f8fafc" }} />
+              {displayYears.map(({ key, label, color, opacity }) =>
+                activeYears.has(key) ? (
+                  <Bar key={key} dataKey={key} name={label} fill={color} radius={[2, 2, 0, 0]} opacity={opacity} />
+                ) : null
+              )}
+            </BarChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       {/* ── Tables ── */}
-      <div className="mx-20 mt-5 grid grid-cols-2 gap-10">
+      <div className="mx-20 mt-5 grid grid-cols-2 gap-15">
 
-        {/* Orders awaiting invoice */}
-        <div className="bg-slate-50 border border-slate-200 px-7 py-5 shadow-sm">
-          <p className="text-tiny text-slate-400 uppercase tracking-widest font-semibold mb-2" style={{ }}>
-            Leveranser som ännu inte fakturerats
-          </p>
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="text-slate-400 uppercase" style={{ fontSize: 9, letterSpacing: "0.06em" }}>
-                <th className="text-left pb-1.5 font-medium">Order</th>
-                <th className="text-left pb-1.5 font-medium pl-1">Client</th>
-                <th className="text-right pb-1.5 font-medium">Items</th>
-                <th className="text-right pb-1.5 font-medium">Value</th>
-                <th className="text-right pb-1.5 font-medium">Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pendingOrders.map((o, i) => (
-                <tr
-                  key={o.id}
-                  className={`hover:bg-slate-50 transition-colors cursor-default ${i % 2 !== 0 ? "bg-slate-50/60" : ""}`}
-                >
-                  <td className="py-1 text-blue-500" style={{ fontSize: 10, fontFamily: "monospace" }}>{o.id}</td>
-                  <td className="py-1 pl-1 text-slate-600">{o.client}</td>
-                  <td className="py-1 text-slate-400 text-right">{o.items}</td>
-                  <td className="py-1 text-amber-600 text-right font-medium">{fmt(o.value)}</td>
-                  <td className="py-1 text-slate-400 text-right">{o.date.slice(5)}</td>
+        {/* Deliveries awaiting invoice */}
+        <div className="px-7 py-5">
+          <div className="flex items-center justify-between mb-2">
+            <p className="pl-2 text-tiny text-slate-700 uppercase tracking-widest font-semibold">
+              Leveranser som ännu inte fakturerats
+            </p>
+            <Pager page={uninvoiced} loading={uninvoicedLoading} onPageChange={setUninvoicedPage} />
+          </div>
+          <div className="border-t border-gray-300 py-1 mt-0 overflow-auto">
+            <table className="table-fixed w-full border-collapse text-xs" style={TABLE_FONT_STYLE}>
+              <colgroup>
+                {UNINVOICED_COLUMNS.map((column) => (
+                  <col key={column.key} style={{ width: column.width }} />
+                ))}
+              </colgroup>
+              <thead>
+                <tr className="text-tiny text-gray-500">
+                  {UNINVOICED_COLUMNS.map((column) => (
+                    <th
+                      key={column.key}
+                      className={`px-2 pt-1 pb-2 text-tiny font-medium text-gray-500 ${column.align === "right" ? "text-right" : "text-left"}`}
+                    >
+                      {column.label}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t border-slate-100">
-                <td colSpan={3} className="pt-1.5 text-slate-400">Total</td>
-                <td colSpan={2} className="pt-1.5 text-amber-600 text-right font-bold" style={{ fontFamily: "'Syne',sans-serif", fontSize: 13 }}>
-                  {fmt(totalPendingOrders)}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+              </thead>
+              <tbody className={!uninvoicedLoading && uninvoiced.items.length > 0 ? "bg-white" : "bg-transparent"}>
+                {uninvoicedLoading ? (
+                  Array.from({ length: TABLE_PAGE_SIZE }).map((_, index) => (
+                    <tr key={index}>
+                      <td colSpan={UNINVOICED_COLUMNS.length} className="px-2 py-1"><Skeleton height={16} /></td>
+                    </tr>
+                  ))
+                ) : uninvoiced.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={UNINVOICED_COLUMNS.length} className="px-4 py-8 text-center text-gray-400">Inga leveranser att fakturera.</td>
+                  </tr>
+                ) : (
+                  uninvoiced.items.map((row) => (
+                    <tr key={row.deliveryId} className="h-6 border-b border-gray-100 hover:bg-lime-200/70">
+                      <td className="truncate px-2 py-1 text-gray-800">{row.customerOrderNr ?? "-"}</td>
+                      <td className="truncate px-2 py-1 text-gray-800">{row.customerName ?? "-"}</td>
+                      <td className="truncate px-2 py-1 text-right text-gray-800">{row.quantity ?? 0}</td>
+                      <td className="truncate px-2 py-1 text-right text-gray-800">{fmt(row.value)}</td>
+                      <td className="truncate px-2 py-1 text-right text-gray-800">{formatDateShort(row.deliveryDate)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-gray-300 text-gray-800">
+                  <td colSpan={3} className="px-2 py-1 text-gray-500">Totalt</td>
+                  <td colSpan={2} className="px-2 py-1 text-right font-semibold">{fmt(uninvoicedTotal)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
 
         {/* Invoices pending accounting */}
-        <div className="bg-slate-50 border border-slate-200 px-7 py-5 shadow-sm">
-          <p className="text-tiny text-slate-400 uppercase tracking-widest font-semibold mb-2" style={{ }}>
-            Fakturor som ännu inte bokförts
-          </p>
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="text-slate-400 uppercase" style={{ fontSize: 9, letterSpacing: "0.06em" }}>
-                <th className="text-left pb-1.5 font-medium">Invoice</th>
-                <th className="text-left pb-1.5 font-medium pl-1">Client</th>
-                <th className="text-right pb-1.5 font-medium">Amount</th>
-                <th className="text-right pb-1.5 font-medium">Due</th>
-                <th className="text-right pb-1.5 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pendingAccounting.map((inv, i) => {
-                const daysLeft = Math.round((new Date(inv.due) - TODAY) / 86400000);
-                const urgent = daysLeft <= 7;
-                return (
-                  <tr
-                    key={inv.id}
-                    className={`hover:bg-slate-50 transition-colors cursor-default ${i % 2 !== 0 ? "bg-slate-50/60" : ""}`}
-                  >
-                    <td className="py-1 text-blue-500" style={{ fontSize: 10, fontFamily: "monospace" }}>{inv.id}</td>
-                    <td className="py-1 pl-1 text-slate-600">{inv.client}</td>
-                    <td className="py-1 text-rose-500 text-right font-medium">{fmt(inv.amount)}</td>
-                    <td className="py-1 text-slate-400 text-right">{inv.due.slice(5)}</td>
-                    <td className="py-1 text-right">
-                      <span
-                        className={`inline-block px-1.5 py-0.5 rounded font-medium ${urgent
-                            ? "bg-rose-50 text-rose-500 ring-1 ring-rose-200"
-                            : "bg-blue-50 text-blue-500 ring-1 ring-blue-100"
-                          }`}
-                        style={{ fontSize: 9 }}
-                      >
-                        {daysLeft}d left
-                      </span>
-                    </td>
+        <div className="px-7 py-5">
+          <div className="flex items-center justify-between mb-2">
+            <p className="pl-2 text-tiny text-slate-700 uppercase tracking-widest font-semibold">
+              Fakturor som ännu inte bokförts
+            </p>
+            <Pager page={unbooked} loading={unbookedLoading} onPageChange={setUnbookedPage} />
+          </div>
+          <div className="border-t border-gray-300 py-1 mt-0 overflow-auto">
+            <table className="table-fixed w-full border-collapse text-xs" style={TABLE_FONT_STYLE}>
+              <colgroup>
+                {UNBOOKED_COLUMNS.map((column) => (
+                  <col key={column.key} style={{ width: column.width }} />
+                ))}
+              </colgroup>
+              <thead>
+                <tr className="text-tiny text-gray-500">
+                  {UNBOOKED_COLUMNS.map((column) => (
+                    <th
+                      key={column.key}
+                      className={`px-2 pt-1 pb-2 text-tiny font-medium text-gray-500 ${column.align === "right" ? "text-right" : "text-left"}`}
+                    >
+                      {column.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className={!unbookedLoading && unbooked.items.length > 0 ? "bg-white" : "bg-transparent"}>
+                {unbookedLoading ? (
+                  Array.from({ length: TABLE_PAGE_SIZE }).map((_, index) => (
+                    <tr key={index}>
+                      <td colSpan={UNBOOKED_COLUMNS.length} className="px-2 py-1"><Skeleton height={16} /></td>
+                    </tr>
+                  ))
+                ) : unbooked.items.length === 0 ? (
+                  <tr>
+                    <td colSpan={UNBOOKED_COLUMNS.length} className="px-4 py-8 text-center text-gray-400">Inga fakturor att bokföra.</td>
                   </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="border-t border-slate-100">
-                <td colSpan={2} className="pt-1.5 text-slate-400">Total to book</td>
-                <td colSpan={3} className="pt-1.5 text-rose-500 text-right font-bold" style={{ fontFamily: "'Syne',sans-serif", fontSize: 13 }}>
-                  {fmt(totalPendingAccounting)}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+                ) : (
+                  unbooked.items.map((row) => (
+                    <tr key={row.invoiceId} className="h-6 border-b border-gray-100 hover:bg-lime-200/70">
+                      <td className="truncate px-2 py-1 text-gray-800">{row.invoiceNumber ?? "-"}</td>
+                      <td className="truncate px-2 py-1 text-gray-800">{row.customerName ?? "-"}</td>
+                      <td className="truncate px-2 py-1 text-right text-gray-800">{fmt(row.amount)}</td>
+                      <td className="truncate px-2 py-1 text-right text-gray-800">{formatDateShort(row.invoiceDate)}</td>
+                      <td className="truncate px-2 py-1 text-right text-gray-800">{formatDateShort(row.dueDate)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-gray-300 text-gray-800">
+                  <td colSpan={2} className="px-2 py-1 text-gray-500">Totalt att bokföra</td>
+                  <td colSpan={3} className="px-2 py-1 text-right font-semibold">{fmt(unbookedTotal)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
       </div>
 

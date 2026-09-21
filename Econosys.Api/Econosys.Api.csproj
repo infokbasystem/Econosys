@@ -12,6 +12,7 @@
   <ItemGroup>
     <!-- ASP.NET Core and Authentication -->
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.0" />
+    <PackageReference Include="QuestPDF" Version="2026.8.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="9.0.0" />
@@ -35,6 +36,9 @@
     <!-- Telerik Reporting: needed for TRDX deserialization and PDF rendering -->
     <PackageReference Include="Telerik.Reporting" Version="19.3.25.1111" />
     <PackageReference Include="Telerik.Drawing.Skia" Version="19.3.25.1111" />
+
+    <Content Include="Assets/Econopack_Logo_Sage.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets/Box_Sage.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
 
     <Content Update="appsettings.json" CopyToPublishDirectory="Never" />
     <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />

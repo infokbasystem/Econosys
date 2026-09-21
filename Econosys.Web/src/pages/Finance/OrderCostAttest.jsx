@@ -4,8 +4,8 @@ import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, Search } fro
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
-import SwitchSelector from 'react-switch-selector';
-import DateRangePicker from '../../components/Daterangepicker';
+import SegmentedFilter from '../../components/SegmentedFilter';
+import DateRangePicker from '../../components/DaterangePicker';
 import apiClient from '../../config/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
 import { toSwedishDateBoundaryIso } from '../../helpers/dateUtils';
@@ -23,7 +23,7 @@ const modeOptions = [
         fontColor: '#f5f6fa',
     },
     {
-        label: <span className="py-[1px]">Alla</span>,
+        label: <span className="py-[1px]">Alla kostnader</span>,
         value: 'all',
         id: 2,
         index: 1,
@@ -257,128 +257,136 @@ const OrderCostAttest = () => {
     };
 
     return (
-        <div className="flex h-full flex-col px-7 py-2">
-            <div className="ml-5 text-sm text-gray-500">Attestera kostnader</div>
-
-            <div className="mt-3 ml-5 flex flex-wrap items-center gap-8">
-
-                <div className="flex items-center text-xs">
-                    <div className="w-55">
-                        <SwitchSelector
-                            options={modeOptions}
-                            initialSelectedIndex={filters.mode === 'notattested' ? 0 : 1}
-                            onChange={(value) => handleFilterChange('mode', value)}
-                            backgroundColor="#353b48"
-                            fontColor="#374151"
-                        />
-                    </div>
+        <div className="flex h-full flex-col pt-3 pb-4 ps-10 pe-0">
+            <div className="relative z-20 flex items-center gap-4 overflow-visible whitespace-nowrap pb-2 mt-2">
+                <div className="flex items-center text-xs shrink-0 mr-20">
+                    <SegmentedFilter
+                        value={filters.mode}
+                        onChange={(value) => handleFilterChange('mode', value)}
+                        options={modeOptions}
+                        theme="lime"
+                    />
                 </div>
 
                 {filters.mode === 'all' && (
-                    <DateRangePicker
-                        placeholder="Valj period"
-                        presets={['this-month', 'last-month', 'last-3-months', 'year-to-date']}
-                        initialPresetKey="year-to-date"
-                        onApply={({ startDate, endDate }) => {
-                            setFilters((prev) => ({ ...prev, startDate, endDate }));
-                            setPagination((prev) => ({ ...prev, pageNumber: 1 }));
-                        }}
-                    />
+                    <div className="shrink-0">
+                        <DateRangePicker
+                            placeholder="Valj period"
+                            presets={['this-month', 'last-month', 'last-3-months', 'year-to-date']}
+                            initialPresetKey="year-to-date"
+                            onApply={({ startDate, endDate }) => {
+                                setFilters((prev) => ({ ...prev, startDate, endDate }));
+                                setPagination((prev) => ({ ...prev, pageNumber: 1 }));
+                            }}
+                            triggerRadius="full"
+                            triggerClassName="h-7 w-[260px] border-lime-600 px-3 text-xs text-gray-700 focus:border-lime-700"
+                            openTriggerClassName="border-lime-700 ring-1 ring-lime-200"
+                            closedTriggerClassName="border-lime-600 hover:border-lime-700"
+                            widthClassName="w-60"
+                        />
+                    </div>
                 )}
 
-                <div className="relative ml-20 w-44">
+                <div className="relative w-56 shrink-0">
                     <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
                     <input
                         type="text"
                         placeholder="Sök"
                         value={filters.searchText}
                         onChange={(event) => handleFilterChange('searchText', event.target.value)}
-                        className="w-full text-xs border border-gray-300 rounded-sm pl-7 pr-2 py-1 focus:outline-none bg-white"
+                        className="h-7 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
                     />
                 </div>
 
-                <div className="ml-auto mr-4 flex items-center" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
-                    <div className="ml-4 text-xs text-gray-500">
-                        Rader: <strong>{pagination.totalCount}</strong>
-                    </div>
-
-                    <div className="ml-8 flex items-center">
-                        <span className="mr-3 text-xs text-gray-700">
-                            Sida {pagination.pageNumber} av {Math.max(1, pagination.totalPages)}
-                        </span>
-                        <div className="flex gap-1">
-                            <button
-                                type="button"
-                                onClick={() => onPageChange(pagination.pageNumber - 1)}
-                                disabled={loading || !pagination.hasPreviousPage}
-                                className="disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <ArrowLeftCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => onPageChange(pagination.pageNumber + 1)}
-                                disabled={loading || !pagination.hasNextPage}
-                                className="disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <ArrowRightCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
-                            </button>
-                        </div>
+                <div className="ml-auto flex items-center gap-4 text-xs text-gray-600" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                    <span>Rader <strong>{pagination.totalCount}</strong></span>
+                    <span>Sida {pagination.pageNumber} av {Math.max(1, pagination.totalPages)}</span>
+                    <div className="flex gap-1">
+                        <button
+                            type="button"
+                            onClick={() => onPageChange(pagination.pageNumber - 1)}
+                            disabled={loading || !pagination.hasPreviousPage}
+                            className="disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            <ArrowLeftCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => onPageChange(pagination.pageNumber + 1)}
+                            disabled={loading || !pagination.hasNextPage}
+                            className="disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                            <ArrowRightCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
+                        </button>
                     </div>
                 </div>
             </div>
 
-            <div className="mt-4 flex-1 overflow-auto border-t border-gray-300 py-1">
-                <table className="w-full border-collapse text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+            <div className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
+                <table className="table-fixed w-full border-collapse text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                    <colgroup>
+                        <col style={{ width: '7%' }} />
+                        <col style={{ width: '6%' }} />
+                        <col style={{ width: '6%' }} />
+                        <col style={{ width: '12%' }} />
+                        <col style={{ width: '12%' }} />
+                        <col style={{ width: '10%' }} />
+                        <col style={{ width: '7%' }} />
+                        <col style={{ width: '7%' }} />
+                        <col style={{ width: '5%' }} />
+                        <col style={{ width: '5%' }} />
+                        <col style={{ width: '6%' }} />
+                        <col style={{ width: 'auto' }} />
+                    </colgroup>
                     <thead>
-                        <tr>
-                            <th className="w-[7%] px-2 py-1.5 text-left text-tiny font-medium text-gray-400">Skapad av</th>
-                            <th className="w-[6%] px-2 py-1.5 text-left text-tiny font-medium text-gray-400">Datum</th>
-                            <th className="w-[6%] px-2 py-1.5 text-left text-tiny font-medium text-gray-400">Ordernr</th>
-                            <th className="w-[12%] px-2 py-1.5 text-left text-tiny font-medium text-gray-400">Leverantor</th>
-                            <th className="w-[12%] px-2 py-1.5 text-left text-tiny font-medium text-gray-400">Kund</th>
-                            <th className="w-[10%] px-2 py-1.5 text-left text-tiny font-medium text-gray-400">Kostnad</th>
-                            <th className="w-[7%] px-2 py-1.5 text-right pr-9 text-tiny font-medium text-gray-400">Inpris</th>
-                            <th className="w-[7%] px-2 py-1.5 text-right pr-9 text-tiny font-medium text-gray-400">Utpris</th>
-                            <th className="w-[5%] px-2 py-1.5 text-right pr-3 text-tiny font-medium text-gray-400">Attestpris</th>
-                            <th className="w-[5%] pl-4 py-1.5 text-left text-tiny font-medium text-gray-400">Att. av</th>
-                            <th className="w-[6%] px-2 py-1.5 text-left text-tiny font-medium text-gray-400">Faktura</th>
-                            <th className="px-2 py-1.5 text-left text-tiny font-medium text-gray-400">Intern not</th>
+                        <tr className="text-tiny text-gray-500">
+                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Skapad av</th>
+                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Datum</th>
+                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Ordernr</th>
+                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Leverantor</th>
+                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Kund</th>
+                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Kostnad</th>
+                            <th className="px-2 pt-1 pb-2 text-right pr-9 text-tiny font-medium text-gray-500">Inpris</th>
+                            <th className="px-2 pt-1 pb-2 text-right pr-9 text-tiny font-medium text-gray-500">Utpris</th>
+                            <th className="px-2 pt-1 pb-2 text-right pr-3 text-tiny font-medium text-gray-500">Attestpris</th>
+                            <th className="pl-4 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Att. av</th>
+                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Faktura</th>
+                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Intern not</th>
                         </tr>
                     </thead>
-                    <tbody className={`divide-y divide-gray-100 ${!loading && rows.length > 0 ? 'bg-white' : 'bg-transparent'}`}>
+                    <tbody className={`${!loading && rows.length > 0 ? 'bg-white' : 'bg-transparent'}`}>
                         {showSkeleton ? (
                             Array.from({ length: 12 }).map((_, i) => (
                                 <tr key={i} className="border-b border-gray-100">
-                                    {Array.from({ length: 14 }).map((__, j) => (
+                                    {Array.from({ length: 12 }).map((__, j) => (
                                         <td key={j} className="px-2 py-1">
-                                            <Skeleton height={14} />
+                                            <Skeleton height={16} />
                                         </td>
                                     ))}
                                 </tr>
                             ))
                         ) : rows.length === 0 && !loading ? (
                             <tr>
-                                <td colSpan={14} className="px-4 py-6 text-center text-xs text-gray-400">
-                                    Inga kostnadsrader hittades for valt urval
+                                <td colSpan={12} className="px-4 py-8 text-center text-xs text-gray-400">
+                                    Inga kostnadsrader hittades för valt urval
                                 </td>
                             </tr>
                         ) : (
                             rows.map((row) => (
-                                <tr key={row.id} className="border-b border-gray-100 hover:bg-amber-50">
-                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">{row.createdByName || ''}</td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">{formatDate(row.createdDateTime)}</td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">{row.customerOrderNr || ''}</td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">{row.orderSupplierName || ''}</td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">{row.orderCustomerName || ''}</td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">{row.costName || ''}</td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-right text-xs text-gray-800">
+                                <tr key={row.id} className="h-6 border-b border-gray-100 hover:bg-lime-200/70">
+                                    <td className="truncate px-2 py-0 text-gray-800">{row.createdByName || ''}</td>
+                                    <td className="truncate px-2 py-0 text-gray-800">{formatDate(row.createdDateTime)}</td>
+                                    <td className="truncate px-2 py-0 text-gray-800">{row.customerOrderNr || ''}</td>
+                                    <td className="truncate px-2 py-0 text-gray-800">{row.orderSupplierName || ''}</td>
+                                    <td className="truncate px-2 py-0 text-gray-800">{row.orderCustomerName || ''}</td>
+                                    <td className="truncate px-2 py-0 text-gray-800">{row.costName || ''}</td>
+                                    <td className="truncate px-2 py-0 text-right text-gray-800">
                                         {formatAmount(row.inPrice)} <span className="ml-1 text-gray-400">{row.inPriceCurrencyName || ''}</span>
                                     </td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-right text-xs text-gray-800">
+                                    <td className="truncate px-2 py-0 text-right text-gray-800">
                                         {formatAmount(row.outPrice)} <span className="ml-1 text-gray-400">{row.outPriceCurrencyName || ''}</span>
                                     </td>
-                                    <td className="p-0 relative">
+                                    <td className="relative p-0">
                                         <div className="pl-3">
                                             <input
                                                 type="text"
@@ -391,24 +399,24 @@ const OrderCostAttest = () => {
                                                     }
                                                 }}
                                                 disabled={savingRowId === row.id}
-                                                className={`w-full h-full px-2 py-1 text-right text-xs border bg-white outline-none disabled:opacity-50 disabled:cursor-not-allowed 
-                                                    ${row.inPriceAttested != null ? 'border-lime-600 focus:ring-1 focus:ring-lime-700' : 'border-red-300 focus:ring-1 focus:ring-red-400'}
+                                                className={`w-full px-2 py-[3px] text-right text-xs border outline-none disabled:opacity-50 disabled:cursor-not-allowed 
+                                                    ${row.inPriceAttested != null ? 'bg-lime-50 border-lime-300 focus:ring-1 focus:ring-lime-500' : 'bg-red-50/50 border-red-200 focus:ring-1 focus:ring-red-300'}
                                                     `}
                                             />
                                         </div>
                                     </td>
-                                    <td className="pl-4 pt-[6px] pb-[4px] text-xs text-gray-800">{row.attestedByName || ''}</td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">
+                                    <td className="truncate pl-4 py-0 text-gray-800">{row.attestedByName || ''}</td>
+                                    <td className="truncate px-2 py-0 text-gray-800">
                                         {row.invoiceId ? (
                                             <Link
                                                 to={`/finance/invoice/${row.invoiceId}`}
-                                                className="underline-offset-2 hover:underline"
+                                                className="text-slate-700 hover:text-slate-900 hover:underline"
                                             >
                                                 {row.invoiceNumber ?? row.invoiceId}
                                             </Link>
                                         ) : ''}
                                     </td>
-                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800">{row.note || ''}</td>
+                                    <td className="truncate px-2 py-0 text-gray-800">{row.note || ''}</td>
                                 </tr>
                             ))
                         )}

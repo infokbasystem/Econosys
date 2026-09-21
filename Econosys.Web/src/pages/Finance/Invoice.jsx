@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Printer, Save, Trash2 } from 'lucide-react';
 import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import { usePdf } from '../../contexts/PdfContext';
+import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledInput from '../../components/LabeledInput';
+import SelectCircleCheckbox from '../../components/SelectCircleCheckbox';
 import LabeledSelect from '../../components/LabeledSelect';
 import LabeledSwitch from '../../components/LabeledSwitch';
 import LabeledTextArea from '../../components/LabeledTextArea';
@@ -662,9 +665,9 @@ const Invoice = () => {
                 isDestructive={false}
             />
 
-            <h2 className="ml-90 text-sm pt-2 pb-2 text-gray-700">
+            <h2 className="ml-96 text-sm pt-8 pb-2 text-gray-500 tracking-[0.10em] font-semibold uppercase">
                 {invoice?.id ? (
-                    <>Faktura <span className="ml-2 text-red-500">{invoice.invoiceNumber ?? invoice.id}</span></>
+                    <>Faktura <span className="ml-2">{invoice.invoiceNumber ?? invoice.id}</span></>
                 ) : (
                     'Ny faktura'
                 )}
@@ -730,43 +733,39 @@ const Invoice = () => {
                     )}
                 </div>
 
-                <div className="flex-grow ps-4 pe-10 py-2">
+                <div className="flex-grow ps-10 pe-10 py-2">
                     <div className="flex justify-between w-full mb-5">
-                        <div className="flex items-center space-x-4">
-                            <button
-                                type="button"
+                        <div className="flex items-center gap-6">
+                            <ActionButton
+                                label="Tillbaka"
+                                icon={ArrowLeft}
                                 onClick={handleBackClick}
-                                className="shadow-md/30 text-xs text-white bg-gray-500 hover:bg-gray-700 px-5 p-[5px]"
-                            >
-                                Tillbaka
-                            </button>
-                            <button
-                                type="button"
+                                accent="slate"
+                            />
+                            <ActionButton
+                                label="Spara"
+                                icon={Save}
                                 onClick={handleSave}
-                                className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-5 p-[5px]"
-                            >
-                                Spara
-                            </button>
+                                accent="lime"
+                            />
                             {invoice?.id !== 0 && (
-                                <button
-                                    type="button"
+                                <ActionButton
+                                    label="Skriv ut"
+                                    icon={Printer}
                                     onClick={getPdf}
-                                    className="shadow-md/30 text-xs text-gray bg-blue-200 hover:bg-blue-300 px-4 py-[5px] ml-10"
-                                >
-                                    Skriv ut
-                                </button>
+                                    accent="sky"
+                                />
                             )}
                         </div>
 
-                        <div className="flex items-center space-x-4">
+                        <div className="flex items-center gap-6">
                             {invoice?.id !== 0 && (
-                                <button
-                                    type="button"
+                                <ActionButton
+                                    label="Radera"
+                                    icon={Trash2}
                                     onClick={() => setShowDeleteConfirm(true)}
-                                    className="shadow-md/30 text-xs text-white bg-red-700 hover:bg-red-800 px-5 p-[5px]"
-                                >
-                                    Radera
-                                </button>
+                                    accent="rose"
+                                />
                             )}
                         </div>
                     </div>
@@ -905,7 +904,7 @@ const Invoice = () => {
                                 onChange={(value) => handleChange('termsOfPayment', value)}
                                 labelWidth="w-15"
                                 margintop="0"
-                                height="h-16"
+                                height="h-20"
                             />
                             <LabeledTextArea
                                 label="Intern not"
@@ -923,17 +922,17 @@ const Invoice = () => {
                             <table className="w-full table-fixed text-xs border-collapse" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                                 <thead>
                                     <tr className="border-b border-gray-300">
-                                        <th className="w-[3%] py-2 text-center text-tiny font-medium text-gray-400 uppercase">Sort</th>
-                                        <th className="w-[24%] px-4 py-2 text-left text-tiny font-medium text-gray-400 uppercase">Text</th>
-                                        <th className="w-[7%] pr-2 py-2 text-right text-tiny font-medium text-gray-400 uppercase">Vikt</th>
-                                        <th className="w-[7%] pr-2 py-2 text-right text-tiny font-medium text-gray-400 uppercase">Antal</th>
-                                        <th className="w-[8%] pr-2 py-2 text-right text-tiny font-medium text-gray-400 uppercase">APris</th>
-                                        <th className="w-[8%] pr-4 py-2 text-right text-tiny font-medium text-gray-400 uppercase">Enhet</th>
-                                        <th className="w-[9%] pr-2 py-2 text-right text-tiny font-medium text-gray-400 uppercase">Summa</th>
-                                        <th className="w-[8%] pr-2 py-2 text-right text-tiny font-medium text-gray-400 uppercase">Konto</th>
-                                        <th className="w-[8%] pr-2 py-2 text-right text-tiny font-medium text-gray-400 uppercase">Res.enh</th>
-                                        <th className="w-[5%] px-2 py-2 text-center text-tiny font-medium text-gray-400 uppercase">Moms</th>
-                                        <th className="w-[7%] px-2 py-2 text-center text-tiny font-medium text-gray-400 uppercase">Atgard</th>
+                                        <th className="w-[3%] py-2 text-center text-tiny font-medium text-gray-400">Sort</th>
+                                        <th className="w-[24%] px-4 py-2 text-left text-tiny font-medium text-gray-400">Text</th>
+                                        <th className="w-[7%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Vikt</th>
+                                        <th className="w-[7%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Antal</th>
+                                        <th className="w-[8%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">APris</th>
+                                        <th className="w-[8%] pr-4 py-2 text-right text-tiny font-medium text-gray-400">Enhet</th>
+                                        <th className="w-[9%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Summa</th>
+                                        <th className="w-[8%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Konto</th>
+                                        <th className="w-[8%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Res.enh</th>
+                                        <th className="w-[5%] px-2 py-2 text-center text-tiny font-medium text-gray-400">Moms</th>
+                                        <th className="w-[7%] px-2 py-2 text-center text-tiny font-medium text-gray-400">Atgard</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white">
@@ -1043,11 +1042,10 @@ const Invoice = () => {
                                                     </td>
                                                     <td className="px-0 relative">
                                                         <div className="absolute inset-0 flex items-center justify-center border border-transparent bg-white focus-within:border-blue-400">
-                                                            <input
-                                                                type="checkbox"
+                                                            <SelectCircleCheckbox
                                                                 checked={Boolean(row.vatGround)}
-                                                                onChange={(e) => handleInvoiceRowChange(idOrTempId, 'vatGround', e.target.checked)}
-                                                                className="h-4 w-4"
+                                                                onChange={() => handleInvoiceRowChange(idOrTempId, 'vatGround', !row.vatGround)}
+                                                                ariaLabel="Momsgrund"
                                                             />
                                                         </div>
                                                     </td>
@@ -1116,14 +1114,14 @@ const Invoice = () => {
                             )}
                         </div>
 
-                        <div className="w-[300px] shrink-0">
+                        <div className="w-[350px] shrink-0">
                             <table className="w-full table-fixed text-xs border-collapse" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                                 <thead>
                                     <tr className="border-b border-gray-300">
-                                        <th className="w-[44%] px-2 py-2 text-left text-tiny font-medium text-gray-400 uppercase">Bokf.rad</th>
-                                        <th className="w-[26%] px-2 py-2 text-right text-tiny font-medium text-gray-400 uppercase">Summa</th>
-                                        <th className="w-[18%] px-2 py-2 text-right text-tiny font-medium text-gray-400 uppercase">Konto</th>
-                                        <th className="w-[12%] px-2 py-2 text-right text-tiny font-medium text-gray-400 uppercase">Res</th>
+                                        <th className="w-[44%] px-2 py-2 text-left text-tiny font-medium text-gray-400">Bokf.rad</th>
+                                        <th className="w-[26%] px-2 py-2 text-right text-tiny font-medium text-gray-400">Summa</th>
+                                        <th className="w-[18%] px-2 py-2 text-right text-tiny font-medium text-gray-400">Konto</th>
+                                        <th className="w-[12%] px-2 py-2 text-right text-tiny font-medium text-gray-400">Res</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white">

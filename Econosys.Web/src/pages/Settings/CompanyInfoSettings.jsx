@@ -34,6 +34,12 @@ const defaultForm = {
     defaultCustomerMessage: '',
     euText: '',
     exportText: '',
+    jeevesApiEndpoint: '',
+    jeevesApiKey: '',
+    hasJeevesApiKey: false,
+    jeevesTestApiEndpoint: '',
+    jeevesTestApiKey: '',
+    hasJeevesTestApiKey: false,
 };
 
 const parseNullableInt = (value) => {
@@ -71,6 +77,12 @@ const mapDtoToForm = (dto) => ({
     defaultCustomerMessage: dto?.defaultCustomerMessage ?? '',
     euText: dto?.euText ?? '',
     exportText: dto?.exportText ?? '',
+    jeevesApiEndpoint: dto?.jeevesApiEndpoint ?? '',
+    jeevesApiKey: '',
+    hasJeevesApiKey: Boolean(dto?.hasJeevesApiKey),
+    jeevesTestApiEndpoint: dto?.jeevesTestApiEndpoint ?? '',
+    jeevesTestApiKey: '',
+    hasJeevesTestApiKey: Boolean(dto?.hasJeevesTestApiKey),
 });
 
 const mapFormToPayload = (form) => ({
@@ -102,6 +114,10 @@ const mapFormToPayload = (form) => ({
     defaultCustomerMessage: form.defaultCustomerMessage,
     euText: form.euText,
     exportText: form.exportText,
+    jeevesApiEndpoint: form.jeevesApiEndpoint,
+    jeevesApiKey: form.jeevesApiKey || null,
+    jeevesTestApiEndpoint: form.jeevesTestApiEndpoint,
+    jeevesTestApiKey: form.jeevesTestApiKey || null,
 });
 
 const CompanyInfoSettings = () => {
@@ -165,7 +181,7 @@ const CompanyInfoSettings = () => {
             <h2 className="ml-5 text-sm pt-2 pb-2 text-gray-700">Företagsinfo</h2>
 
             <div className="flex h-full items-stretch">
-                <div className="flex-grow ps-4 pe-10 py-2 max-w-350">
+                <div className="flex-grow ps-10 pe-10 py-2 max-w-350">
                     <div className="flex justify-between w-full mb-5">
                         <div className="flex items-center space-x-4">
                             <button
@@ -192,7 +208,7 @@ const CompanyInfoSettings = () => {
                     ) : (
                         <div className="mt-8 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-20">
                             <span>
-                                <div className="grid grid-cols-[560px_560px] gap-x-20 gap-y-10">
+                                <div className="grid grid-cols-[500px_500px] gap-x-20 gap-y-10">
                                     <span>
                                         <LabeledInput label="Företagsnamn" value={form.companyName} onChange={(v) => updateField('companyName', v)} labelWidth="w-45" margintop="0" maxLength={50} />
                                         <LabeledInput label="Adress" value={form.address} onChange={(v) => updateField('address', v)} labelWidth="w-45" margintop="0" maxLength={100} />
@@ -223,6 +239,10 @@ const CompanyInfoSettings = () => {
                                         <LabeledTextArea label="Export-kund" value={form.exportText} onChange={(v) => updateField('exportText', v)} labelWidth="w-45" margintop="2" inputWidth="w-full" height="h-24" maxLength={255} />
 
                                         <LabeledInput label="Google API key" value={form.googleApiKey} onChange={(v) => updateField('googleApiKey', v)} labelWidth="w-45" margintop="3" maxLength={500} />
+                                        <LabeledInput label="Jeeves API endpoint" value={form.jeevesApiEndpoint} onChange={(v) => updateField('jeevesApiEndpoint', v)} labelWidth="w-45" margintop="3" maxLength={500} />
+                                        <LabeledInput label="Jeeves API key" type="password" value={form.jeevesApiKey} onChange={(v) => updateField('jeevesApiKey', v)} labelWidth="w-45" margintop="0" maxLength={500} placeholder={form.hasJeevesApiKey ? 'Konfigurerad - ange ny nyckel för att byta' : 'Ange API-nyckel'} />
+                                        <LabeledInput label="Jeeves test endpoint" value={form.jeevesTestApiEndpoint} onChange={(v) => updateField('jeevesTestApiEndpoint', v)} labelWidth="w-45" margintop="3" maxLength={500} />
+                                        <LabeledInput label="Jeeves test API key" type="password" value={form.jeevesTestApiKey} onChange={(v) => updateField('jeevesTestApiKey', v)} labelWidth="w-45" margintop="0" maxLength={500} placeholder={form.hasJeevesTestApiKey ? 'Konfigurerad - ange ny nyckel för att byta' : 'Ange API-nyckel'} />
                                         <LabeledTextArea label="Mail wrapper" value={form.mailWrapper} onChange={(v) => updateField('mailWrapper', v)} labelWidth="w-45" margintop="2" inputWidth="w-full" height="h-32" maxLength={5000} />
                                         <LabeledInput label="Senaste fakturanr" type="number" integerOnly value={form.invoiceLastNr} onChange={(v) => updateField('invoiceLastNr', v)} labelWidth="w-45" margintop="0" />
                                     </span>

@@ -4,6 +4,7 @@ import apiClient from '../../config/apiClient';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledSwitch from '../../components/LabeledSwitch';
+import ActionButton from '../../components/ActionButton';
 
 const defaultForm = {
     id: null,
@@ -332,13 +333,10 @@ const InventoriesSettings = () => {
                             />
                         </div>
 
-                        <button
-                            type="button"
+                        <ActionButton
+                            label="Ny"
                             onClick={handleCreateNew}
-                            className="shadow-md/30 text-xs text-gray-900 bg-blue-200 hover:bg-blue-300 px-6 p-[5px] rounded-sm"
-                        >
-                            Skapa ny
-                        </button>
+                        />
                     </div>
 
                     <div className="mt-5 border-t border-gray-200 pt-2 space-y-0.5 max-h-[calc(100vh-230px)] overflow-y-auto">
@@ -354,7 +352,7 @@ const InventoriesSettings = () => {
                                         key={item.id}
                                         type="button"
                                         onClick={() => handleSelect(item.id)}
-                                        className={`w-full text-left text-xs px-2 py-0.5 rounded-sm grid grid-cols-[1fr_80px] gap-2 ${isSelected ? 'bg-yellow-300 text-black' : 'hover:bg-gray-100 text-gray-900'}`}
+                                        className={`w-full h-6 items-center text-left text-xs px-2 py-0.5 rounded-sm grid grid-cols-[1fr_80px] gap-2 ${isSelected ? 'bg-purple-200/50 text-black' : 'hover:bg-gray-100 text-gray-900'}`}
                                     >
                                         <span className="truncate">{item.name}</span>
                                         <span className="truncate text-right">{item.accountNr ?? ''}</span>

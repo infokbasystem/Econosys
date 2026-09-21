@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
+using Econosys.Api.Common;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
@@ -68,15 +69,14 @@ namespace Econosys.Api.Controllers
 
             var invoice = new Invoice();
             ApplyRequestToInvoice(invoice, request);
-            
 
-            invoice.Created ??= SwedishTime.Now;
+            invoice.Created = SwedishTime.Now;
             invoice.CreatedBy = legacyUser.Id;
             invoice.Edited = SwedishTime.Now;
             invoice.EditedBy = legacyUser.Id;
             invoice.InvoiceNumber = await GetNextInvoiceNumberAsync();
 
-            invoice.InvoiceRows = BuildInvoiceRows(request.InvoiceRows, invoice.Id);
+            invoice.InvoiceRows = BuildInvoiceRows(request.InvoiceRows, invoice.Id, legacyUser.CompanyId);
             invoice.InvoiceAccountRows = BuildInvoiceAccountRows(request.InvoiceAccountRows, invoice.Id);
 
             _dbContext.Invoices.Add(invoice);
@@ -126,7 +126,7 @@ namespace Econosys.Api.Controllers
             _dbContext.InvoiceRows.RemoveRange(invoice.InvoiceRows);
             _dbContext.InvoiceAccountRows.RemoveRange(invoice.InvoiceAccountRows);
 
-            invoice.InvoiceRows = BuildInvoiceRows(request.InvoiceRows, invoice.Id);
+            invoice.InvoiceRows = BuildInvoiceRows(request.InvoiceRows, invoice.Id, legacyUser.CompanyId);
             invoice.InvoiceAccountRows = BuildInvoiceAccountRows(request.InvoiceAccountRows, invoice.Id);
 
             await _dbContext.SaveChangesAsync();
@@ -1504,15 +1504,12 @@ namespace Econosys.Api.Controllers
             invoice.Address2 = request.Address2;
             invoice.CollectInvoice = request.CollectInvoice;
             invoice.Country = request.Country;
-            invoice.Created = request.Created;
-            invoice.CreatedBy = request.CreatedBy;
             invoice.CustomerId = request.CustomerId;
             invoice.CustomerName = request.CustomerName;
             invoice.CustomerOrderId = request.CustomerOrderId;
             invoice.CostCenter = request.CostCenter;
             invoice.DeliveryFromStockId = request.DeliveryFromStockId;
             invoice.DeliveryToCustomerId = request.DeliveryToCustomerId;
-            invoice.EditedBy = request.EditedBy;
             invoice.EndInvoiced = request.EndInvoiced;
             invoice.InventoryCurrencyRate = request.InventoryCurrencyRate;
             invoice.InvoiceDate = request.InvoiceDate;
@@ -1540,13 +1537,14 @@ namespace Econosys.Api.Controllers
             invoice.YourReference = request.YourReference;
         }
 
-        private static List<InvoiceRow> BuildInvoiceRows(IEnumerable<InvoiceRowMutationRequest>? rows, int invoiceId)
+        private static List<InvoiceRow> BuildInvoiceRows(IEnumerable<InvoiceRowMutationRequest>? rows, int invoiceId, int companyId = 0)
         {
             return (rows ?? Enumerable.Empty<InvoiceRowMutationRequest>())
                 .Select(row => new InvoiceRow
                 {
                     AccountNr = row.AccountNr,
                     Calculate = row.Calculate,
+                    CompanyId = companyId,
                     CompareWithOrder = row.CompareWithOrder,
                     CostCenter = row.CostCenter,
                     DeliveryFromStockId = row.DeliveryFromStockId,

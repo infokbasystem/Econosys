@@ -241,6 +241,12 @@ namespace Econosys.Api.Models
 
         public int? CalculationId { get; set; }
 
+        [Column(TypeName = "decimal(18,4)")]
+        public decimal? OverrideHandlingTimeDays { get; set; }
+
+        [MaxLength(50)]
+        public string? ForceHandlingTimeCountAs { get; set; }
+
         // Navigation properties
         public virtual Customer? Customer { get; set; }
         public virtual Supplier? Supplier { get; set; }

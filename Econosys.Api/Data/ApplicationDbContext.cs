@@ -57,6 +57,17 @@ namespace Econosys.Api.Data
         public DbSet<DocumentFile> DocumentFiles => Set<DocumentFile>();
         public DbSet<DocumentType> DocumentTypes => Set<DocumentType>();
         public DbSet<TransportOrder> TransportOrders => Set<TransportOrder>();
+        public DbSet<TransportOrderDelivery> TransportOrderDeliveries => Set<TransportOrderDelivery>();
+        public DbSet<TransportOrderDeliveryPallet> TransportOrderDeliveryPallets => Set<TransportOrderDeliveryPallet>();
+        public DbSet<TransportOrderCostCalc> TransportOrderCostCalcs => Set<TransportOrderCostCalc>();
+        public DbSet<TransportOrderCostCalcSupplierOrder> TransportOrderCostCalcSupplierOrders => Set<TransportOrderCostCalcSupplierOrder>();
+        public DbSet<TransportOrderCostCalcSupplierOrderDelivery> TransportOrderCostCalcSupplierOrderDeliveries => Set<TransportOrderCostCalcSupplierOrderDelivery>();
+        public DbSet<TransportCostPriceList> TransportCostPriceLists => Set<TransportCostPriceList>();
+        public DbSet<TransportCostPriceListData> TransportCostPriceListDatas => Set<TransportCostPriceListData>();
+        public DbSet<SupplierFactoryTransportCostPriceList> SupplierFactoryTransportCostPriceLists => Set<SupplierFactoryTransportCostPriceList>();
+        public DbSet<InventoryTransportCostPriceList> InventoryTransportCostPriceLists => Set<InventoryTransportCostPriceList>();
+        public DbSet<DeliveryLeg> DeliveryLegs => Set<DeliveryLeg>();
+        public DbSet<Position> Positions => Set<Position>();
         public DbSet<CallOff> CallOffs => Set<CallOff>();
         public DbSet<CallOffDelivery> CallOffDeliveries => Set<CallOffDelivery>();
         public DbSet<Shipper> Shippers => Set<Shipper>();
@@ -74,6 +85,7 @@ namespace Econosys.Api.Data
         public DbSet<Quotation> Quotations => Set<Quotation>();
         public DbSet<QuotationRow> QuotationRows => Set<QuotationRow>();
         public DbSet<InquiryRow> InquiryRows => Set<InquiryRow>();
+        public DbSet<LogEntry> LogEntries => Set<LogEntry>();
 
         private static string ToDbString(string value) => value;
         private static string FromDbString(string? value) => value ?? string.Empty;
@@ -184,6 +196,11 @@ namespace Econosys.Api.Data
             builder.Entity<TranslationItem>(entity =>
             {
                 entity.ToTable("TranslationItem", tableBuilder => tableBuilder.ExcludeFromMigrations());
+            });
+
+            builder.Entity<LogEntry>(entity =>
+            {
+                entity.ToTable("Log", tableBuilder => tableBuilder.ExcludeFromMigrations());
             });
 
             builder.Entity<Supplier>(entity =>
@@ -914,7 +931,10 @@ namespace Econosys.Api.Data
 
             builder.Entity<Setting>(entity =>
             {
-                entity.ToTable("Settings", tableBuilder => tableBuilder.ExcludeFromMigrations());
+                entity.ToTable("Settings");
+
+                entity.Property(x => x.HandlingTimesPercentHandledUnderGoalNrOfDays)
+                    .HasColumnType("decimal(18,2)");
 
                 entity.HasOne(x => x.CompanyInfo)
                     .WithMany(x => x.Settings)
@@ -939,7 +959,177 @@ namespace Econosys.Api.Data
 
             builder.Entity<TransportOrder>(entity =>
             {
-                entity.ToTable("TransportOrder", tableBuilder => tableBuilder.ExcludeFromMigrations());
+                entity.ToTable("TransportOrder");
+
+                entity.HasOne(x => x.CreatedByUser)
+                    .WithMany(x => x.CreatedTransportOrders)
+                    .HasForeignKey(x => x.CreatedByUserId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.EditedByUser)
+                    .WithMany(x => x.EditedTransportOrders)
+                    .HasForeignKey(x => x.EditedByUserId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<TransportOrderDelivery>(entity =>
+            {
+                entity.ToTable("TransportOrderDelivery");
+
+                entity.HasOne(x => x.TransportOrder)
+                    .WithMany()
+                    .HasForeignKey(x => x.TransportOrderId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.DeliveryFromStock)
+                    .WithMany()
+                    .HasForeignKey(x => x.DeliveryFromStockId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.DeliveryToCustomer)
+                    .WithMany()
+                    .HasForeignKey(x => x.DeliveryToCustomerId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.DeliveryToStock)
+                    .WithMany()
+                    .HasForeignKey(x => x.DeliveryToStockId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.SupplierOrder)
+                    .WithMany()
+                    .HasForeignKey(x => x.SupplierOrderId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.OmlastInventory)
+                    .WithMany()
+                    .HasForeignKey(x => x.OmlastInventoryId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<TransportOrderDeliveryPallet>(entity =>
+            {
+                entity.ToTable("TransportOrderDeliveryPallet", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.TransportOrderDelivery)
+                    .WithMany(x => x.TransportOrderDeliveryPallets)
+                    .HasForeignKey(x => x.TransportOrderDeliveryId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<TransportCostPriceList>(entity =>
+            {
+                entity.ToTable("TransportCostPriceList", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.Currency)
+                    .WithMany()
+                    .HasForeignKey(x => x.CurrencyId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<TransportCostPriceListData>(entity =>
+            {
+                entity.ToTable("TransportCostPriceListData", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.TransportCostPriceList)
+                    .WithMany(x => x.TransportCostPriceListData)
+                    .HasForeignKey(x => x.TransportCostPriceListId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<TransportOrderCostCalc>(entity =>
+            {
+                entity.ToTable("TransportOrderCostCalc", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.TransportOrder)
+                    .WithMany()
+                    .HasForeignKey(x => x.TransportOrderId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.TransportCostPriceList)
+                    .WithMany(x => x.TransportOrderCostCalcs)
+                    .HasForeignKey(x => x.CostCalcForcePriceListId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<TransportOrderCostCalcSupplierOrder>(entity =>
+            {
+                entity.ToTable("TransportOrderCostCalcSupplierOrder", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.TransportOrderCostCalc)
+                    .WithMany(x => x.TransportOrderCostCalcSupplierOrders)
+                    .HasForeignKey(x => x.TransportOrderCostCalcId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.SupplierOrder)
+                    .WithMany()
+                    .HasForeignKey(x => x.SupplierOrderId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<TransportOrderCostCalcSupplierOrderDelivery>(entity =>
+            {
+                entity.ToTable("TransportOrderCostCalcSupplierOrderDelivery", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.TransportOrderCostCalcSupplierOrder)
+                    .WithMany(x => x.TransportOrderCostCalcSupplierOrderDeliveries)
+                    .HasForeignKey(x => x.TransportOrderCostCalcSupplierOrderId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.DeliveryToCustomer)
+                    .WithMany()
+                    .HasForeignKey(x => x.DeliveryToCustomerId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.DeliveryToStock)
+                    .WithMany()
+                    .HasForeignKey(x => x.DeliveryToStockId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.DeliveryFromStock)
+                    .WithMany()
+                    .HasForeignKey(x => x.DeliveryFromStockId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.PalletFormat)
+                    .WithMany()
+                    .HasForeignKey(x => x.PalletFormatId)
+                    .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<Position>(entity =>
+            {
+                entity.ToTable("Position", tableBuilder => tableBuilder.ExcludeFromMigrations());
+            });
+
+            builder.Entity<DeliveryLeg>(entity =>
+            {
+                entity.ToTable("DeliveryLeg", tableBuilder => tableBuilder.ExcludeFromMigrations());
+
+                entity.HasOne(x => x.TransportOrder)
+                    .WithMany()
+                    .HasForeignKey(x => x.TransportOrderId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.FromPosition)
+                    .WithMany()
+                    .HasForeignKey(x => x.FromPositionId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.ToPosition)
+                    .WithMany()
+                    .HasForeignKey(x => x.ToPositionId)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.LegFromPosition)
+                    .WithMany()
+                    .HasForeignKey(x => x.FromPositionIdLeg)
+                    .OnDelete(DeleteBehavior.NoAction);
+
+                entity.HasOne(x => x.LegToPosition)
+                    .WithMany()
+                    .HasForeignKey(x => x.ToPositionIdLeg)
+                    .OnDelete(DeleteBehavior.NoAction);
             });
 
             builder.Entity<Shipper>(entity =>

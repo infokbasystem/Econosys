@@ -2,8 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBlocker, useNavigate, useParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
+import { ArrowLeft, PanelLeftClose, PanelLeftOpen, Save, Trash2 } from 'lucide-react';
 
 import apiClient from '../../config/apiClient';
+import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
@@ -11,6 +13,7 @@ import LabeledSwitch from '../../components/LabeledSwitch';
 import LabeledTextArea from '../../components/LabeledTextArea';
 import { parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
+import { useOrderMenu } from '../../layouts/OrderLayout';
 
 const defaultLanguageOptions = [
     { id: 1, name: 'Svenska' },
@@ -61,6 +64,7 @@ const Supplier = () => {
     const navigate = useNavigate();
     const { id } = useParams();
     const isNewSupplier = id === 'new';
+    const orderMenu = useOrderMenu();
 
     const [loading, setLoading] = useState(true);
     const [messages, setMessages] = useState([]);
@@ -76,7 +80,6 @@ const Supplier = () => {
 
     const [supplier, setSupplier] = useState(null);
     const [originalSupplier, setOriginalSupplier] = useState(null);
-    const [activeTab, setActiveTab] = useState('contacts');
     const [selectedContactIdentity, setSelectedContactIdentity] = useState(null);
     const [selectedFactoryIdentity, setSelectedFactoryIdentity] = useState(null);
     const skipUnsavedCheckRef = useRef(false);
@@ -340,7 +343,6 @@ const Supplier = () => {
             contactPersons: [...toArray(prev?.contactPersons), nextContact],
         }));
         setSelectedContactIdentity(tempId);
-        setActiveTab('contacts');
     };
 
     const addFactory = () => {
@@ -364,7 +366,6 @@ const Supplier = () => {
             factories: [...toArray(prev?.factories), nextFactory],
         }));
         setSelectedFactoryIdentity(tempId);
-        setActiveTab('factories');
     };
 
     const deleteContact = (identity) => {
@@ -508,7 +509,7 @@ const Supplier = () => {
     }
 
     return (
-        <div className="relative flex h-full flex-col px-8 py-3">
+        <div className="relative flex flex-col h-full md:px-[clamp(4px,3vw,6vw)]">
             <ConfirmationModal
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
@@ -531,262 +532,329 @@ const Supplier = () => {
                 isDestructive={false}
             />
 
-            <div className="mb-5 flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                    <button
-                        type="button"
-                        onClick={handleBackClick}
-                        className="bg-gray-500 px-5 py-[5px] text-xs text-white shadow-md/30 hover:bg-gray-700"
-                    >
-                        Tillbaka
-                    </button>
-                    <button
-                        type="button"
-                        onClick={handleSave}
-                        className="bg-lime-700 px-5 py-[5px] text-xs text-white shadow-md/30 hover:bg-lime-900"
-                    >
-                        Spara
-                    </button>
-                </div>
-
-                {!isNewSupplier && supplier?.id !== 0 && (
-                    <button
-                        type="button"
-                        onClick={() => setShowDeleteConfirm(true)}
-                        className="bg-red-700 px-5 py-[5px] text-xs text-white shadow-md/30 hover:bg-red-800"
-                    >
-                        Radera
-                    </button>
-                )}
-            </div>
-
-            {messages.length > 0 && (
-                <div className="mb-4 flex flex-col gap-2">
-                    {messages.map((message, index) => (
-                        <div
-                            key={index}
-                            className={`w-fit min-w-80 border border-gray-200 px-4 py-2 text-xs ${message.type === 'error'
-                                ? 'bg-red-100 text-red-700'
-                                : message.type === 'warning'
-                                    ? 'bg-yellow-100 text-yellow-800'
-                                    : 'bg-green-100 text-green-700'
-                                }`}
-                        >
-                            {message.text}
-                        </div>
-                    ))}
-                </div>
-            )}
-
-            <div className="grid grid-cols-[430px_580px_320px] gap-x-14">
-                <div>
-                    <LabeledInput label="Nr" value={supplier?.id || ''} disabled labelWidth="w-22" margintop="0" />
-                    <LabeledInput label="Namn" value={supplier?.name || ''} onChange={(value) => handleChange('name', value)} labelWidth="w-22" />
-                    <LabeledInput label="Sortering" value={supplier?.sortName || ''} onChange={(value) => handleChange('sortName', value)} labelWidth="w-22" />
-                    <LabeledInput label="Adress" value={supplier?.address || ''} onChange={(value) => handleChange('address', value)} labelWidth="w-22" margintop="1" />
-                    <LabeledInput label="" value={supplier?.address2 || ''} onChange={(value) => handleChange('address2', value)} labelWidth="w-22" />
-                    <div className="flex items-center pb-[1px] text-xs">
-                        <label className="w-22 flex-none text-xs text-gray-700" />
-                        <input
-                            type="text"
-                            value={supplier?.postalNr || ''}
-                            onChange={(event) => handleChange('postalNr', event.target.value)}
-                            className="w-26 rounded-sm border border-gray-300 bg-white px-2 py-1 text-xs focus:outline-none"
-                        />
-                        <input
-                            type="text"
-                            value={supplier?.postalAddress || ''}
-                            onChange={(event) => handleChange('postalAddress', event.target.value)}
-                            className="ml-1 flex-1 rounded-sm border border-gray-300 bg-white px-2 py-1 text-xs focus:outline-none"
-                        />
-                    </div>
-                    <LabeledInput label="Besoksadr." value={supplier?.visitingAddress || ''} onChange={(value) => handleChange('visitingAddress', value)} labelWidth="w-22" margintop="1" />
-                    <LabeledInput label="Land" value={supplier?.country || ''} onChange={(value) => handleChange('country', value)} labelWidth="w-22" />
-                    <LabeledInput label="Referens" value={supplier?.reference || ''} onChange={(value) => handleChange('reference', value)} labelWidth="w-22" />
-                    <LabeledInput label="Vaxeltel." value={supplier?.telephone1 || ''} onChange={(value) => handleChange('telephone1', value)} labelWidth="w-22" />
-                    <LabeledInput label="Direkttel" value={supplier?.telephone2 || ''} onChange={(value) => handleChange('telephone2', value)} labelWidth="w-22" />
-                    <LabeledInput label="Mobiltel" value={supplier?.telephone3 || ''} onChange={(value) => handleChange('telephone3', value)} labelWidth="w-22" />
-                    <LabeledInput label="Epost" value={supplier?.email || ''} onChange={(value) => handleChange('email', value)} labelWidth="w-22" />
-                </div>
-
-                <div>
-                    <LabeledTextArea label="Notering" value={supplier?.note || ''} onChange={(value) => handleChange('note', value)} labelWidth="w-28" margintop="0" rows={4} />
-                    <LabeledReactSelect
-                        name="termsOfDelivery"
-                        label="Leveransvillkor"
-                        value={supplier?.termsOfDelivery || ''}
-                        items={deliveryTermOptions}
-                        onChange={(value) => handleChange('termsOfDelivery', value)}
-                        labelWidth="w-28"
-                        margintop="1"
-                        allowRawValueLabel
-                    />
-                    <LabeledReactSelect
-                        name="termsOfPayment"
-                        label="Betalningsvillkor"
-                        value={supplier?.termsOfPayment || ''}
-                        items={paymentTermOptions}
-                        onChange={(value) => handleChange('termsOfPayment', value)}
-                        labelWidth="w-28"
-                        margintop="1"
-                        allowRawValueLabel
-                    />
-                </div>
-
-                <div>
-                    <LabeledInput label="Resultatenhet" value={supplier?.costCenter || ''} onChange={(value) => handleChange('costCenter', value)} labelWidth="w-38" margintop="0" />
-                    <LabeledReactSelect name="currencyId" label="Valuta" value={supplier?.currencyId || ''} items={currencyOptions} onChange={(value) => handleChange('currencyId', value)} labelWidth="w-38" margintop="1" />
-                    <LabeledReactSelect name="languageId" label="Sprak" value={supplier?.languageId || ''} items={languageOptions} onChange={(value) => handleChange('languageId', value)} labelWidth="w-38" margintop="1" allowRawValueLabel />
-                    <LabeledReactSelect name="inquiryCommunicationTypeId" label="Forfragan" value={supplier?.inquiryCommunicationTypeId || ''} items={inquiryCommunicationOptions} onChange={(value) => handleChange('inquiryCommunicationTypeId', value)} labelWidth="w-38" margintop="1" allowRawValueLabel />
-                    <LabeledReactSelect name="supplierOrderCommunicationTypeId" label="Bestallning" value={supplier?.supplierOrderCommunicationTypeId || ''} items={supplierOrderCommunicationOptions} onChange={(value) => handleChange('supplierOrderCommunicationTypeId', value)} labelWidth="w-38" margintop="1" allowRawValueLabel />
-
-                    <LabeledSwitch field="active" name="active" label="Ar aktiv" value={Boolean(supplier?.active)} onChange={(_rowId, field, checked) => handleChange(field, checked)} labelWidth="w-38" marginTop={2} />
-                    <LabeledSwitch field="econopackTransportResponsible" name="econopackTransportResponsible" label="Econopac trp.ansv." value={Boolean(supplier?.econopackTransportResponsible)} onChange={(_rowId, field, checked) => handleChange(field, checked)} labelWidth="w-38" />
-                    <LabeledSwitch field="printForDocumentScanning" name="printForDocumentScanning" label="Utskr.scanning" value={Boolean(supplier?.printForDocumentScanning)} onChange={(_rowId, field, checked) => handleChange(field, checked)} labelWidth="w-38" />
-                    <LabeledSwitch field="fscDefault" name="fscDefault" label="FSC" value={Boolean(supplier?.fscDefault)} onChange={(_rowId, field, checked) => handleChange(field, checked)} labelWidth="w-38" />
-                    <LabeledInput label="Bestallningsmall" value={supplier?.supplierOrderTemplateNr ?? ''} onChange={(value) => handleChange('supplierOrderTemplateNr', value)} labelWidth="w-38" margintop="1" type="number" integerOnly />
-                </div>
-            </div>
-
-            <div className="mt-10 flex gap-0 text-xs">
+            <div className="ml-83 mt-8 pb-3 flex items-center gap-3">
                 <button
                     type="button"
-                    onClick={() => setActiveTab('contacts')}
-                    className={`min-w-44 border border-gray-300 px-6 py-2 ${activeTab === 'contacts' ? 'bg-sky-100 text-gray-800' : 'bg-white text-gray-700'}`}
+                    onClick={() => orderMenu?.toggleMenu?.()}
+                    className="inline-flex h-8 w-8 items-center justify-center text-gray-600 hover:bg-gray-50"
+                    title={orderMenu?.isMenuOpen ? 'Dolj meny' : 'Visa meny'}
+                    aria-label={orderMenu?.isMenuOpen ? 'Dolj meny' : 'Visa meny'}
                 >
-                    Kontaktpersoner
+                    {orderMenu?.isMenuOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
                 </button>
-                <button
-                    type="button"
-                    onClick={() => setActiveTab('factories')}
-                    className={`min-w-36 border border-l-0 border-gray-300 px-6 py-2 ${activeTab === 'factories' ? 'bg-sky-100 text-gray-800' : 'bg-white text-gray-700'}`}
-                >
-                    Fabriker
-                </button>
+                <h2 className="text-sm font-semibold uppercase tracking-[0.10em] text-gray-500">
+                    {supplier?.id ? (
+                        <>{supplier.name}</>
+                    ) : 'Ny leverantor'}
+                </h2>
             </div>
 
-            {activeTab === 'contacts' ? (
-                <div className="mt-8 grid grid-cols-[420px_720px] gap-20">
-                    <div>
-                        <div className="border-t border-gray-300 pt-2 text-[10px] text-gray-600">
-                            <div className="grid grid-cols-[1fr_1fr] px-4 pb-2">
-                                <span>KONTAKTPERSON</span>
-                                <span>BEFATTNING</span>
+            <div className="flex h-full items-stretch pr-30">
+                <div className="flex flex-col w-75 shrink-0 border-r border-gray-300 px-2 py-2 mb-5 mr-5">
+                    <div className="space-y-3">
+                        <h2 className="text-sm text-center text-gray-700">Info</h2>
+                        <div className="space-y-2 text-xs text-gray-600">
+                            <div className="grid grid-cols-5 gap-4 mx-2">
+                                {supplier?.createdAt && (
+                                    <>
+                                        <div className="col-span-1">
+                                            <span className="font-medium">Skapad:</span>
+                                        </div>
+                                        <div className="col-span-2">
+                                            {new Date(supplier.createdAt).toLocaleString('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                        </div>
+                                        <div className="col-span-2 text-gray-500">
+                                            {supplier?.createdByUserName && `av ${supplier.createdByUserName}`}
+                                        </div>
+                                    </>
+                                )}
                             </div>
-                            <div className="space-y-1 px-2">
-                                {toArray(supplier?.contactPersons).length === 0 ? (
-                                    <p className="px-2 py-4 text-xs text-gray-400">Inga kontaktpersoner.</p>
-                                ) : (
-                                    toArray(supplier?.contactPersons).map((contact) => {
-                                        const identity = getItemIdentity(contact);
-                                        const isSelected = selectedContactIdentity === identity;
-
-                                        return (
-                                            <button
-                                                key={identity}
-                                                type="button"
-                                                onClick={() => setSelectedContactIdentity(identity)}
-                                                className={`grid w-full grid-cols-[1fr_1fr] px-2 py-1 text-left text-sm ${isSelected ? 'bg-amber-100' : 'hover:bg-amber-50'}`}
-                                            >
-                                                <span className="truncate">{contact?.supplierContactPersonName || contact?.contactPerson || ''}</span>
-                                                <span className="truncate">{contact?.title || ''}</span>
-                                            </button>
-                                        );
-                                    })
+                            <div className="grid grid-cols-5 gap-4 mx-2">
+                                {supplier?.editedAt && (
+                                    <>
+                                        <div className="col-span-1">
+                                            <span className="font-medium">Redigerad:</span>
+                                        </div>
+                                        <div className="col-span-2">
+                                            {new Date(supplier.editedAt).toLocaleString('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                        </div>
+                                        <div className="col-span-2 text-gray-500">
+                                            {supplier?.editedByUserName && `av ${supplier.editedByUserName}`}
+                                        </div>
+                                    </>
                                 )}
                             </div>
                         </div>
+                    </div>
+                    <hr className="mt-5 border-gray-300" />
+                    <h2 className="text-sm text-center text-gray-700 mt-5">Meddelanden</h2>
+                    {messages.length === 0 ? (
+                        <p className="text-xs text-center font-light mt-4">Inga meddelanden</p>
+                    ) : (
+                        <ul className="mt-2 space-y-2">
+                            {messages.map((message, index) => (
+                                <li
+                                    key={index}
+                                    className={`text-center text-xs p-2 rounded border border-gray-200 ${message.type === 'error'
+                                        ? 'bg-red-100 text-red-700'
+                                        : message.type === 'warning'
+                                            ? 'bg-yellow-100 text-yellow-800'
+                                            : 'bg-green-100 text-green-700'
+                                        }`}
+                                >
+                                    {message.text}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
 
-                        <button type="button" onClick={addContact} className="mt-16 w-28 bg-blue-800 px-4 py-[5px] text-xs text-white shadow-md/30 hover:bg-blue-900">
-                            NY
-                        </button>
+                <div className="flex-grow ps-10 pe-10 py-2">
+                    <div className="flex justify-between w-full mb-5">
+                        <div className="flex items-center gap-6">
+                            <ActionButton
+                                label="Tillbaka"
+                                icon={ArrowLeft}
+                                onClick={handleBackClick}
+                                accent="slate"
+                            />
+                            <ActionButton
+                                label="Spara"
+                                icon={Save}
+                                onClick={handleSave}
+                                accent="lime"
+                            />
+                        </div>
+                        <div className="flex items-center gap-6">
+                            {!isNewSupplier && supplier?.id !== 0 && (
+                                <ActionButton
+                                    label="Radera"
+                                    icon={Trash2}
+                                    onClick={() => setShowDeleteConfirm(true)}
+                                    accent="rose"
+                                />
+                            )}
+                        </div>
                     </div>
 
-                    <div className={selectedContact ? '' : 'pointer-events-none opacity-50'}>
-                        <div className="flex justify-end">
-                            <button
-                                type="button"
-                                onClick={() => selectedContact && deleteContact(getItemIdentity(selectedContact))}
-                                className="mb-4 w-36 bg-blue-800 px-4 py-[5px] text-xs text-white shadow-md/30 hover:bg-blue-900"
-                                disabled={!selectedContact}
-                            >
-                                RADERA
-                            </button>
+                    <div className="grid grid-cols-[3fr_3fr_2fr] gap-x-14">
+                        <div>
+                            <LabeledInput label="Nr" value={supplier?.id || ''} disabled labelWidth="w-22" margintop="0" />
+                            <LabeledInput label="Namn" value={supplier?.name || ''} onChange={(value) => handleChange('name', value)} labelWidth="w-22" />
+                            <LabeledInput label="Sortering" value={supplier?.sortName || ''} onChange={(value) => handleChange('sortName', value)} labelWidth="w-22" />
+                            <LabeledInput label="Adress" value={supplier?.address || ''} onChange={(value) => handleChange('address', value)} labelWidth="w-22" margintop="1" />
+                            <LabeledInput label="" value={supplier?.address2 || ''} onChange={(value) => handleChange('address2', value)} labelWidth="w-22" />
+                            <div className="flex items-center pb-[1px] text-xs">
+                                <label className="w-22 flex-none text-xs text-gray-700" />
+                                <input
+                                    type="text"
+                                    value={supplier?.postalNr || ''}
+                                    onChange={(event) => handleChange('postalNr', event.target.value)}
+                                    className="w-26 rounded-sm border border-gray-300 bg-white px-2 py-1 text-xs focus:outline-none"
+                                />
+                                <input
+                                    type="text"
+                                    value={supplier?.postalAddress || ''}
+                                    onChange={(event) => handleChange('postalAddress', event.target.value)}
+                                    className="ml-1 flex-1 rounded-sm border border-gray-300 bg-white px-2 py-1 text-xs focus:outline-none"
+                                />
+                            </div>
+                            <LabeledInput label="Besoksadr." value={supplier?.visitingAddress || ''} onChange={(value) => handleChange('visitingAddress', value)} labelWidth="w-22" margintop="1" />
+                            <LabeledInput label="Land" value={supplier?.country || ''} onChange={(value) => handleChange('country', value)} labelWidth="w-22" />
+                            <LabeledInput label="Referens" value={supplier?.reference || ''} onChange={(value) => handleChange('reference', value)} labelWidth="w-22" />
+                            <LabeledInput label="Vaxeltel." value={supplier?.telephone1 || ''} onChange={(value) => handleChange('telephone1', value)} labelWidth="w-22" />
+                            <LabeledInput label="Direkttel" value={supplier?.telephone2 || ''} onChange={(value) => handleChange('telephone2', value)} labelWidth="w-22" />
+                            <LabeledInput label="Mobiltel" value={supplier?.telephone3 || ''} onChange={(value) => handleChange('telephone3', value)} labelWidth="w-22" />
+                            <LabeledInput label="Epost" value={supplier?.email || ''} onChange={(value) => handleChange('email', value)} labelWidth="w-22" />
                         </div>
 
-                        <div className="w-[600px]">
-                            <LabeledInput label="Namn" value={selectedContact?.supplierContactPersonName || ''} onChange={(value) => selectedContact && handleContactChange(getItemIdentity(selectedContact), 'supplierContactPersonName', value)} labelWidth="w-32" margintop="0" />
-                            <LabeledInput label="Telefon" value={selectedContact?.telephone || ''} onChange={(value) => selectedContact && handleContactChange(getItemIdentity(selectedContact), 'telephone', value)} labelWidth="w-32" margintop="0" />
-                            <LabeledInput label="Mobiltelefon" value={selectedContact?.cellphone || ''} onChange={(value) => selectedContact && handleContactChange(getItemIdentity(selectedContact), 'cellphone', value)} labelWidth="w-32" margintop="0" />
-                            <LabeledInput label="Epostadress" value={selectedContact?.email || ''} onChange={(value) => selectedContact && handleContactChange(getItemIdentity(selectedContact), 'email', value)} labelWidth="w-32" margintop="0" />
-                            <LabeledInput label="Befattning" value={selectedContact?.title || ''} onChange={(value) => selectedContact && handleContactChange(getItemIdentity(selectedContact), 'title', value)} labelWidth="w-32" margintop="0" />
-                            <LabeledSwitch field="mailInquiry" name="mailInquiry" label="Maila forfragan" value={Boolean(selectedContact?.mailInquiry)} onChange={(_rowId, field, checked) => selectedContact && handleContactChange(getItemIdentity(selectedContact), field, checked)} labelWidth="w-32" marginTop={2} />
-                            <LabeledSwitch field="mailSupplierOrder" name="mailSupplierOrder" label="Maila bestallning" value={Boolean(selectedContact?.mailSupplierOrder)} onChange={(_rowId, field, checked) => selectedContact && handleContactChange(getItemIdentity(selectedContact), field, checked)} labelWidth="w-32" />
-                            <LabeledSwitch field="doMailTransportOrder" name="doMailTransportOrder" label="Maila transportorder" value={Boolean(selectedContact?.doMailTransportOrder)} onChange={(_rowId, field, checked) => selectedContact && handleContactChange(getItemIdentity(selectedContact), field, checked)} labelWidth="w-32" />
+                        <div>
+                            <LabeledTextArea label="Notering" value={supplier?.note || ''} onChange={(value) => handleChange('note', value)} labelWidth="w-28" margintop="0" rows={4} />
+                            <LabeledReactSelect
+                                name="termsOfDelivery"
+                                label="Leveransvillkor"
+                                value={supplier?.termsOfDelivery || ''}
+                                items={deliveryTermOptions}
+                                onChange={(value) => handleChange('termsOfDelivery', value)}
+                                labelWidth="w-28"
+                                margintop="1"
+                                allowRawValueLabel
+                            />
+                            <LabeledReactSelect
+                                name="termsOfPayment"
+                                label="Betalningsvillkor"
+                                value={supplier?.termsOfPayment || ''}
+                                items={paymentTermOptions}
+                                onChange={(value) => handleChange('termsOfPayment', value)}
+                                labelWidth="w-28"
+                                margintop="1"
+                                allowRawValueLabel
+                            />
                         </div>
+
+                        <div>
+                            <LabeledInput label="Resultatenhet" value={supplier?.costCenter || ''} onChange={(value) => handleChange('costCenter', value)} labelWidth="w-38" margintop="0" />
+                            <LabeledReactSelect name="currencyId" label="Valuta" value={supplier?.currencyId || ''} items={currencyOptions} onChange={(value) => handleChange('currencyId', value)} labelWidth="w-38" margintop="1" />
+                            <LabeledReactSelect name="languageId" label="Sprak" value={supplier?.languageId || ''} items={languageOptions} onChange={(value) => handleChange('languageId', value)} labelWidth="w-38" margintop="1" allowRawValueLabel />
+                            <LabeledReactSelect name="inquiryCommunicationTypeId" label="Forfragan" value={supplier?.inquiryCommunicationTypeId || ''} items={inquiryCommunicationOptions} onChange={(value) => handleChange('inquiryCommunicationTypeId', value)} labelWidth="w-38" margintop="1" allowRawValueLabel />
+                            <LabeledReactSelect name="supplierOrderCommunicationTypeId" label="Bestallning" value={supplier?.supplierOrderCommunicationTypeId || ''} items={supplierOrderCommunicationOptions} onChange={(value) => handleChange('supplierOrderCommunicationTypeId', value)} labelWidth="w-38" margintop="1" allowRawValueLabel />
+
+                            <LabeledSwitch field="active" name="active" label="Ar aktiv" value={Boolean(supplier?.active)} onChange={(_rowId, field, checked) => handleChange(field, checked)} labelWidth="w-38" marginTop={2} />
+                            <LabeledSwitch field="econopackTransportResponsible" name="econopackTransportResponsible" label="Econopac trp.ansv." value={Boolean(supplier?.econopackTransportResponsible)} onChange={(_rowId, field, checked) => handleChange(field, checked)} labelWidth="w-38" />
+                            <LabeledSwitch field="printForDocumentScanning" name="printForDocumentScanning" label="Utskr.scanning" value={Boolean(supplier?.printForDocumentScanning)} onChange={(_rowId, field, checked) => handleChange(field, checked)} labelWidth="w-38" />
+                            <LabeledSwitch field="fscDefault" name="fscDefault" label="FSC" value={Boolean(supplier?.fscDefault)} onChange={(_rowId, field, checked) => handleChange(field, checked)} labelWidth="w-38" />
+                            <LabeledInput label="Bestallningsmall" value={supplier?.supplierOrderTemplateNr ?? ''} onChange={(value) => handleChange('supplierOrderTemplateNr', value)} labelWidth="w-38" margintop="1" type="number" integerOnly />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-15 mt-15">
+                        <span>
+                            <p className="text-xs text-center border-b border-gray-300 pb-2">Kontaktpersoner</p>
+                            <div className="grid grid-cols-2 gap-10 mt-2">
+                                <div className="border-r border-gray-300 mt-1 px-2 h-full overflow-y-auto">
+                                    {toArray(supplier?.contactPersons).length > 0 ? (
+                                        <ul className="mt-2 space-y-2">
+                                            {toArray(supplier?.contactPersons).map((contact) => {
+                                                const itemIdentity = getItemIdentity(contact);
+                                                const isSelected = selectedContactIdentity === itemIdentity;
+
+                                                return (
+                                                    <li
+                                                        key={itemIdentity}
+                                                        className={`cursor-pointer text-xs p-1 m-0 rounded-sm hover:bg-lime-50 ${isSelected ? 'bg-lime-200/50' : ''}`}
+                                                        onClick={() => setSelectedContactIdentity(itemIdentity)}
+                                                    >
+                                                        <div className="flex justify-between items-center h-5 px-3">
+                                                            <div className="">{contact?.supplierContactPersonName || contact?.contactPerson || ''}</div>
+                                                            <div className="">
+                                                                {contact?.title ? (
+                                                                    <span className="inline-flex max-w-full items-center rounded-full bg-lime-600 px-3 py-[4px] text-[9px] font-medium text-slate-50">
+                                                                        <span className="truncate">{contact.title}</span>
+                                                                    </span>
+                                                                ) : null}
+                                                            </div>
+                                                        </div>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    ) : (
+                                        <p className="text-xs ms-1 font-light mt-5">Inga kontakter</p>
+                                    )}
+                                    <div className="mt-3">
+                                        <button
+                                            type="button"
+                                            onClick={addContact}
+                                            className="text-xs text-blue-600 hover:bg-blue-50 px-2 py-1 rounded border border-transparent hover:border-blue-200"
+                                        >
+                                            + Lägg till kontakt
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className={(selectedContact ? '' : 'opacity-50 pointer-events-none') + ' mt-1'}>
+                                    <LabeledInput label="Namn" value={selectedContact?.supplierContactPersonName || ''} onChange={(value) => handleContactChange(getItemIdentity(selectedContact), 'supplierContactPersonName', value)} labelWidth="w-20" margintop="0" placeholder="" />
+                                    <LabeledInput label="Telefon" value={selectedContact?.telephone || ''} onChange={(value) => handleContactChange(getItemIdentity(selectedContact), 'telephone', value)} labelWidth="w-20" margintop="0" placeholder="" />
+                                    <LabeledInput label="Mobil" value={selectedContact?.cellphone || ''} onChange={(value) => handleContactChange(getItemIdentity(selectedContact), 'cellphone', value)} labelWidth="w-20" margintop="0" placeholder="" />
+                                    <LabeledInput label="Email" value={selectedContact?.email || ''} onChange={(value) => handleContactChange(getItemIdentity(selectedContact), 'email', value)} labelWidth="w-20" margintop="0" placeholder="" />
+                                    <LabeledInput label="Titel" value={selectedContact?.title || ''} onChange={(value) => handleContactChange(getItemIdentity(selectedContact), 'title', value)} labelWidth="w-20" margintop="0" placeholder="" />
+                                    <LabeledSwitch
+                                        field="mailInquiry"
+                                        name="mailInquiry"
+                                        label="Forfragan"
+                                        value={Boolean(selectedContact?.mailInquiry)}
+                                        onChange={(_rowId, field, checked) => handleContactChange(getItemIdentity(selectedContact), field, checked)}
+                                        labelWidth="w-20"
+                                        margintop="1"
+                                    />
+                                    <LabeledSwitch
+                                        field="mailSupplierOrder"
+                                        name="mailSupplierOrder"
+                                        label="Bestallning"
+                                        value={Boolean(selectedContact?.mailSupplierOrder)}
+                                        onChange={(_rowId, field, checked) => handleContactChange(getItemIdentity(selectedContact), field, checked)}
+                                        labelWidth="w-20"
+                                        margintop="1"
+                                    />
+                                    <LabeledSwitch
+                                        field="doMailTransportOrder"
+                                        name="doMailTransportOrder"
+                                        label="Transport"
+                                        value={Boolean(selectedContact?.doMailTransportOrder)}
+                                        onChange={(_rowId, field, checked) => handleContactChange(getItemIdentity(selectedContact), field, checked)}
+                                        labelWidth="w-20"
+                                        margintop="1"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => deleteContact(getItemIdentity(selectedContact))}
+                                        className="text-xs text-red-500 hover:text-red-700 mt-5"
+                                    >
+                                        Radera kontakt
+                                    </button>
+                                </div>
+                            </div>
+                        </span>
+
+                        <span>
+                            <p className="text-xs text-center border-b border-gray-300 pb-2">Fabriker</p>
+                            <div className="grid grid-cols-2 gap-10 mt-2">
+                                <div className="border-r border-gray-300 mt-1 px-2 h-full overflow-y-auto">
+                                    {toArray(supplier?.factories).length > 0 ? (
+                                        <ul className="mt-2 space-y-2">
+                                            {toArray(supplier?.factories).map((factory) => {
+                                                const itemIdentity = getItemIdentity(factory);
+                                                const isSelected = selectedFactoryIdentity === itemIdentity;
+
+                                                return (
+                                                    <li
+                                                        key={itemIdentity}
+                                                        className={`cursor-pointer text-xs p-1 m-0 rounded-sm hover:bg-lime-50 ${isSelected ? 'bg-lime-200/50' : ''}`}
+                                                        onClick={() => setSelectedFactoryIdentity(itemIdentity)}
+                                                    >
+                                                        <div className="flex justify-between items-center h-5 px-3">
+                                                            <div className="">{factory?.name || ''}</div>
+                                                            {/* <div className="text-gray-500">{factory?.country || ''}</div> */}
+                                                        </div>
+                                                    </li>
+                                                );
+                                            })}
+                                        </ul>
+                                    ) : (
+                                        <p className="text-xs ms-1 font-light mt-5">Inga fabriker</p>
+                                    )}
+                                    <div className="mt-3">
+                                        <button type="button" onClick={addFactory} className="text-xs text-blue-600 hover:bg-blue-50 px-2 py-1 rounded border border-transparent hover:border-blue-200">Lagg till fabrik</button>
+                                    </div>
+                                </div>
+                                <div className={(selectedFactory ? '' : 'opacity-50 pointer-events-none') + ' mt-1'}>
+                                    <LabeledInput label="Namn" value={selectedFactory?.name || ''} onChange={(value) => handleFactoryChange(getItemIdentity(selectedFactory), 'name', value)} labelWidth="w-20" margintop="0" placeholder="" />
+                                    <LabeledInput label="Adress" value={selectedFactory?.address || ''} onChange={(value) => handleFactoryChange(getItemIdentity(selectedFactory), 'address', value)} labelWidth="w-20" margintop="0" placeholder="" />
+                                    <LabeledInput label="Postnr" value={selectedFactory?.postalNr || ''} onChange={(value) => handleFactoryChange(getItemIdentity(selectedFactory), 'postalNr', value)} labelWidth="w-20" margintop="0" placeholder="" />
+                                    <LabeledInput label="Ort" value={selectedFactory?.city || ''} onChange={(value) => handleFactoryChange(getItemIdentity(selectedFactory), 'city', value)} labelWidth="w-20" margintop="0" placeholder="" />
+                                    <LabeledInput label="Land" value={selectedFactory?.country || ''} onChange={(value) => handleFactoryChange(getItemIdentity(selectedFactory), 'country', value)} labelWidth="w-20" margintop="0" placeholder="" />
+                                    <LabeledInput label="Adr. extra" value={selectedFactory?.addressExtra || ''} onChange={(value) => handleFactoryChange(getItemIdentity(selectedFactory), 'addressExtra', value)} labelWidth="w-20" margintop="0" placeholder="" />
+                                    <LabeledSwitch
+                                        field="isDefault"
+                                        name="isDefault"
+                                        label="Huvudfabrik"
+                                        value={Boolean(selectedFactory?.isDefault)}
+                                        onChange={(_rowId, field, checked) => handleFactoryChange(getItemIdentity(selectedFactory), field, checked)}
+                                        labelWidth="w-20"
+                                        marginTop={4}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => deleteFactory(getItemIdentity(selectedFactory))}
+                                        className="text-xs text-red-500 hover:text-red-700 mt-5"
+                                    >
+                                        Radera fabrik
+                                    </button>
+                                </div>
+                            </div>
+                        </span>
                     </div>
                 </div>
-            ) : (
-                <div className="mt-8 grid grid-cols-[420px_720px] gap-20">
-                    <div>
-                        <div className="border-t border-gray-300 pt-2 text-[10px] text-gray-600">
-                            <div className="grid grid-cols-[1fr_120px] px-4 pb-2">
-                                <span>FABRIK</span>
-                                <span>LAND</span>
-                            </div>
-                            <div className="space-y-1 px-2">
-                                {toArray(supplier?.factories).length === 0 ? (
-                                    <p className="px-2 py-4 text-xs text-gray-400">Inga fabriker.</p>
-                                ) : (
-                                    toArray(supplier?.factories).map((factory) => {
-                                        const identity = getItemIdentity(factory);
-                                        const isSelected = selectedFactoryIdentity === identity;
-
-                                        return (
-                                            <button
-                                                key={identity}
-                                                type="button"
-                                                onClick={() => setSelectedFactoryIdentity(identity)}
-                                                className={`grid w-full grid-cols-[1fr_120px] px-2 py-1 text-left text-sm ${isSelected ? 'bg-amber-100' : 'hover:bg-amber-50'}`}
-                                            >
-                                                <span className="truncate">{factory?.name || ''}</span>
-                                                <span className="truncate">{factory?.country || ''}</span>
-                                            </button>
-                                        );
-                                    })
-                                )}
-                            </div>
-                        </div>
-
-                        <button type="button" onClick={addFactory} className="mt-16 w-28 bg-blue-800 px-4 py-[5px] text-xs text-white shadow-md/30 hover:bg-blue-900">
-                            NY
-                        </button>
-                    </div>
-
-                    <div className={selectedFactory ? '' : 'pointer-events-none opacity-50'}>
-                        <div className="flex justify-end">
-                            <button
-                                type="button"
-                                onClick={() => selectedFactory && deleteFactory(getItemIdentity(selectedFactory))}
-                                className="mb-4 w-36 bg-blue-800 px-4 py-[5px] text-xs text-white shadow-md/30 hover:bg-blue-900"
-                                disabled={!selectedFactory}
-                            >
-                                RADERA
-                            </button>
-                        </div>
-
-                        <div className="w-[600px]">
-                            <LabeledInput label="Namn" value={selectedFactory?.name || ''} onChange={(value) => selectedFactory && handleFactoryChange(getItemIdentity(selectedFactory), 'name', value)} labelWidth="w-32" margintop="0" />
-                            <LabeledInput label="Adress" value={selectedFactory?.address || ''} onChange={(value) => selectedFactory && handleFactoryChange(getItemIdentity(selectedFactory), 'address', value)} labelWidth="w-32" margintop="0" />
-                            <LabeledInput label="Postnr" value={selectedFactory?.postalNr || ''} onChange={(value) => selectedFactory && handleFactoryChange(getItemIdentity(selectedFactory), 'postalNr', value)} labelWidth="w-32" margintop="0" />
-                            <LabeledInput label="Ort" value={selectedFactory?.city || ''} onChange={(value) => selectedFactory && handleFactoryChange(getItemIdentity(selectedFactory), 'city', value)} labelWidth="w-32" margintop="0" />
-                            <LabeledInput label="Land" value={selectedFactory?.country || ''} onChange={(value) => selectedFactory && handleFactoryChange(getItemIdentity(selectedFactory), 'country', value)} labelWidth="w-32" margintop="0" />
-                            <LabeledInput label="Adress extra" value={selectedFactory?.addressExtra || ''} onChange={(value) => selectedFactory && handleFactoryChange(getItemIdentity(selectedFactory), 'addressExtra', value)} labelWidth="w-32" margintop="0" />
-                            <LabeledSwitch field="isDefault" name="isDefault" label="Huvudfabrik" value={Boolean(selectedFactory?.isDefault)} onChange={(_rowId, field, checked) => selectedFactory && handleFactoryChange(getItemIdentity(selectedFactory), field, checked)} labelWidth="w-32" marginTop={2} />
-                        </div>
-                    </div>
-                </div>
-            )}
+            </div>
         </div>
     );
 };

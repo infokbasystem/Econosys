@@ -45,7 +45,7 @@ const getNodeLink = (type, id) => {
     }
 };
 
-const getNodeClassName = (isActive) => `${nodeBaseClass} ${isActive ? 'text-red-600 font-semibold' : 'text-gray-700 hover:bg-gray-100'}`;
+const getNodeClassName = (isActive) => `${nodeBaseClass} ${isActive ? 'bg-lime-50 text-stone-900 font-semibold shadow-sm shadow-lime-900/10' : 'text-gray-700 hover:bg-gray-100'}`;
 
 const OrderNode = ({ label, type, id, isActive = false, depth = 0 }) => {
     const link = getNodeLink(type, id);

@@ -319,7 +319,7 @@ const EmailTextsSettings = () => {
                                         key={item.id}
                                         type="button"
                                         onClick={() => handleSelectItem(item.id)}
-                                        className={`w-full text-left text-xs px-2 py-1 rounded-sm grid grid-cols-[72px_1fr] gap-2 items-center ${isSelected ? 'bg-yellow-300 text-black' : 'hover:bg-gray-100 text-gray-900'}`}
+                                        className={`w-full h-6 text-left text-xs px-2 py-1 rounded-sm grid grid-cols-[72px_1fr] gap-2 items-center ${isSelected ? 'bg-purple-200/50 text-black' : 'hover:bg-gray-100 text-gray-900'}`}
                                     >
                                         <span className="text-gray-600">{item.id}</span>
                                         <span className="truncate">{item.item}</span>

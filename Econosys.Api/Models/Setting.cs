@@ -27,6 +27,18 @@ namespace Econosys.Api.Models
         [Column("lngInvoiceLastNr")]
         public int? InvoiceLastNr { get; set; }
 
+        [Column("intHandlingTimesGoalNrOfDays")]
+        public int? HandlingTimesGoalNrOfDays { get; set; }
+
+        [Column("intHandlingTimesGoalMaxNrOfDays")]
+        public int? HandlingTimesGoalMaxNrOfDays { get; set; }
+
+        [Column("decHandlingTimesPercentHandledUnderGoalNrOfDays")]
+        public decimal? HandlingTimesPercentHandledUnderGoalNrOfDays { get; set; }
+
+        [Column("intHandlingTimesThresholdNrOfDays")]
+        public int? HandlingTimesThresholdNrOfDays { get; set; }
+
         [Column("strDefaultCustomerMessage")]
         [MaxLength(255)]
         public string? DefaultCustomerMessage { get; set; }
@@ -38,6 +50,22 @@ namespace Econosys.Api.Models
         [Column("strExportText")]
         [MaxLength(255)]
         public string? ExportText { get; set; }
+
+        [Column("JeevesApiEndpoint")]
+        [MaxLength(500)]
+        public string? JeevesApiEndpoint { get; set; }
+
+        [Column("JeevesApiKeyProtected")]
+        [MaxLength(2000)]
+        public string? JeevesApiKeyProtected { get; set; }
+
+        [Column("JeevesTestApiEndpoint")]
+        [MaxLength(500)]
+        public string? JeevesTestApiEndpoint { get; set; }
+
+        [Column("JeevesTestApiKeyProtected")]
+        [MaxLength(2000)]
+        public string? JeevesTestApiKeyProtected { get; set; }
 
         [Column("OldDbId")]
         public int? OldDbId { get; set; }

@@ -5,3 +5,7 @@ dotnet publish
 dotnet ef migrations add xxx 
 dotnet ef database update 
 dotnet ef migrations script xxx
+
+
+
+mkdir -p deploy && dotnet publish -c Release -r linux-x64 --self-contained false -o ./deploy/publish && (cd deploy/publish && zip -r ../deploy.zip .) && az webapp deploy --resource-group Econosys --name econosysapi --src-path ./deploy/deploy.zip --type zip

@@ -90,7 +90,7 @@ const UsersSettings = () => {
                                         key={item.id}
                                         type="button"
                                         onClick={() => selectItem(item)}
-                                        className={`w-full text-left text-xs px-2 py-0.5 rounded-sm grid grid-cols-[70px_1fr] gap-2 ${isSelected ? 'bg-yellow-300 text-black' : 'hover:bg-gray-100 text-gray-900'}`}
+                                        className={`w-full h-6 items-center text-left text-xs px-2 py-0.5 rounded-sm grid grid-cols-[70px_1fr] gap-2 ${isSelected ? 'bg-purple-200/50 text-black' : 'hover:bg-gray-100 text-gray-900'}`}
                                     >
                                         <span>{item.id}</span>
                                         <span className="truncate">{item.name}</span>

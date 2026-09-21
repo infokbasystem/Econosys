@@ -103,6 +103,46 @@ namespace Econosys.Api.DTOs
         public decimal ActualInternalCostSek { get; set; }
     }
 
+    public class SupplierDeviationReportRequest
+    {
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
+    }
+
+    public class SupplierDeviationReportRowDto
+    {
+        public int DeviationId { get; set; }
+        public string? DeviationNr { get; set; }
+        public int? CustomerOrderId { get; set; }
+        public string? CustomerOrderNr { get; set; }
+        public string? CustomerName { get; set; }
+        public DateTime? DeviationOpened { get; set; }
+        public DateTime? DeviationClosedToSupplier { get; set; }
+        public DateTime? DeviationClosed { get; set; }
+        public int? DaysToCloseToSupplier { get; set; }
+        public string? DeviationTypeCode { get; set; }
+        public string? DeviationProcessCode { get; set; }
+        public string? Status { get; set; }
+        public string? Description { get; set; }
+    }
+
+    public class SupplierDeviationReportGroupDto
+    {
+        public int SupplierId { get; set; }
+        public string? SupplierName { get; set; }
+        public int DeviationCount { get; set; }
+        public int ClosedCount { get; set; }
+        public decimal? AverageDaysToCloseToSupplier { get; set; }
+        public IReadOnlyList<SupplierDeviationReportRowDto> Deviations { get; set; } = Array.Empty<SupplierDeviationReportRowDto>();
+    }
+
+    public class SupplierDeviationReportDto
+    {
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
+        public IReadOnlyList<SupplierDeviationReportGroupDto> Suppliers { get; set; } = Array.Empty<SupplierDeviationReportGroupDto>();
+    }
+
     public class DeviationFilterOptionsDto
     {
         public IReadOnlyList<FilterOptionDto<string>> Statuses { get; set; } = Array.Empty<FilterOptionDto<string>>();

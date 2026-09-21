@@ -80,5 +80,7 @@ namespace Econosys.Api.Models
         public virtual ICollection<OrderCost> EditedOrderCosts { get; set; } = new List<OrderCost>();
         public virtual ICollection<Quotation> CreatedQuotations { get; set; } = new List<Quotation>();
         public virtual ICollection<Quotation> EditedQuotations { get; set; } = new List<Quotation>();
+        public virtual ICollection<TransportOrder> CreatedTransportOrders { get; set; } = new List<TransportOrder>();
+        public virtual ICollection<TransportOrder> EditedTransportOrders { get; set; } = new List<TransportOrder>();
     }
 }

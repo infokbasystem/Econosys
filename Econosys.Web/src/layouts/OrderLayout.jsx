@@ -1,122 +1,102 @@
-import { useEffect, useState } from "react";
-import { Outlet, NavLink, useLocation } from "react-router-dom";
+import { createContext, useContext, useMemo, useState } from "react";
+import { Outlet, useLocation } from "react-router-dom";
+import {
+    Boxes,
+    Calculator,
+    ClipboardCheck,
+    Factory,
+    FileText,
+    LayoutDashboard,
+    Package,
+    Send,
+    ShoppingCart,
+    Users,
+} from "lucide-react";
 import Header from "../components/Header";
+import LeftMenu from "../components/LeftMenu";
 import Navbar from "../components/Navbar";
 import bg from "../assets/content.png";
 
 import { PdfProvider } from "../contexts/PdfContext";
 import PdfPanel from "../components/PdfPanel";
 
+const OrderMenuContext = createContext(null);
+
+// Lets pages under this layout show/hide the sliding order register menu themselves.
+export const useOrderMenu = () => useContext(OrderMenuContext);
+
+
+const menuGroups = [
+    {
+        items: [
+            { to: "/order", label: "Översikt", icon: LayoutDashboard, end: true },
+        ],
+    },
+    {
+        label: "Kalkyl",
+        items: [
+            { label: "Kalkyler", icon: Calculator, disabled: true },
+            { to: "/order/products", label: "Produkter", icon: Package },
+        ],
+    },
+    {
+        label: "Order",
+        items: [
+            { to: "/order/inquiries", label: "Förfrågningar", icon: Send },
+            { to: "/order/quotations", label: "Affärsförslag", icon: FileText },
+            { to: "/order/supplierorders", label: "Beställningar", icon: ShoppingCart },
+            { to: "/order/customerorders", label: "Ordererkännanden", icon: ClipboardCheck },
+        ],
+    },
+    {
+        label: "Register",
+        items: [
+            { to: "/order/customers", label: "Kunder", icon: Users },
+            { to: "/order/suppliers", label: "Leverantörer", icon: Factory },
+            { to: "/order/materials", label: "Material", icon: Boxes },
+            { to: "/order/constructions", label: "Konstruktioner", icon: Calculator },
+        ],
+    },
+];
+
 const OrderLayout = () => {
     const location = useLocation();
-    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [menuOpenPath, setMenuOpenPath] = useState(null);
+    const isMenuOpen = menuOpenPath === location.pathname;
     const pathSegments = location.pathname.split('/').filter(Boolean);
     const hasIdLikeLastSegment = /^\d+$/.test(pathSegments[pathSegments.length - 1] || '');
     const isDetailPage = pathSegments.length >= 3 || (pathSegments.length === 2 && hasIdLikeLastSegment);
 
-    const getNavLinkClass = (type) => {
-        if (type === 'overview') {
-            return location.pathname === '/order'
-                ? 'text-red-600'
-                : 'text-gray-600 hover:text-gray-950';
-        }
+    const orderMenuContextValue = useMemo(() => ({
+        isMenuOpen,
+        openMenu: () => setMenuOpenPath(location.pathname),
+        closeMenu: () => setMenuOpenPath(null),
+        toggleMenu: () => setMenuOpenPath((prev) => (prev === location.pathname ? null : location.pathname)),
+    }), [isMenuOpen, location.pathname]);
 
-        if (type === 'products') {
-            return location.pathname.startsWith('/order/products')
-                ? 'text-red-600'
-                : 'text-gray-600 hover:text-gray-950';
-        }
+    const menuContent = <LeftMenu groups={menuGroups} />;
 
-        if (type === 'customers') {
-            return location.pathname.startsWith('/order/customers')
-                ? 'text-red-600'
-                : 'text-gray-600 hover:text-gray-950';
-        }
-
-        if (type === 'suppliers') {
-            return location.pathname.startsWith('/order/suppliers')
-                ? 'text-red-600'
-                : 'text-gray-600 hover:text-gray-950';
-        }
-
-        if (type === 'quotations') {
-            return location.pathname.startsWith('/order/quotations')
-                ? 'text-red-600'
-                : 'text-gray-600 hover:text-gray-950';
-        }
-
-        if (type === 'supplierorders') {
-            return location.pathname.startsWith('/order/supplierorders')
-                ? 'text-red-600'
-                : 'text-gray-600 hover:text-gray-950';
-        }
-
-        if (type === 'customerorders') {
-            return location.pathname.startsWith('/order/customerorders')
-                ? 'text-red-600'
-                : 'text-gray-600 hover:text-gray-950';
-        }
-
-        if (type === 'inquiries') {
-            return location.pathname.startsWith('/order/inquiries')
-                ? 'text-red-600'
-                : 'text-gray-600 hover:text-gray-950';
-        }
-
-        return 'text-gray-600 hover:text-gray-950';
-    };
-
-    useEffect(() => {
-        setIsMenuOpen(false);
-    }, [location.pathname]);
-
-    const menuContent = (
-        <ul className="flex flex-col pt-5">
-            <li className={'text-xs font-semibold px-6 py-1.5 ' + getNavLinkClass('overview')}><NavLink to="/order">Översikt</NavLink></li>
-            <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Kalkyl</p>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink >Kalkyler</NavLink></li>
-            <li className={'text-xs font-semibold px-6 py-1.5 ' + getNavLinkClass('products')}><NavLink to="/order/products">Produkter</NavLink></li>
-            <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Order</p>
-            <li className={'text-xs font-semibold px-6 py-1.5 ' + getNavLinkClass('inquiries')}><NavLink to="/order/inquiries">Förfrågningar</NavLink></li>
-            <li className={'text-xs font-semibold px-6 py-1.5 ' + getNavLinkClass('quotations')}><NavLink to="/order/quotations">Affärsförslag</NavLink></li>
-            <li className={'text-xs font-semibold px-6 py-1.5 ' + getNavLinkClass('supplierorders')}><NavLink to="/order/supplierorders">Beställningar</NavLink></li>
-            <li className={'text-xs font-semibold px-6 py-1.5 ' + getNavLinkClass('customerorders')}><NavLink to="/order/customerorders">Ordererkännanden</NavLink></li>
-            <p className="bg-gray-200 text-xs px-6 py-1.5 mt-3 mb-1">Register</p>
-            <li className={'text-xs font-semibold px-6 py-1.5 ' + getNavLinkClass('customers')}><NavLink to="/order/customers">Kunder</NavLink></li>
-            <li className={'text-xs font-semibold px-6 py-1.5 ' + getNavLinkClass('suppliers')}><NavLink to="/order/suppliers">Levernatörer</NavLink></li>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Material</NavLink></li>
-            <li className="opacity-50 pointer-events-none text-xs text-gray-600 hover:text-gray-950 font-semibold px-6 py-1.5"><NavLink>Konstruktioner</NavLink></li>
-        </ul>
-    );
-
-    return (        
+    return (
         <PdfProvider>
-            <div className="flex flex-col min-h-screen">
-                <Header />
-                <div className="sticky top-0 z-50">
+            <div className="flex h-screen min-h-0 flex-col overflow-y-auto bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50" style={{ backgroundImage: `url(${bg})` }}>
+                <div className="shrink-0">
+                    <Header />
+                </div>
+                <div className="sticky top-0 z-50 shrink-0">
                     <Navbar />
                 </div>
-                <div className="relative flex grow items-stretch bg-gradient-to-br from-gray-50 via-gray-100 to-gray-50" style={{ backgroundImage: `url(${bg})` }}>
+                <div className="relative flex min-h-0 grow items-stretch md:px-[clamp(4px,3vw,3vw)] overflow-hidden">
                     {!isDetailPage && (
-                    <div className="sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto flex flex-col w-50 shrink-0 border-r border-gray-300">
-                        {menuContent}
-                    </div>
+                        <div className="flex min-h-0 w-50 mt-10 mb-20 shrink-0 flex-col overflow-y-auto border-r border-gray-300">
+                            {menuContent}
+                        </div>
                     )}
 
                     {isDetailPage && (
                         <>
-                            <button
-                                type="button"
-                                onClick={() => setIsMenuOpen(true)}
-                                className="absolute left-4 top-5 z-20 inline-flex h-7 w-7 items-center justify-center rounded border border-gray-300 bg-white/95 text-gray-700 shadow-sm hover:bg-white"
-                                aria-label="Visa meny"
-                            >
-                                ≡
-                            </button>
-
                             <div
                                 className={`absolute inset-0 z-30 bg-black/20 transition-opacity ${isMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
-                                onClick={() => setIsMenuOpen(false)}
+                                onClick={() => setMenuOpenPath(null)}
                             />
 
                             <div
@@ -125,7 +105,7 @@ const OrderLayout = () => {
                                 <div className="flex items-center justify-end border-b border-gray-200 px-2 py-1">
                                     <button
                                         type="button"
-                                        onClick={() => setIsMenuOpen(false)}
+                                        onClick={() => setMenuOpenPath(null)}
                                         className="inline-flex h-6 w-6 items-center justify-center rounded text-gray-600 hover:bg-gray-200"
                                         aria-label="Dölj meny"
                                     >
@@ -138,11 +118,14 @@ const OrderLayout = () => {
                     )}
 
                     <div className="flex-grow min-w-0 pt-4 px-0 relative overflow-hidden">
-                        <div className="outlet-leading-none h-full">
-                            <Outlet />
+                        <div className="outlet-leading-none h-full pt-0">
+                            <OrderMenuContext.Provider value={orderMenuContextValue}>
+                                <Outlet />
+                            </OrderMenuContext.Provider>
                         </div>
-                        <PdfPanel />
                     </div>
+
+                    <PdfPanel />
                 </div>
             </div>
         </PdfProvider>

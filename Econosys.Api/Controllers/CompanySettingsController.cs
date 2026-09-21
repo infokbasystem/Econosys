@@ -1,6 +1,7 @@
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -12,11 +13,15 @@ namespace Econosys.Api.Controllers
     [Route("api/[controller]")]
     public class CompanySettingsController : ControllerBase
     {
+        private const string JeevesApiKeyPurpose = "Econosys.Jeeves.ApiKey.v1";
+        private const string JeevesTestApiKeyPurpose = "Econosys.Jeeves.TestApiKey.v1";
         private readonly ApplicationDbContext _dbContext;
+        private readonly IProtectedSecretService _protectedSecretService;
 
-        public CompanySettingsController(ApplicationDbContext dbContext)
+        public CompanySettingsController(ApplicationDbContext dbContext, IProtectedSecretService protectedSecretService)
         {
             _dbContext = dbContext;
+            _protectedSecretService = protectedSecretService;
         }
 
         [HttpGet("{companyId:int}")]
@@ -49,7 +54,7 @@ namespace Econosys.Api.Controllers
             }
 
             var company = new CompanyInfo();
-            MapCompanyValues(request, company);
+            MapCompanyValues(request, company, request.PropertiesToUpdate);
 
             _dbContext.CompanyInfos.Add(company);
             await _dbContext.SaveChangesAsync();
@@ -62,7 +67,7 @@ namespace Econosys.Api.Controllers
                     CompanyId = company.CompanyId
                 };
 
-                MapSettingValues(request, settings);
+                MapSettingValues(request, settings, request.PropertiesToUpdate, _protectedSecretService);
 
                 _dbContext.Settings.Add(settings);
                 await _dbContext.SaveChangesAsync();
@@ -103,84 +108,110 @@ namespace Econosys.Api.Controllers
                 _dbContext.Settings.Add(settings);
             }
 
-            MapCompanyValues(request, company);
-            MapSettingValues(request, settings);
+            MapCompanyValues(request, company, request.PropertiesToUpdate);
+            MapSettingValues(request, settings, request.PropertiesToUpdate, _protectedSecretService);
 
             await _dbContext.SaveChangesAsync();
 
             return Ok(MapToDto(company, settings));
         }
 
-        private static void MapCompanyValues(CreateCompanySettingsRequest source, CompanyInfo target)
+        private static bool ShouldUpdateProperty(IEnumerable<string>? propertiesToUpdate, string propertyName)
         {
-            target.CompanyName = source.CompanyName;
-            target.Address = source.Address;
-            target.PostalAddress = source.PostalAddress;
-            target.ZipCode = source.ZipCode;
-            target.Telephone1 = source.Telephone1;
-            target.Telephone2 = source.Telephone2;
-            target.Fax1 = source.Fax1;
-            target.Fax2 = source.Fax2;
-            target.Bank = source.Bank;
-            target.BIC = source.BIC;
-            target.IBAN = source.IBAN;
-            target.BG = source.BG;
-            target.PG = source.PG;
-            target.VATNr = source.VATNr;
-            target.InvoiceMailSWE = source.InvoiceMailSWE;
-            target.InvoiceMailENG = source.InvoiceMailENG;
-            target.DocumentFileBasePath = source.DocumentFileBasePath;
-            target.Email = source.Email;
-            target.Web = source.Web;
-            target.MailWrapper = source.MailWrapper;
-            target.GoogleApiKey = source.GoogleApiKey;
+            if (propertiesToUpdate is null || !propertiesToUpdate.Any())
+            {
+                return true;
+            }
+
+            return propertiesToUpdate.Any(x => string.Equals(x, propertyName, StringComparison.OrdinalIgnoreCase));
         }
 
-        private static void MapCompanyValues(UpdateCompanySettingsRequest source, CompanyInfo target)
+        private static void MapCompanyValues(CreateCompanySettingsRequest source, CompanyInfo target, IEnumerable<string>? propertiesToUpdate)
         {
-            target.CompanyName = source.CompanyName;
-            target.Address = source.Address;
-            target.PostalAddress = source.PostalAddress;
-            target.ZipCode = source.ZipCode;
-            target.Telephone1 = source.Telephone1;
-            target.Telephone2 = source.Telephone2;
-            target.Fax1 = source.Fax1;
-            target.Fax2 = source.Fax2;
-            target.Bank = source.Bank;
-            target.BIC = source.BIC;
-            target.IBAN = source.IBAN;
-            target.BG = source.BG;
-            target.PG = source.PG;
-            target.VATNr = source.VATNr;
-            target.InvoiceMailSWE = source.InvoiceMailSWE;
-            target.InvoiceMailENG = source.InvoiceMailENG;
-            target.DocumentFileBasePath = source.DocumentFileBasePath;
-            target.Email = source.Email;
-            target.Web = source.Web;
-            target.MailWrapper = source.MailWrapper;
-            target.GoogleApiKey = source.GoogleApiKey;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.CompanyName))) target.CompanyName = source.CompanyName;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.Address))) target.Address = source.Address;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.PostalAddress))) target.PostalAddress = source.PostalAddress;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.ZipCode))) target.ZipCode = source.ZipCode;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.Telephone1))) target.Telephone1 = source.Telephone1;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.Telephone2))) target.Telephone2 = source.Telephone2;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.Fax1))) target.Fax1 = source.Fax1;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.Fax2))) target.Fax2 = source.Fax2;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.Bank))) target.Bank = source.Bank;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.BIC))) target.BIC = source.BIC;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.IBAN))) target.IBAN = source.IBAN;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.BG))) target.BG = source.BG;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.PG))) target.PG = source.PG;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.VATNr))) target.VATNr = source.VATNr;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.InvoiceMailSWE))) target.InvoiceMailSWE = source.InvoiceMailSWE;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.InvoiceMailENG))) target.InvoiceMailENG = source.InvoiceMailENG;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.DocumentFileBasePath))) target.DocumentFileBasePath = source.DocumentFileBasePath;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.Email))) target.Email = source.Email;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.Web))) target.Web = source.Web;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.MailWrapper))) target.MailWrapper = source.MailWrapper;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.GoogleApiKey))) target.GoogleApiKey = source.GoogleApiKey;
         }
 
-        private static void MapSettingValues(CreateCompanySettingsRequest source, Setting target)
+        private static void MapCompanyValues(UpdateCompanySettingsRequest source, CompanyInfo target, IEnumerable<string>? propertiesToUpdate)
         {
-            target.NrOfInquiryAnswerDays = source.NrOfInquiryAnswerDays;
-            target.VATInfo = source.VATInfo;
-            target.Company = source.SettingsCompany;
-            target.InvoiceLastNr = source.InvoiceLastNr;
-            target.DefaultCustomerMessage = source.DefaultCustomerMessage;
-            target.EUText = source.EUText;
-            target.ExportText = source.ExportText;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.CompanyName))) target.CompanyName = source.CompanyName;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.Address))) target.Address = source.Address;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.PostalAddress))) target.PostalAddress = source.PostalAddress;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.ZipCode))) target.ZipCode = source.ZipCode;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.Telephone1))) target.Telephone1 = source.Telephone1;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.Telephone2))) target.Telephone2 = source.Telephone2;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.Fax1))) target.Fax1 = source.Fax1;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.Fax2))) target.Fax2 = source.Fax2;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.Bank))) target.Bank = source.Bank;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.BIC))) target.BIC = source.BIC;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.IBAN))) target.IBAN = source.IBAN;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.BG))) target.BG = source.BG;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.PG))) target.PG = source.PG;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.VATNr))) target.VATNr = source.VATNr;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.InvoiceMailSWE))) target.InvoiceMailSWE = source.InvoiceMailSWE;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.InvoiceMailENG))) target.InvoiceMailENG = source.InvoiceMailENG;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.DocumentFileBasePath))) target.DocumentFileBasePath = source.DocumentFileBasePath;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.Email))) target.Email = source.Email;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.Web))) target.Web = source.Web;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.MailWrapper))) target.MailWrapper = source.MailWrapper;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.GoogleApiKey))) target.GoogleApiKey = source.GoogleApiKey;
         }
 
-        private static void MapSettingValues(UpdateCompanySettingsRequest source, Setting target)
+        private static void MapSettingValues(CreateCompanySettingsRequest source, Setting target, IEnumerable<string>? propertiesToUpdate, IProtectedSecretService protectedSecretService)
         {
-            target.NrOfInquiryAnswerDays = source.NrOfInquiryAnswerDays;
-            target.VATInfo = source.VATInfo;
-            target.Company = source.SettingsCompany;
-            target.InvoiceLastNr = source.InvoiceLastNr;
-            target.DefaultCustomerMessage = source.DefaultCustomerMessage;
-            target.EUText = source.EUText;
-            target.ExportText = source.ExportText;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.NrOfInquiryAnswerDays))) target.NrOfInquiryAnswerDays = source.NrOfInquiryAnswerDays;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.VATInfo))) target.VATInfo = source.VATInfo;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.SettingsCompany))) target.Company = source.SettingsCompany;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.InvoiceLastNr))) target.InvoiceLastNr = source.InvoiceLastNr;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.HandlingTimesGoalNrOfDays))) target.HandlingTimesGoalNrOfDays = source.HandlingTimesGoalNrOfDays;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.HandlingTimesGoalMaxNrOfDays))) target.HandlingTimesGoalMaxNrOfDays = source.HandlingTimesGoalMaxNrOfDays;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.HandlingTimesPercentHandledUnderGoalNrOfDays))) target.HandlingTimesPercentHandledUnderGoalNrOfDays = source.HandlingTimesPercentHandledUnderGoalNrOfDays;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.HandlingTimesThresholdNrOfDays))) target.HandlingTimesThresholdNrOfDays = source.HandlingTimesThresholdNrOfDays;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.DefaultCustomerMessage))) target.DefaultCustomerMessage = source.DefaultCustomerMessage;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.EUText))) target.EUText = source.EUText;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.ExportText))) target.ExportText = source.ExportText;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.JeevesApiEndpoint))) target.JeevesApiEndpoint = source.JeevesApiEndpoint;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.JeevesApiKey)) && !string.IsNullOrWhiteSpace(source.JeevesApiKey)) target.JeevesApiKeyProtected = protectedSecretService.Protect(JeevesApiKeyPurpose, source.JeevesApiKey);
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.JeevesTestApiEndpoint))) target.JeevesTestApiEndpoint = source.JeevesTestApiEndpoint;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(CreateCompanySettingsRequest.JeevesTestApiKey)) && !string.IsNullOrWhiteSpace(source.JeevesTestApiKey)) target.JeevesTestApiKeyProtected = protectedSecretService.Protect(JeevesTestApiKeyPurpose, source.JeevesTestApiKey);
+        }
+
+        private static void MapSettingValues(UpdateCompanySettingsRequest source, Setting target, IEnumerable<string>? propertiesToUpdate, IProtectedSecretService protectedSecretService)
+        {
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.NrOfInquiryAnswerDays))) target.NrOfInquiryAnswerDays = source.NrOfInquiryAnswerDays;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.VATInfo))) target.VATInfo = source.VATInfo;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.SettingsCompany))) target.Company = source.SettingsCompany;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.InvoiceLastNr))) target.InvoiceLastNr = source.InvoiceLastNr;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.HandlingTimesGoalNrOfDays))) target.HandlingTimesGoalNrOfDays = source.HandlingTimesGoalNrOfDays;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.HandlingTimesGoalMaxNrOfDays))) target.HandlingTimesGoalMaxNrOfDays = source.HandlingTimesGoalMaxNrOfDays;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.HandlingTimesPercentHandledUnderGoalNrOfDays))) target.HandlingTimesPercentHandledUnderGoalNrOfDays = source.HandlingTimesPercentHandledUnderGoalNrOfDays;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.HandlingTimesThresholdNrOfDays))) target.HandlingTimesThresholdNrOfDays = source.HandlingTimesThresholdNrOfDays;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.DefaultCustomerMessage))) target.DefaultCustomerMessage = source.DefaultCustomerMessage;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.EUText))) target.EUText = source.EUText;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.ExportText))) target.ExportText = source.ExportText;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.JeevesApiEndpoint))) target.JeevesApiEndpoint = source.JeevesApiEndpoint;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.JeevesApiKey)) && !string.IsNullOrWhiteSpace(source.JeevesApiKey)) target.JeevesApiKeyProtected = protectedSecretService.Protect(JeevesApiKeyPurpose, source.JeevesApiKey);
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.JeevesTestApiEndpoint))) target.JeevesTestApiEndpoint = source.JeevesTestApiEndpoint;
+            if (ShouldUpdateProperty(propertiesToUpdate, nameof(UpdateCompanySettingsRequest.JeevesTestApiKey)) && !string.IsNullOrWhiteSpace(source.JeevesTestApiKey)) target.JeevesTestApiKeyProtected = protectedSecretService.Protect(JeevesTestApiKeyPurpose, source.JeevesTestApiKey);
         }
 
         private static CompanySettingsDto MapToDto(CompanyInfo company, Setting? settings)
@@ -215,9 +246,17 @@ namespace Econosys.Api.Controllers
                 VATInfo = settings?.VATInfo,
                 SettingsCompany = settings?.Company,
                 InvoiceLastNr = settings?.InvoiceLastNr,
+                HandlingTimesGoalNrOfDays = settings?.HandlingTimesGoalNrOfDays,
+                HandlingTimesGoalMaxNrOfDays = settings?.HandlingTimesGoalMaxNrOfDays,
+                HandlingTimesPercentHandledUnderGoalNrOfDays = settings?.HandlingTimesPercentHandledUnderGoalNrOfDays,
+                HandlingTimesThresholdNrOfDays = settings?.HandlingTimesThresholdNrOfDays,
                 DefaultCustomerMessage = settings?.DefaultCustomerMessage,
                 EUText = settings?.EUText,
                 ExportText = settings?.ExportText,
+                JeevesApiEndpoint = settings?.JeevesApiEndpoint,
+                HasJeevesApiKey = !string.IsNullOrWhiteSpace(settings?.JeevesApiKeyProtected),
+                JeevesTestApiEndpoint = settings?.JeevesTestApiEndpoint,
+                HasJeevesTestApiKey = !string.IsNullOrWhiteSpace(settings?.JeevesTestApiKeyProtected),
                 SettingsOldDbId = settings?.OldDbId
             };
         }
@@ -228,9 +267,17 @@ namespace Econosys.Api.Controllers
                 || !string.IsNullOrWhiteSpace(request.VATInfo)
                 || !string.IsNullOrWhiteSpace(request.SettingsCompany)
                 || request.InvoiceLastNr.HasValue
+                || request.HandlingTimesGoalNrOfDays.HasValue
+                || request.HandlingTimesGoalMaxNrOfDays.HasValue
+                || request.HandlingTimesPercentHandledUnderGoalNrOfDays.HasValue
+                || request.HandlingTimesThresholdNrOfDays.HasValue
                 || !string.IsNullOrWhiteSpace(request.DefaultCustomerMessage)
                 || !string.IsNullOrWhiteSpace(request.EUText)
-                || !string.IsNullOrWhiteSpace(request.ExportText);
+                || !string.IsNullOrWhiteSpace(request.ExportText)
+                || !string.IsNullOrWhiteSpace(request.JeevesApiEndpoint)
+                || !string.IsNullOrWhiteSpace(request.JeevesApiKey)
+                || !string.IsNullOrWhiteSpace(request.JeevesTestApiEndpoint)
+                || !string.IsNullOrWhiteSpace(request.JeevesTestApiKey);
         }
     }
 }

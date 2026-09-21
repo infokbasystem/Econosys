@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, Plus, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import apiClient from '../../config/apiClient';
+import ActionButton from '../../components/ActionButton';
 import LabeledSwitch from '../../components/LabeledSwitch';
 import { getSwedishTodayDateString } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
@@ -398,15 +399,23 @@ const DeviationsOverview = () => {
 
     const getOpenItemRowClass = (item) => {
         const isSelected = selectedOpenItemId === item.id;
-        if (isSelected) return 'cursor-pointer bg-red-800 text-white';
-        if (item.openDays > 10) return 'cursor-pointer bg-red-400 text-white hover:bg-red-500';
-        return 'cursor-pointer hover:bg-gray-100';
+        const isOverdue = item.openDays > 10;
+
+        return [
+            'h-6 cursor-pointer',
+            isSelected ? 'bg-red-800 text-white hover:bg-red-800' : '',
+            !isSelected && isOverdue ? 'bg-red-400 text-white hover:bg-red-500' : '',
+            !isSelected && !isOverdue ? 'hover:bg-lime-200/70' : '',
+        ].join(' ');
     };
 
     const getSearchRowClass = (row) => {
         const isSelected = selectedSearchRowId === row.id;
-        if (isSelected) return 'cursor-pointer border-b border-amber-200 bg-amber-100';
-        return 'cursor-pointer border-b border-gray-100 hover:bg-amber-50';
+        return [
+            'h-6 cursor-pointer border-b border-gray-100',
+            isSelected ? 'bg-lime-200/80' : '',
+            !isSelected ? 'hover:bg-lime-200/70' : 'hover:bg-lime-200/80',
+        ].join(' ');
     };
 
     const handleOpenDeviation = (event, id) => {
@@ -424,14 +433,10 @@ const DeviationsOverview = () => {
     const showSearchSkeleton = searchLoading && !hasSearchSnapshot;
 
     return (
-        <div className="flex h-full flex-col gap-5 pt-1 pb-4 ps-5 pe-10">
+        <div className="flex h-full flex-col gap-5 pt-3 pb-4 ps-10 pe-0">
             <div className="grid grid-cols-[1.1fr_1.5fr] gap-20 px-2 mt-2">
                 <section className="overflow-hidden">
                     <div className="px-4 text-xs text-gray-500 text-center">Öppna avvikelser</div>
-                    <div className="px-4 mt-1 text-xs text-gray-500 text-center">
-                        <span className="inline-block h-2 w-2 bg-red-700 mr-2 align-middle"></span>
-                        över 10 dagar
-                    </div>
                     <div ref={openListRef} className="max-h-56 overflow-auto mt-2">
                         <table className="table-fixed w-full border-collapse text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                             <colgroup>
@@ -475,7 +480,9 @@ const DeviationsOverview = () => {
                                                 <button
                                                     type="button"
                                                     onClick={(event) => handleOpenDeviation(event, item.id)}
-                                                    className="underline-offset-2 hover:underline"
+                                                    className={selectedOpenItemId === item.id || item.openDays > 10
+                                                        ? 'text-white hover:text-white hover:underline'
+                                                        : 'text-slate-700 hover:text-slate-900 hover:underline'}
                                                 >
                                                     {item.deviationNr ?? item.id}
                                                 </button>
@@ -585,22 +592,21 @@ const DeviationsOverview = () => {
 
             <section className="flex min-h-0 flex-1 flex-col mt-10">
                 <div className="flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-1">
-                    <button
-                        type="button"
+                    <ActionButton
+                        label="Skapa ny avvikelse"
+                        icon={Plus}
                         onClick={handleCreateDeviation}
-                        className="w-40 shadow-md/30 text-xs text-white bg-lime-600 hover:bg-lime-700 px-4 py-[5px]"
-                    >
-                        Skapa ny avvikelse
-                    </button>
+                        accent="lime"
+                    />
 
-                    <div className="relative ml-20 w-44">
+                    <div className="relative ml-20 w-56 shrink-0">
                         <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
                         <input
                             type="text"
                             value={searchInput}
                             onChange={(event) => setSearchInput(event.target.value)}
                             placeholder="Sök"
-                            className="w-full text-xs border border-gray-300 rounded-sm pl-7 pr-2 py-1 focus:outline-none bg-white"
+                            className="h-7 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
                         />
                     </div>
 
@@ -676,7 +682,7 @@ const DeviationsOverview = () => {
                                     <th
                                         key={column.key}
                                         onClick={() => handleSort(column.key)}
-                                        className={`cursor-pointer px-2 py-2 text-[10px] font-medium text-gray-500 ${column.align === 'right' ? 'text-right' : 'text-left'}`}
+                                        className={`cursor-pointer px-2 py-2 text-tiny font-medium text-gray-500 ${column.align === 'right' ? 'text-right' : 'text-left'}`}
                                     >
                                         <span className="inline-flex items-center gap-1">
                                             {column.label}
@@ -713,7 +719,7 @@ const DeviationsOverview = () => {
                                             <button
                                                 type="button"
                                                 onClick={(event) => handleOpenDeviation(event, row.id)}
-                                                className="underline-offset-2 hover:underline"
+                                                className="text-slate-700 hover:text-slate-900 hover:underline"
                                             >
                                                 {row.deviationNr ?? row.id}
                                             </button>

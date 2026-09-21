@@ -55,5 +55,7 @@ namespace Econosys.Api.Models
 
         [ForeignKey(nameof(ViaInventoryId))]
         public virtual Inventory? ViaInventory { get; set; }
+
+        public virtual ICollection<SupplierFactoryTransportCostPriceList> SupplierFactoryTransportCostPriceLists { get; set; } = new List<SupplierFactoryTransportCostPriceList>();
     }
 }

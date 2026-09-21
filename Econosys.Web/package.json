@@ -6,10 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:local": "vite build --mode development",
+    "build:test": "vite build --mode test",
+    "build:production": "vite build --mode production",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@daypicker/react": "^10.0.1",
     "@tailwindcss/postcss": "^4.2.0",
     "axios": "^1.13.5",
     "exceljs": "^4.4.0",
