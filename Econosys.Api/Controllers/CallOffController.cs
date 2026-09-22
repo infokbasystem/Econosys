@@ -61,6 +61,61 @@ namespace Econosys.Api.Controllers
             return Ok(await BuildAggregateDtoAsync(callOff));
         }
 
+        [HttpPost]
+        public async Task<ActionResult<CallOffAggregateDto>> CreateCallOff([FromBody] SaveCallOffAggregateRequest request)
+        {
+            if (request is null)
+            {
+                return BadRequest("Ingen data att spara.");
+            }
+
+            if (request.Reference?.Length > 100)
+            {
+                return BadRequest("Referensen får vara högst 100 tecken.");
+            }
+
+            if (request.Note?.Length > 500)
+            {
+                return BadRequest("Noteringen får vara högst 500 tecken.");
+            }
+
+            if (request.DeliveryStatus is < 0 or > 2)
+            {
+                return BadRequest("Leveransstatus är ogiltig.");
+            }
+
+            if (request.ShipperId.HasValue && !await _dbContext.Shippers.AnyAsync(x => x.Id == request.ShipperId.Value))
+            {
+                return BadRequest("Den valda speditören finns inte.");
+            }
+
+            var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+
+            var callOff = new CallOff
+            {
+                ShipperId = request.ShipperId,
+                Reference = request.Reference,
+                Note = request.Note,
+                DeliveryDate = request.DeliveryDate,
+                DeliveryStatus = request.DeliveryStatus,
+                IsSentToShipper = request.IsSentToShipper,
+                DoDebitFreight = request.DoDebitFreight,
+                FreightCostToDebit = request.FreightCostToDebit,
+                CustomerDeliveryAddressId = request.CustomerDeliveryAddressId,
+            };
+
+            if (legacyUser is not null)
+            {
+                callOff.CreatedDateTime = SwedishTime.Now;
+                callOff.CreatedByUserId = legacyUser.Id;
+            }
+
+            _dbContext.CallOffs.Add(callOff);
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(await BuildAggregateDtoAsync(callOff));
+        }
+
         [HttpPut("{id:int}/aggregate")]
         public async Task<ActionResult<CallOffAggregateDto>> SaveAggregateById(int id, [FromBody] SaveCallOffAggregateRequest request)
         {

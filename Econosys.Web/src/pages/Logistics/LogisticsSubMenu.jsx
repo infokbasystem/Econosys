@@ -12,7 +12,7 @@ import {
 const items = [
   { to: '/logistics/transportorderoverivew', label: 'Transportorder', icon: Truck },
   { to: '/logistics/calloffoverview', label: 'Avrop', icon: ListChecks },
-  { to: '/logistics/newcalloff', label: 'Nytt avrop', icon: CirclePlus, leftMargin: 'ml-16' },
+  { to: '/logistics/calloff/new', label: 'Nytt avrop', icon: CirclePlus, leftMargin: 'ml-16' },
   { to: '/logistics/newdelivery', label: 'Ny leverans', icon: PackagePlus },
   { to: '/logistics/deliveries', label: 'Leveranser', icon: Package },
   { to: '/logistics/stocktakings', label: 'Inventeringar', icon: ClipboardCheck, leftMargin: 'ml-16' },

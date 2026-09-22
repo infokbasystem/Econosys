@@ -39,7 +39,6 @@ import TransportOrderOverview from './pages/Logistics/TransportOrderOverview'
 import TransportOrder from './pages/Logistics/TransportOrder'
 import CalloffOverview from './pages/Logistics/CalloffOverview'
 import Calloff from './pages/Logistics/Calloff'
-import NewCalloff from './pages/Logistics/NewCalloff'
 import NewDelivery from './pages/Logistics/NewDelivery'
 import Deliveries from './pages/Logistics/Deliveries'
 import StockTakings from './pages/Logistics/StockTakings'
@@ -138,8 +137,8 @@ const router = createBrowserRouter(
         <Route path="transportorderoverivew" element={<ProtectedRoute>< TransportOrderOverview /></ProtectedRoute>} />
         <Route path="transportorder/:id" element={<ProtectedRoute>< TransportOrder /></ProtectedRoute>} />
         <Route path="calloffoverview" element={<ProtectedRoute>< CalloffOverview /></ProtectedRoute>} />
+        <Route path="calloff/new" element={<ProtectedRoute>< Calloff /></ProtectedRoute>} />
         <Route path="calloff/:id" element={<ProtectedRoute>< Calloff /></ProtectedRoute>} />
-        <Route path="newcalloff" element={<ProtectedRoute>< NewCalloff /></ProtectedRoute>} />
         <Route path="newdelivery" element={<ProtectedRoute>< NewDelivery /></ProtectedRoute>} />
         <Route path="deliveries" element={<ProtectedRoute>< Deliveries /></ProtectedRoute>} />
         <Route path="stocktakings" element={<ProtectedRoute>< StockTakings /></ProtectedRoute>} />

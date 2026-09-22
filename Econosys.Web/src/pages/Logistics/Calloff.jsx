@@ -203,6 +203,9 @@ const Calloff = () => {
     const { id } = useParams();
     const { openPdfPreview, closePdfPreview } = usePdf();
 
+    // Legacy parity: the WPF client opens CallOffViewModel with CallOffId = 0 for a new call-off.
+    const isNewCallOff = id === 'new' || id == null;
+
     const [loading, setLoading] = useState(true);
     const [messages, setMessages] = useState([]);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
@@ -287,9 +290,8 @@ const Calloff = () => {
             setIsStaleConflict(false);
 
             try {
-                const [formOptionsResponse, aggregateResponse, companySettingsResponse] = await Promise.all([
+                const [formOptionsResponse, companySettingsResponse] = await Promise.all([
                     getSharedRequest('calloff:form-options', () => apiClient.get('/calloff/form-options')),
-                    getSharedRequest(`calloff:${id}:aggregate`, () => apiClient.get(`/calloff/${id}/aggregate`)),
                     getSharedRequest(`companysettings:${COMPANY_SETTINGS_ID}`, () => apiClient.get(`/companysettings/${COMPANY_SETTINGS_ID}`)),
                 ]);
 
@@ -302,7 +304,27 @@ const Calloff = () => {
                     : [];
 
                 setShipperOptions(shippers);
-                applyAggregateResponse(aggregateResponse?.data);
+
+                if (isNewCallOff) {
+                    setCallOffForm(defaultCallOffForm);
+                    setCallOffDeliveryList([]);
+                    setDeliveryAddressOptions([]);
+                    setDeliveryLegData({ deliveryLegGroupedList: [], distributionDeliveryLegGroupedList: [], distributionLegList: [] });
+                    setAggregateVersion('');
+                    setOriginalCallOffState(null);
+                } else {
+                    const aggregateResponse = await getSharedRequest(
+                        `calloff:${id}:aggregate`,
+                        () => apiClient.get(`/calloff/${id}/aggregate`),
+                    );
+
+                    if (!isActive) {
+                        return;
+                    }
+
+                    applyAggregateResponse(aggregateResponse?.data);
+                }
+
                 setGoogleApiKey(String(companySettingsResponse?.data?.googleApiKey ?? ''));
             } catch (error) {
                 console.error('Failed to load call-off form:', error);
@@ -329,7 +351,7 @@ const Calloff = () => {
         return () => {
             isActive = false;
         };
-    }, [id]);
+    }, [id, isNewCallOff]);
 
     useEffect(() => {
         const handleBeforeUnload = (event) => {
@@ -360,7 +382,7 @@ const Calloff = () => {
         };
     }, [closePdfPreview]);
 
-    const titleText = useMemo(() => `Avrop ${id}`, [id]);
+    const titleText = useMemo(() => (isNewCallOff ? 'Ny avrop' : `Avrop ${id}`), [id, isNewCallOff]);
 
     const shipperItems = useMemo(() => {
         return [{ id: '', name: '' }, ...shipperOptions];
@@ -575,13 +597,12 @@ const Calloff = () => {
     };
 
     const saveCallOff = async () => {
-        if (isSavingRef.current || isStaleConflict || !aggregateVersion) {
+        if (isSavingRef.current || isStaleConflict || (!aggregateVersion && !isNewCallOff)) {
             return;
         }
         isSavingRef.current = true;
 
         const payload = {
-            version: aggregateVersion,
             shipperId: callOffForm.shipperId === '' ? null : Number(callOffForm.shipperId),
             reference: callOffForm.reference || null,
             note: callOffForm.note || null,
@@ -601,11 +622,21 @@ const Calloff = () => {
         setIsSaving(true);
         setMessages([]);
         try {
-            const response = await apiClient.put(`/calloff/${id}/aggregate`, payload);
-            applyAggregateResponse(response?.data);
-            setIsStaleConflict(false);
-            setMessages((prev) => [...prev, { type: 'info', text: 'Avropet sparades.' }]);
-            flashInfoPanel(false);
+            if (isNewCallOff) {
+                const response = await apiClient.post('/calloff', payload);
+                skipUnsavedCheckRef.current = true;
+                setMessages((prev) => [...prev, { type: 'info', text: 'Avropet sparades.' }]);
+                navigate(`/logistics/calloff/${response?.data?.callOff?.id}`, { replace: true });
+            } else {
+                const response = await apiClient.put(`/calloff/${id}/aggregate`, {
+                    ...payload,
+                    version: aggregateVersion,
+                });
+                applyAggregateResponse(response?.data);
+                setIsStaleConflict(false);
+                setMessages((prev) => [...prev, { type: 'info', text: 'Avropet sparades.' }]);
+                flashInfoPanel(false);
+            }
         } catch (error) {
             console.error('Failed to save call-off:', error);
             if (error.response?.status === 409) {
@@ -760,7 +791,7 @@ const Calloff = () => {
                                     label="Spara"
                                     icon={Save}
                                     onClick={() => saveCallOff()}
-                                    disabled={isSaving || isStaleConflict || !aggregateVersion}
+                                    disabled={isSaving || isStaleConflict || (!aggregateVersion && !isNewCallOff)}
                                     accent="lime"
                                 />
                                 <div className="ml-20 flex items-center gap-2">
