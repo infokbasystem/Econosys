@@ -141,7 +141,39 @@ namespace Econosys.Api.Controllers
                     InfoOk = x.InfoOk,
                     WeightMissingEmailSentDateTime = x.WeightMissingEmailSentDateTime,
                     CostMissingEmailSentDateTime = x.CostMissingEmailSentDateTime,
-                    IsPalletInvoicedSeparately = x.IsPalletInvoicedSeparately
+                    IsPalletInvoicedSeparately = x.IsPalletInvoicedSeparately,
+                    CustomerId = x.CustomerOrder != null ? x.CustomerOrder.CustomerId : null,
+                    ProductName = x.CustomerOrder != null ? x.CustomerOrder.Product : null,
+                    CustomerName = x.CustomerOrder != null ? x.CustomerOrder.CustomerName : null,
+                    SupplierOrderNr = x.CustomerOrder != null && x.CustomerOrder.SupplierOrder != null
+                        ? x.CustomerOrder.SupplierOrder.SupplierOrderNr
+                        : null,
+                    CustomersOrderNr = x.CustomerOrder != null && x.CustomerOrder.SupplierOrder != null
+                        ? x.CustomerOrder.SupplierOrder.CustomerOrderNr
+                        : null,
+                    InventoryId = x.CustomerOrder != null && x.CustomerOrder.SupplierOrder != null
+                        ? x.CustomerOrder.SupplierOrder.InventoryId
+                        : null,
+                    InventoryName = x.CustomerOrder != null && x.CustomerOrder.SupplierOrder != null && x.CustomerOrder.SupplierOrder.Inventory != null
+                        ? x.CustomerOrder.SupplierOrder.Inventory.Name
+                        : null,
+                    TransportOrderId = _dbContext.TransportOrderDeliveries
+                        .Where(t => t.DeliveryToCustomerId == x.Id)
+                        .Select(t => t.TransportOrderId)
+                        .FirstOrDefault(),
+                    TransportOrderNr = _dbContext.TransportOrderDeliveries
+                        .Where(t => t.DeliveryToCustomerId == x.Id)
+                        .Select(t => t.TransportOrder != null ? (int?)t.TransportOrder.TransportOrderNr : null)
+                        .FirstOrDefault(),
+
+                    // Assigned to keep the Concat/union branches identical
+                    DeliveryNr = null,
+                    IsAdjustment = null,
+                    AdjustedFromDeliveryId = null,
+                    DeliveryToStockId = null,
+                    NrOfBunt = null,
+                    NrOfYtterforpackning = null,
+                    CallOffNr = null
                 });
         }
 
@@ -177,7 +209,32 @@ namespace Econosys.Api.Controllers
                     IsAdjustment = x.IsAdjustment,
                     AdjustedFromDeliveryId = x.AdjustedFromDeliveryId,
                     WeightMissingEmailSentDateTime = x.WeightMissingEmailSentDateTime,
-                    CostMissingEmailSentDateTime = x.CostMissingEmailSentDateTime
+                    CostMissingEmailSentDateTime = x.CostMissingEmailSentDateTime,
+                    ProductName = x.SupplierOrder != null ? x.SupplierOrder.Product : null,
+                    CustomerName = x.SupplierOrder != null ? x.SupplierOrder.Customer2 : null,
+                    SupplierOrderNr = x.SupplierOrder != null ? x.SupplierOrder.SupplierOrderNr : null,
+                    CustomersOrderNr = x.SupplierOrder != null ? x.SupplierOrder.CustomerOrderNr : null,
+                    InventoryName = x.Inventory != null ? x.Inventory.Name : null,
+                    TransportOrderId = _dbContext.TransportOrderDeliveries
+                        .Where(t => t.DeliveryToStockId == x.Id)
+                        .Select(t => t.TransportOrderId)
+                        .FirstOrDefault(),
+                    TransportOrderNr = _dbContext.TransportOrderDeliveries
+                        .Where(t => t.DeliveryToStockId == x.Id)
+                        .Select(t => t.TransportOrder != null ? (int?)t.TransportOrder.TransportOrderNr : null)
+                        .FirstOrDefault(),
+
+                    // Assigned to keep the Concat/union branches identical
+                    CustomerOrderId = null,
+                    ToInvoice = null,
+                    CallOff = null,
+                    DoNotInvoice = null,
+                    IsPalletInvoicedSeparately = null,
+                    DeliveryToStockId = null,
+                    NrOfBunt = null,
+                    NrOfYtterforpackning = null,
+                    CustomerId = null,
+                    CallOffNr = null
                 });
         }
 
@@ -214,7 +271,40 @@ namespace Econosys.Api.Controllers
                     CostMissingEmailSentDateTime = x.CostMissingEmailSentDateTime,
                     NrOfBunt = x.NrOfBunt,
                     NrOfYtterforpackning = x.NrOfYtterforpackning,
-                    IsPalletInvoicedSeparately = x.IsPalletInvoicedSeparately
+                    IsPalletInvoicedSeparately = x.IsPalletInvoicedSeparately,
+                    CustomerId = x.CustomerOrder != null ? x.CustomerOrder.CustomerId : null,
+                    ProductName = x.CustomerOrder != null ? x.CustomerOrder.Product : null,
+                    CustomerName = x.CustomerOrder != null ? x.CustomerOrder.CustomerName : null,
+                    SupplierOrderNr = x.CustomerOrder != null && x.CustomerOrder.SupplierOrder != null
+                        ? x.CustomerOrder.SupplierOrder.SupplierOrderNr
+                        : null,
+                    CustomersOrderNr = x.CustomerOrder != null && x.CustomerOrder.SupplierOrder != null
+                        ? x.CustomerOrder.SupplierOrder.CustomerOrderNr
+                        : null,
+                    InventoryName = x.Inventory != null ? x.Inventory.Name : null,
+                    TransportOrderId = _dbContext.TransportOrderDeliveries
+                        .Where(t => t.DeliveryFromStockId == x.Id)
+                        .Select(t => t.TransportOrderId)
+                        .FirstOrDefault(),
+                    TransportOrderNr = _dbContext.TransportOrderDeliveries
+                        .Where(t => t.DeliveryFromStockId == x.Id)
+                        .Select(t => t.TransportOrder != null ? (int?)t.TransportOrder.TransportOrderNr : null)
+                        .FirstOrDefault(),
+                    CallOffNr = _dbContext.CallOffDeliveries
+                        .Where(c => c.DeliveryFromStockId == x.Id)
+                        .Select(c => c.CallOffId)
+                        .FirstOrDefault(),
+
+                    // Assigned to keep the Concat/union branches identical
+                    SupplierOrderId = x.CustomerOrder != null && x.CustomerOrder.SupplierOrder != null
+                        ? x.CustomerOrder.SupplierOrder.Id
+                        : null,
+                    SpcsRefNr = null,
+                    SupplierInvoiceNr = null,
+                    SupplierInvoiceCost = null,
+                    DeliveryNr = null,
+                    IsAdjustment = null,
+                    AdjustedFromDeliveryId = null
                 });
         }
 
@@ -389,8 +479,8 @@ namespace Econosys.Api.Controllers
 
             return op switch
             {
-                "eq" => Expression.Equal(member, Expression.Constant(value, typeof(string))),
-                "neq" => Expression.NotEqual(member, Expression.Constant(value, typeof(string))),
+                "eq" => Expression.Equal(member, CreateValueExpression(value, typeof(string))),
+                "neq" => Expression.NotEqual(member, CreateValueExpression(value, typeof(string))),
                 "contains" when value is not null => BuildStringMethodCall(member, value, nameof(string.Contains)),
                 "startswith" when value is not null => BuildStringMethodCall(member, value, nameof(string.StartsWith)),
                 "endswith" when value is not null => BuildStringMethodCall(member, value, nameof(string.EndsWith)),
@@ -403,7 +493,7 @@ namespace Econosys.Api.Controllers
                 var method = typeof(string).GetMethod(methodName, new[] { typeof(string) })!;
                 return Expression.AndAlso(
                     Expression.NotEqual(left, nullConstant),
-                    Expression.Call(left, method, Expression.Constant(right)));
+                    Expression.Call(left, method, CreateValueExpression(right, typeof(string))));
             }
         }
 
@@ -413,8 +503,8 @@ namespace Econosys.Api.Controllers
 
             return op switch
             {
-                "eq" => Expression.Equal(member, Expression.Constant(NormalizeRequiredTypeValue(GetSingleStringValue(condition), condition.Field), typeof(string))),
-                "neq" => Expression.NotEqual(member, Expression.Constant(NormalizeRequiredTypeValue(GetSingleStringValue(condition), condition.Field), typeof(string))),
+                "eq" => Expression.Equal(member, CreateValueExpression(NormalizeRequiredTypeValue(GetSingleStringValue(condition), condition.Field), typeof(string))),
+                "neq" => Expression.NotEqual(member, CreateValueExpression(NormalizeRequiredTypeValue(GetSingleStringValue(condition), condition.Field), typeof(string))),
                 "in" => BuildStringInCondition(member, GetNormalizedTypeValues(condition)),
                 _ => throw new ArgumentException($"Unsupported operator '{condition.Operator}' for field '{condition.Field}'. Use eq, neq, or in.")
             };
@@ -447,7 +537,7 @@ namespace Econosys.Api.Controllers
 
             return Expression.AndAlso(
                 Expression.NotEqual(member, nullConstant),
-                Expression.Call(Expression.Constant(values), containsMethod, member));
+                Expression.Call(CreateValueExpression(values, typeof(List<string>)), containsMethod, member));
         }
 
         private static Expression BuildInCondition(
@@ -482,10 +572,10 @@ namespace Econosys.Api.Controllers
                 var memberValue = Expression.Property(member, nameof(Nullable<int>.Value));
                 return Expression.AndAlso(
                     hasValue,
-                    Expression.Call(Expression.Constant(list), containsMethod, memberValue));
+                    Expression.Call(CreateValueExpression(list, listType), containsMethod, memberValue));
             }
 
-            return Expression.Call(Expression.Constant(list), containsMethod, member);
+            return Expression.Call(CreateValueExpression(list, listType), containsMethod, member);
         }
 
         private static Expression BuildComparableCondition(
@@ -502,7 +592,7 @@ namespace Econosys.Api.Controllers
             {
                 var hasValue = Expression.Property(member, nameof(Nullable<int>.HasValue));
                 var memberValue = Expression.Property(member, nameof(Nullable<int>.Value));
-                var valueConstant = Expression.Constant(value, value.GetType());
+                var valueConstant = CreateValueExpression(value, value.GetType());
                 var comparison = BuildComparison(memberValue, valueConstant, condition, op, allowRange);
                 return Expression.AndAlso(hasValue, comparison);
             }
@@ -532,14 +622,32 @@ namespace Econosys.Api.Controllers
         private static Expression BuildConstant(Type targetType, object value)
         {
             var nonNullableTarget = Nullable.GetUnderlyingType(targetType) ?? targetType;
-            var constant = Expression.Constant(value, nonNullableTarget);
 
-            if (constant.Type == targetType)
+            if (nonNullableTarget == targetType)
             {
-                return constant;
+                return CreateValueExpression(value, targetType);
             }
 
-            return Expression.Convert(constant, targetType);
+            return Expression.Convert(CreateValueExpression(value, nonNullableTarget), targetType);
+        }
+
+        // Values must be exposed as a closure field access (the exact expression shape C#
+        // captures produce). A plain Expression.Constant gets inlined by EF Core as a SQL
+        // string literal (e.g. '2026-01-01T00:00:00.0000000'), which SQL Server cannot
+        // convert to the legacy datetime columns ("Conversion failed when converting date
+        // and/or time from character string"). Closure values are sent as typed SQL
+        // parameters instead.
+        private static Expression CreateValueExpression(object? value, Type type)
+        {
+            var holder = new QueryValueHolder { Value = value };
+            return Expression.Convert(
+                Expression.Field(Expression.Constant(holder), nameof(QueryValueHolder.Value)),
+                type);
+        }
+
+        private sealed class QueryValueHolder
+        {
+            public object? Value;
         }
 
         private static object GetRequiredSingleValue(FilterConditionDto condition, Type targetType)

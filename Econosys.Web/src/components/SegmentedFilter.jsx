@@ -50,13 +50,13 @@ export default function SegmentedFilter({
     }
 
     return (
-        <div className={`h-7 inline-flex items-center gap-0.5 rounded-full p-[2px] ${themeConfig.wrapperClassName} ${className}`.trim()}>
+        <div className={`h-7 inline-flex items-center gap-0.5 rounded-full ${themeConfig.wrapperClassName} ${className}`.trim()}>
             {options.map((option) => (
                 <button
                     key={option.value}
                     type="button"
                     onClick={() => handleOptionClick(option.value)}
-                    className={`rounded-full px-3 py-[6px] text-xs font-semibold transition-colors ${
+                    className={`rounded-full px-3 pt-[7px] pb-[5px] text-xs font-semibold transition-colors ${
                         isSelected(option.value)
                             ? themeConfig.activeClassName
                             : themeConfig.inactiveClassName

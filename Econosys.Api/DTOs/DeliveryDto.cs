@@ -37,6 +37,17 @@ namespace Econosys.Api.DTOs
         public int? DeliveryToStockId { get; set; }
         public int? NrOfBunt { get; set; }
         public int? NrOfYtterforpackning { get; set; }
+
+        // Joined display/filter fields (customer/supplier order, inventory, transport order, call-off)
+        public int? CustomerId { get; set; }
+        public string? ProductName { get; set; }
+        public string? CustomerName { get; set; }
+        public string? SupplierOrderNr { get; set; }
+        public string? CustomersOrderNr { get; set; }
+        public string? InventoryName { get; set; }
+        public int? TransportOrderId { get; set; }
+        public int? TransportOrderNr { get; set; }
+        public int? CallOffNr { get; set; }
     }
 
     public class SearchDeliveriesRequestDto

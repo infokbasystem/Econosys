@@ -6,6 +6,7 @@ const Select = ({
     disabled = false,
     stylePreset = 'default',
     isSearchable = false,
+    isClearable = false,
     className,
     optionTextAlign = 'left',
     onChange,
@@ -32,6 +33,7 @@ const Select = ({
                 value={selectedValue}
                 isDisabled={disabled}
                 isSearchable
+                isClearable={isClearable}
                 className={className}
                 onChange={(selected) => {
                     if (isMultiSelect) {
@@ -57,14 +59,14 @@ const Select = ({
                     valueContainer: (provided) => ({
                         ...provided,
                         height: 28,
-                        padding: '0 12px',
-                        fontSize: '12px',
+                        padding: '0 11.2px',
+                        fontSize: '11.2px',
                     }),
                     input: (provided) => ({
                         ...provided,
                         margin: 0,
                         padding: 0,
-                        fontSize: '12px',
+                        fontSize: '11.2px',
                     }),
                     indicatorsContainer: (provided) => ({
                         ...provided,
@@ -92,19 +94,19 @@ const Select = ({
                     }),
                     option: (provided, state) => ({
                         ...provided,
-                        fontSize: '12px',
+                        fontSize: '11.2px',
                         backgroundColor: state.isFocused ? '#f7fee7' : 'white',
                         color: '#374151',
                         textAlign: optionTextAlign,
                     }),
                     singleValue: (provided) => ({
                         ...provided,
-                        fontSize: '12px',
+                        fontSize: '11.2px',
                         color: '#374151',
                     }),
                     placeholder: (provided) => ({
                         ...provided,
-                        fontSize: '12px',
+                        fontSize: '11.2px',
                         color: '#374151',
                         fontWeight: 400,
                     }),
