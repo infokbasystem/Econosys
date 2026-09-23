@@ -61,6 +61,36 @@ namespace Econosys.Api.Controllers
             return Ok(await BuildAggregateDtoAsync(callOff));
         }
 
+        [HttpDelete("{id:int}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var callOff = await _dbContext.CallOffs
+                .Include(x => x.CallOffDeliveries)
+                .FirstOrDefaultAsync(x => x.Id == id);
+
+            if (callOff is null)
+            {
+                return NotFound();
+            }
+
+            _dbContext.CallOffDeliveries.RemoveRange(callOff.CallOffDeliveries);
+
+            var deliveryLegs = await _dbContext.DeliveryLegs
+                .Where(x => x.CallOffId == id)
+                .ToListAsync();
+            _dbContext.DeliveryLegs.RemoveRange(deliveryLegs);
+
+            var documentFiles = await _dbContext.DocumentFiles
+                .Where(x => x.CallOffId == id)
+                .ToListAsync();
+            _dbContext.DocumentFiles.RemoveRange(documentFiles);
+
+            _dbContext.CallOffs.Remove(callOff);
+            await _dbContext.SaveChangesAsync();
+
+            return NoContent();
+        }
+
         [HttpPost]
         public async Task<ActionResult<CallOffAggregateDto>> CreateCallOff([FromBody] SaveCallOffAggregateRequest request)
         {
@@ -111,6 +141,14 @@ namespace Econosys.Api.Controllers
             }
 
             _dbContext.CallOffs.Add(callOff);
+            await _dbContext.SaveChangesAsync();
+
+            var createSyncError = await SyncCallOffDeliveriesAsync(callOff, request.CallOffDeliveryList ?? new List<SaveCallOffDeliveryDto>(), new List<CallOffDelivery>());
+            if (createSyncError is not null)
+            {
+                return BadRequest(createSyncError);
+            }
+
             await _dbContext.SaveChangesAsync();
 
             return Ok(await BuildAggregateDtoAsync(callOff));
@@ -171,11 +209,6 @@ namespace Econosys.Api.Controllers
             }
 
             var incomingDeliveryList = request.CallOffDeliveryList ?? new List<SaveCallOffDeliveryDto>();
-            var existingDeliveryById = existingDeliveryList.ToDictionary(x => x.Id);
-            if (incomingDeliveryList.Any(x => !existingDeliveryById.ContainsKey(x.Id)))
-            {
-                return BadRequest("En eller flera avropsleveranser kunde inte hittas på avropet.");
-            }
 
             var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
             if (legacyUser is not null && !callOff.CreatedByUserId.HasValue)
@@ -194,17 +227,10 @@ namespace Econosys.Api.Controllers
             callOff.FreightCostToDebit = request.FreightCostToDebit;
             callOff.CustomerDeliveryAddressId = request.CustomerDeliveryAddressId;
 
-            var incomingDeliveryIdSet = incomingDeliveryList.Select(x => x.Id).ToHashSet();
-            var deliveriesToRemove = existingDeliveryList
-                .Where(x => !incomingDeliveryIdSet.Contains(x.Id))
-                .ToList();
-            _dbContext.CallOffDeliveries.RemoveRange(deliveriesToRemove);
-
-            foreach (var item in incomingDeliveryList)
+            var syncError = await SyncCallOffDeliveriesAsync(callOff, incomingDeliveryList, existingDeliveryList);
+            if (syncError is not null)
             {
-                var existingDelivery = existingDeliveryById[item.Id];
-                existingDelivery.Note = item.Note;
-                existingDelivery.NrOfPalletPlaces = item.NrOfPalletPlaces;
+                return BadRequest(syncError);
             }
 
             await _dbContext.SaveChangesAsync();
@@ -216,6 +242,402 @@ namespace Econosys.Api.Controllers
 
             return Ok(await BuildAggregateDtoAsync(updatedCallOff ?? callOff));
         }
+
+        // Legacy parity: SaveCallOff deletes the removed CallOffDelivery rows (and their underlying stock deliveries)
+        // immediately; this endpoint exposes that behaviour so removal does not have to wait for a full save.
+        [HttpDelete("{id:int}/deliveries/{callOffDeliveryId:int}")]
+        public async Task<IActionResult> DeleteCallOffDelivery(int id, int callOffDeliveryId)
+        {
+            var callOff = await _dbContext.CallOffs.FirstOrDefaultAsync(x => x.Id == id);
+            if (callOff is null)
+            {
+                return NotFound();
+            }
+
+            var delivery = await _dbContext.CallOffDeliveries
+                .FirstOrDefaultAsync(x => x.Id == callOffDeliveryId && x.CallOffId == id);
+            if (delivery is null)
+            {
+                return NotFound();
+            }
+
+            _dbContext.CallOffDeliveries.Remove(delivery);
+
+            // Legacy parity: SyncCallOffDeliveriesAsync deletes the underlying stock delivery for removed rows.
+            if (delivery.DeliveryFromStockId.HasValue)
+            {
+                var deliveryFromStock = await _dbContext.DeliveryFromStocks
+                    .FirstOrDefaultAsync(x => x.Id == delivery.DeliveryFromStockId.Value);
+                if (deliveryFromStock is not null)
+                {
+                    _dbContext.DeliveryFromStocks.Remove(deliveryFromStock);
+                }
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            var remainingDeliveries = await _dbContext.CallOffDeliveries
+                .Where(x => x.CallOffId == id)
+                .OrderBy(x => x.Id)
+                .ToListAsync();
+
+            return Ok(new { version = CalculateVersion(callOff, remainingDeliveries) });
+        }
+
+        // Legacy parity: CreateDeliveryFromStockViewModel.LoadDeliveryList groups stock balance by EditionPerPallet.
+        [HttpGet("delivery-candidates")]
+        public async Task<ActionResult<CallOffDeliveryCandidateResponseDto>> GetDeliveryCandidates([FromQuery] string? customerOrderNr)
+        {
+            if (string.IsNullOrWhiteSpace(customerOrderNr))
+            {
+                return BadRequest("Ordernummer krävs.");
+            }
+
+            var customerOrder = await _dbContext.CustomerOrders
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.CustomerOrderNr == customerOrderNr);
+
+            if (customerOrder is null)
+            {
+                return NotFound();
+            }
+
+            var (toStockRows, fromStockRows) = await LoadStockBalanceRowsAsync(customerOrder.Id, customerOrder.SupplierOrderId);
+            var today = SwedishTime.Today;
+
+            var editionPerPalletKeys = toStockRows.Select(x => x.EditionPerPallet)
+                .Concat(fromStockRows.Select(x => x.EditionPerPallet))
+                .Distinct()
+                .ToList();
+
+            // Legacy parity: AddDeliveryCommand copies pallet dimensions/format/inventory from the matching stock-in template.
+            var templatesByEditionPerPallet = customerOrder.SupplierOrderId.HasValue
+                ? (await _dbContext.DeliveryToStocks
+                    .AsNoTracking()
+                    .Where(x => x.SupplierOrderId == customerOrder.SupplierOrderId.Value && editionPerPalletKeys.Contains(x.EditionPerPallet))
+                    .GroupBy(x => x.EditionPerPallet)
+                    .Select(g => g.OrderByDescending(x => x.Id).First())
+                    .ToListAsync())
+                    .ToDictionary(x => x.EditionPerPallet ?? int.MinValue)
+                : new Dictionary<int, DeliveryToStock>();
+
+            var templateInventoryIds = templatesByEditionPerPallet.Values
+                .Where(x => x.InventoryId.HasValue)
+                .Select(x => x.InventoryId!.Value)
+                .Distinct()
+                .ToList();
+            var inventoryNameById = await _dbContext.Inventories
+                .AsNoTracking()
+                .Where(x => templateInventoryIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.Name })
+                .ToDictionaryAsync(x => x.Id, x => x.Name ?? string.Empty);
+
+            var groups = editionPerPalletKeys
+                .Select(editionPerPallet =>
+                {
+                    var toStockForGroup = toStockRows.Where(x => x.EditionPerPallet == editionPerPallet).ToList();
+                    var fromStockForGroup = fromStockRows.Where(x => x.EditionPerPallet == editionPerPallet).ToList();
+                    var template = templatesByEditionPerPallet.GetValueOrDefault(editionPerPallet ?? int.MinValue);
+
+                    return new CallOffDeliveryCandidateGroupDto
+                    {
+                        EditionPerPallet = editionPerPallet,
+                        NrOf = toStockForGroup.Sum(x => x.NrOfItems ?? 0) - fromStockForGroup.Sum(x => x.NrOfItems ?? 0),
+                        NrOfPallets = toStockForGroup.Sum(x => x.NrOfPallets ?? 0) - fromStockForGroup.Sum(x => x.NrOfPallets ?? 0),
+                        NrOfNow = toStockForGroup.Where(x => x.DeliveryStatus == 2 && x.DeliveryDate <= today).Sum(x => x.NrOfItems ?? 0)
+                            - fromStockForGroup.Where(x => x.DeliveryStatus == 2 && x.DeliveryDate <= today).Sum(x => x.NrOfItems ?? 0),
+                        NrOfPalletsNow = toStockForGroup.Where(x => x.DeliveryStatus == 2 && x.DeliveryDate <= today).Sum(x => x.NrOfPallets ?? 0)
+                            - fromStockForGroup.Where(x => x.DeliveryStatus == 2 && x.DeliveryDate <= today).Sum(x => x.NrOfPallets ?? 0),
+                        InventoryId = template?.InventoryId ?? (customerOrder.SupplierOrderId.HasValue ? customerOrder.SupplierOrder?.InventoryId : null),
+                        InventoryName = template?.InventoryId.HasValue == true && inventoryNameById.TryGetValue(template.InventoryId.Value, out var inventoryName)
+                            ? inventoryName
+                            : string.Empty,
+                        PalletLength = template?.PalletLength,
+                        PalletWidth = template?.PalletWidth,
+                        PalletHeight = template?.PalletHeight,
+                        PalletIsStackable = template?.PalletIsStackable ?? false,
+                        PalletCalcFactor = template?.PalletCalcFactor,
+                    };
+                })
+                .Where(x => x.NrOfPallets > 0 || x.NrOf > 0)
+                .OrderBy(x => x.EditionPerPallet)
+                .ToList();
+
+            return Ok(new CallOffDeliveryCandidateResponseDto
+            {
+                CustomerOrderId = customerOrder.Id,
+                CustomerOrderNr = customerOrder.CustomerOrderNr ?? string.Empty,
+                CustomerName = customerOrder.CustomerName ?? string.Empty,
+                ProductName = customerOrder.Product ?? string.Empty,
+                OrderedQty = customerOrder.Edition,
+                Groups = groups,
+            });
+        }
+
+        // Legacy parity: CallOffViewModel.AddDeliveryCommand creates the DeliveryFromStock immediately; the CallOffDelivery
+        // link row is only persisted when the call-off itself is saved (see SyncCallOffDeliveriesAsync).
+        [HttpPost("deliveries")]
+        public async Task<ActionResult<CallOffDeliveryRowDto>> CreateDeliveryFromStock([FromBody] AddCallOffDeliveryFromStockRequest request)
+        {
+            if (request is null)
+            {
+                return BadRequest("Ingen data att spara.");
+            }
+
+            var customerOrder = await _dbContext.CustomerOrders
+                .Include(x => x.SupplierOrder)
+                .FirstOrDefaultAsync(x => x.Id == request.CustomerOrderId);
+
+            if (customerOrder is null)
+            {
+                return BadRequest("Ordern kunde inte hittas.");
+            }
+
+            var (toStockRows, fromStockRows) = await LoadStockBalanceRowsAsync(customerOrder.Id, customerOrder.SupplierOrderId, request.EditionPerPallet);
+
+            var balanceNrOfItems = toStockRows.Sum(x => x.NrOfItems ?? 0) - fromStockRows.Sum(x => x.NrOfItems ?? 0);
+            var balanceNrOfPallets = toStockRows.Sum(x => x.NrOfPallets ?? 0) - fromStockRows.Sum(x => x.NrOfPallets ?? 0);
+
+            // Legacy parity: copy pallet dimensions/format from the matching stock-in delivery template.
+            var template = customerOrder.SupplierOrderId.HasValue
+                ? await _dbContext.DeliveryToStocks
+                    .AsNoTracking()
+                    .Where(x => x.SupplierOrderId == customerOrder.SupplierOrderId.Value && x.EditionPerPallet == request.EditionPerPallet)
+                    .OrderByDescending(x => x.Id)
+                    .FirstOrDefaultAsync()
+                : null;
+
+            var newDelivery = new DeliveryFromStock
+            {
+                CustomerOrderId = customerOrder.Id,
+                DeliveryDate = request.DeliveryDate,
+                NrOfItems = request.NrOfItems ?? balanceNrOfItems,
+                NrOfPallets = request.NrOfPallets ?? balanceNrOfPallets,
+                // Legacy parity: DeliveryViewModel.DoSave sets DeliveryStatus 2 (levererad) or 1 (planerad), never 0 for a manually created delivery.
+                DeliveryStatus = request.IsDelivered ? 2 : 1,
+                CallOff = request.CallOff,
+                InventoryId = request.InventoryId ?? template?.InventoryId ?? customerOrder.SupplierOrder?.InventoryId,
+                PalletFormatId = template?.PalletFormatId,
+                PalletIsStackable = request.PalletIsStackable,
+                PalletWidth = request.PalletWidth ?? template?.PalletWidth,
+                PalletHeight = request.PalletHeight ?? template?.PalletHeight,
+                PalletLength = request.PalletLength ?? template?.PalletLength,
+                EditionPerPallet = request.EditionPerPallet,
+                PalletCalcFactor = request.PalletCalcFactor ?? template?.PalletCalcFactor,
+                IsSlattPallet = false,
+            };
+
+            _dbContext.DeliveryFromStocks.Add(newDelivery);
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(await BuildUnlinkedDeliveryRowDtoAsync(newDelivery, customerOrder));
+        }
+
+        // Legacy parity: CallOffViewModel.OnClosedAsync deletes deliveries that were added but never saved as a CallOffDelivery.
+        [HttpDelete("deliveries/{deliveryFromStockId:int}")]
+        public async Task<IActionResult> DeleteUnlinkedDeliveryFromStock(int deliveryFromStockId)
+        {
+            var delivery = await _dbContext.DeliveryFromStocks.FirstOrDefaultAsync(x => x.Id == deliveryFromStockId);
+            if (delivery is null)
+            {
+                return NotFound();
+            }
+
+            if (await _dbContext.CallOffDeliveries.AnyAsync(x => x.DeliveryFromStockId == deliveryFromStockId))
+            {
+                return BadRequest("Leveransen är kopplad till ett avrop och kan inte raderas härifrån.");
+            }
+
+            _dbContext.DeliveryFromStocks.Remove(delivery);
+            await _dbContext.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        // View mode: read the details of an already created DeliveryFromStock so the Calloff page can show it.
+        [HttpGet("deliveries/fromstock/{deliveryFromStockId:int}")]
+        public async Task<ActionResult<DeliveryFromStockDetailsDto>> GetDeliveryFromStockDetails(int deliveryFromStockId)
+        {
+            var delivery = await _dbContext.DeliveryFromStocks
+                .AsNoTracking()
+                .Include(x => x.CustomerOrder)
+                .Include(x => x.Inventory)
+                .FirstOrDefaultAsync(x => x.Id == deliveryFromStockId);
+
+            if (delivery is null)
+            {
+                return NotFound();
+            }
+
+            return Ok(new DeliveryFromStockDetailsDto
+            {
+                Id = delivery.Id,
+                CustomerOrderId = delivery.CustomerOrderId,
+                CustomerOrderNr = delivery.CustomerOrder?.CustomerOrderNr ?? string.Empty,
+                ProductName = delivery.CustomerOrder?.Product ?? string.Empty,
+                OrderedQty = delivery.CustomerOrder?.Edition,
+                EditionPerPallet = delivery.EditionPerPallet,
+                NrOf = delivery.NrOfItems.HasValue ? (int?)Convert.ToInt32(delivery.NrOfItems.Value) : null,
+                NrOfPallets = delivery.NrOfPallets,
+                DeliveryDate = delivery.DeliveryDate,
+                NrOfItems = delivery.NrOfItems,
+                CallOff = delivery.CallOff,
+                InventoryId = delivery.InventoryId,
+                InventoryName = delivery.Inventory?.Name ?? string.Empty,
+                PalletLength = delivery.PalletLength,
+                PalletWidth = delivery.PalletWidth,
+                PalletHeight = delivery.PalletHeight,
+                PalletIsStackable = delivery.PalletIsStackable,
+                PalletCalcFactor = delivery.PalletCalcFactor,
+                // Legacy parity: DeliveryStatus 2 means the delivery has been delivered.
+                IsDelivered = delivery.DeliveryStatus == 2,
+            });
+        }
+
+        private async Task<CallOffDeliveryRowDto> BuildUnlinkedDeliveryRowDtoAsync(DeliveryFromStock delivery, CustomerOrder customerOrder)
+        {
+            var inventoryName = delivery.InventoryId.HasValue
+                ? await _dbContext.Inventories.AsNoTracking().Where(x => x.Id == delivery.InventoryId.Value).Select(x => x.Name).FirstOrDefaultAsync()
+                : null;
+            var palletFormatName = customerOrder.PalletFormatId.HasValue
+                ? await _dbContext.PalletFormats.AsNoTracking().Where(x => x.Id == customerOrder.PalletFormatId.Value).Select(x => x.Name).FirstOrDefaultAsync()
+                : null;
+
+            return new CallOffDeliveryRowDto
+            {
+                Id = 0,
+                DeliveryFromStockId = delivery.Id,
+                SortOrder = 0,
+                Note = null,
+                DeliveryAddressFreeText = null,
+                NrOfPalletPlaces = null,
+                CustomerOrderNr = customerOrder.CustomerOrderNr ?? string.Empty,
+                CustomerName = customerOrder.CustomerName ?? string.Empty,
+                ProductName = customerOrder.Product ?? string.Empty,
+                InventoryName = inventoryName ?? string.Empty,
+                NrOfPallets = delivery.NrOfPallets ?? 0,
+                PalletFormatName = palletFormatName ?? string.Empty,
+                KolliFormat = $"{delivery.PalletLength ?? 0} x {delivery.PalletWidth ?? 0} x {delivery.PalletHeight ?? 0}",
+            };
+        }
+
+        // Legacy parity: CallOffViewModel.SaveCallOff reconciles CallOffDeliveryList against the DB, updating existing
+        // rows, removing deleted ones, and inserting rows for deliveries added (but not yet linked) since the last save.
+        private async Task<string?> SyncCallOffDeliveriesAsync(CallOff callOff, List<SaveCallOffDeliveryDto> incomingDeliveryList, List<CallOffDelivery> existingDeliveryList)
+        {
+            var existingDeliveryById = existingDeliveryList.ToDictionary(x => x.Id);
+            var incomingExistingItems = incomingDeliveryList.Where(x => x.Id != 0).ToList();
+            var incomingNewItems = incomingDeliveryList.Where(x => x.Id == 0).ToList();
+
+            if (incomingExistingItems.Any(x => !existingDeliveryById.ContainsKey(x.Id)))
+            {
+                return "En eller flera avropsleveranser kunde inte hittas på avropet.";
+            }
+
+            if (incomingNewItems.Any(x => !x.DeliveryFromStockId.HasValue))
+            {
+                return "En ny avropsleverans saknar koppling till en lagerleverans.";
+            }
+
+            var newDeliveryFromStockIds = incomingNewItems.Select(x => x.DeliveryFromStockId!.Value).ToList();
+            if (newDeliveryFromStockIds.Count > 0)
+            {
+                var alreadyLinkedIds = await _dbContext.CallOffDeliveries
+                    .Where(x => x.DeliveryFromStockId.HasValue && newDeliveryFromStockIds.Contains(x.DeliveryFromStockId.Value))
+                    .Select(x => x.DeliveryFromStockId!.Value)
+                    .ToListAsync();
+                if (alreadyLinkedIds.Count > 0)
+                {
+                    return "En eller flera leveranser är redan kopplade till ett avrop.";
+                }
+
+                var validDeliveryFromStockIds = await _dbContext.DeliveryFromStocks
+                    .Where(x => newDeliveryFromStockIds.Contains(x.Id))
+                    .Select(x => x.Id)
+                    .ToListAsync();
+                if (newDeliveryFromStockIds.Except(validDeliveryFromStockIds).Any())
+                {
+                    return "En eller flera lagerleveranser kunde inte hittas.";
+                }
+            }
+
+            var incomingExistingIdSet = incomingExistingItems.Select(x => x.Id).ToHashSet();
+            var deliveriesToRemove = existingDeliveryList
+                .Where(x => !incomingExistingIdSet.Contains(x.Id))
+                .ToList();
+            _dbContext.CallOffDeliveries.RemoveRange(deliveriesToRemove);
+
+            // Legacy parity: SaveCallOff deletes the underlying stock delivery for rows removed from CallOffDeliveryList.
+            var removedDeliveryFromStockIds = deliveriesToRemove
+                .Where(x => x.DeliveryFromStockId.HasValue)
+                .Select(x => x.DeliveryFromStockId!.Value)
+                .ToList();
+            if (removedDeliveryFromStockIds.Count > 0)
+            {
+                var deliveriesFromStockToRemove = await _dbContext.DeliveryFromStocks
+                    .Where(x => removedDeliveryFromStockIds.Contains(x.Id))
+                    .ToListAsync();
+                _dbContext.DeliveryFromStocks.RemoveRange(deliveriesFromStockToRemove);
+            }
+
+            foreach (var item in incomingExistingItems)
+            {
+                var existingDelivery = existingDeliveryById[item.Id];
+                existingDelivery.Note = item.Note;
+                existingDelivery.NrOfPalletPlaces = item.NrOfPalletPlaces;
+            }
+
+            var nextSortOrder = existingDeliveryList.Select(x => x.SortOrder ?? 0).DefaultIfEmpty(0).Max() + 1;
+            foreach (var item in incomingNewItems)
+            {
+                _dbContext.CallOffDeliveries.Add(new CallOffDelivery
+                {
+                    CallOffId = callOff.Id,
+                    DeliveryFromStockId = item.DeliveryFromStockId,
+                    SortOrder = nextSortOrder++,
+                    Note = item.Note,
+                    NrOfPalletPlaces = item.NrOfPalletPlaces,
+                });
+            }
+
+            return null;
+        }
+
+        private async Task<(List<StockBalanceRow> ToStockRows, List<StockBalanceRow> FromStockRows)> LoadStockBalanceRowsAsync(
+            int customerOrderId, int? supplierOrderId, int? editionPerPalletFilter = null)
+        {
+            List<StockBalanceRow> toStockRows;
+            if (supplierOrderId.HasValue)
+            {
+                var toStockQuery = _dbContext.DeliveryToStocks.AsNoTracking().Where(x => x.SupplierOrderId == supplierOrderId.Value);
+                if (editionPerPalletFilter.HasValue)
+                {
+                    toStockQuery = toStockQuery.Where(x => x.EditionPerPallet == editionPerPalletFilter.Value);
+                }
+
+                toStockRows = await toStockQuery
+                    .Select(x => new StockBalanceRow(x.EditionPerPallet, x.NrOfItems, x.NrOfPallets, x.DeliveryStatus, x.DeliveryDate))
+                    .ToListAsync();
+            }
+            else
+            {
+                toStockRows = new List<StockBalanceRow>();
+            }
+
+            var fromStockQuery = _dbContext.DeliveryFromStocks.AsNoTracking().Where(x => x.CustomerOrderId == customerOrderId);
+            if (editionPerPalletFilter.HasValue)
+            {
+                fromStockQuery = fromStockQuery.Where(x => x.EditionPerPallet == editionPerPalletFilter.Value);
+            }
+
+            var fromStockRows = await fromStockQuery
+                .Select(x => new StockBalanceRow(x.EditionPerPallet, x.NrOfItems, x.NrOfPallets, x.DeliveryStatus, x.DeliveryDate))
+                .ToListAsync();
+
+            return (toStockRows, fromStockRows);
+        }
+
+        private sealed record StockBalanceRow(int? EditionPerPallet, double? NrOfItems, int? NrOfPallets, int? DeliveryStatus, DateTime? DeliveryDate);
 
         private async Task<CallOffAggregateDto> BuildAggregateDtoAsync(CallOff callOff)
         {

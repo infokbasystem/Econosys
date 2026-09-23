@@ -14,7 +14,7 @@ const items = [
 
 export default function ReportingSubMenu() {
   return (
-    <nav className="sticky top-[72px] z-40 flex items-end justify-center gap-0 px-8 pt-1 pb-[6px] border-b border-gray-300" style={{ backgroundColor: 'rgb(235, 234, 230)' }}>
+    <nav className="sticky top-[72px] z-40 flex items-end justify-center gap-0 px-8 pt-1 pb-[4px] border-b border-gray-300" style={{ backgroundColor: 'rgb(235, 234, 230)' }}>
       {/* backgroundImage: `url(${bg})` */}
       {items.map((item) => {
         const Icon = item.icon

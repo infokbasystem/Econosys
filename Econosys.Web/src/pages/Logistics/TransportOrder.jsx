@@ -361,7 +361,7 @@ const TransportOrder = () => {
                 infoPanelAutoCloseRef.current = setTimeout(() => {
                     setIsInfoPanelExpanded(false);
                     infoPanelAutoCloseRef.current = null;
-                }, 1000);
+                }, 2000);
             }
             return true;
         });

@@ -140,7 +140,7 @@ const LabeledDatePicker = ({
         : formatDateShort(selectedDate);
 
     return (
-        <div className={`flex items-center space-x-1 w-full pb-[1px] mt-${margintop}`} ref={wrapperRef}>
+        <div className={`flex items-center w-full pb-[1px] mt-${margintop}`} ref={wrapperRef}>
             <label className={`${labelWidth || ''} flex-none text-xs text-gray-700 pt-0.5`}>{label}</label>
 
             <div className={`relative ${inputWidth || 'w-full'}`}>

@@ -10,6 +10,9 @@ namespace Econosys.Api.Models
         [Column("lngDeliveryFromStock_ID")]
         public int Id { get; set; }
 
+        // Legacy schema is single-tenant; column is NOT NULL with no default, so it must always be set.
+        public int CompanyId { get; set; } = 1;
+
         [Column("lngCustomerOrder_ID")]
         public int? CustomerOrderId { get; set; }
 

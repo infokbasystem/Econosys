@@ -8,6 +8,8 @@ import { usePdf } from '../../contexts/PdfContext';
 import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledCheckbox from '../../components/LabeledCheckbox';
+import SelectNewDeliveryInfo from '../../modals/SelectNewDeliveryInfo';
+import DeliveryFromStock from '../../modals/DeliveryFromStock';
 import LabeledDatePicker from '../../components/LabeledDatePicker';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
@@ -54,6 +56,8 @@ const mapDtoToForm = (dto) => ({
 
 const mapDeliveryRowDto = (dto) => ({
     id: Number(dto?.id ?? 0),
+    // Distinguishes rows in local state before/after they are linked to the call-off (id stays 0 until saved).
+    rowKey: dto?.id ? String(dto.id) : `new-${dto?.deliveryFromStockId ?? ''}`,
     deliveryFromStockId: dto?.deliveryFromStockId ?? null,
     sortOrder: Number(dto?.sortOrder ?? 0),
     note: String(dto?.note ?? ''),
@@ -219,6 +223,16 @@ const Calloff = () => {
     const [aggregateVersion, setAggregateVersion] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const [isStaleConflict, setIsStaleConflict] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [showAddDeliveryModal, setShowAddDeliveryModal] = useState(false);
+    const [pendingDeliverySelection, setPendingDeliverySelection] = useState(null);
+    const [isAddingDelivery, setIsAddingDelivery] = useState(false);
+    const [addDeliveryError, setAddDeliveryError] = useState('');
+    // View mode: shows the details of an already created delivery from stock.
+    const [viewDeliveryDetails, setViewDeliveryDetails] = useState(null);
+    const [isLoadingViewDelivery, setIsLoadingViewDelivery] = useState(false);
+    const [viewDeliveryError, setViewDeliveryError] = useState('');
     // Legacy parity: info panel starts collapsed, same as TransportOrder.
     const [isInfoPanelExpanded, setIsInfoPanelExpanded] = useState(false);
     const [originalCallOffState, setOriginalCallOffState] = useState(null);
@@ -241,7 +255,7 @@ const Calloff = () => {
                 infoPanelAutoCloseRef.current = setTimeout(() => {
                     setIsInfoPanelExpanded(false);
                     infoPanelAutoCloseRef.current = null;
-                }, 1000);
+                }, 2000);
             }
             return true;
         });
@@ -556,14 +570,48 @@ const Calloff = () => {
         }));
     };
 
-    const updateDeliveryField = (deliveryId, field, value) => {
+    const updateDeliveryField = (rowKey, field, value) => {
         setCallOffDeliveryList((prev) => prev.map((delivery) => (
-            delivery.id === deliveryId ? { ...delivery, [field]: value } : delivery
+            delivery.rowKey === rowKey ? { ...delivery, [field]: value } : delivery
         )));
     };
 
-    const removeCallOffDelivery = (deliveryId) => {
-        setCallOffDeliveryList((prev) => prev.filter((delivery) => delivery.id !== deliveryId));
+    const removeCallOffDelivery = async (rowKey) => {
+        const delivery = callOffDeliveryList.find((item) => item.rowKey === rowKey);
+        if (!delivery) {
+            return;
+        }
+
+        setCallOffDeliveryList((prev) => prev.filter((item) => item.rowKey !== rowKey));
+
+        const pruneSnapshot = (prev) => (prev
+            ? { ...prev, callOffDeliveryList: prev.callOffDeliveryList.filter((item) => item.rowKey !== rowKey) }
+            : prev);
+
+        try {
+            if (delivery.id === 0) {
+                // The delivery hasn't been linked to the call-off yet (Id 0), so clean up the now-orphaned DeliveryFromStock row.
+                if (delivery.deliveryFromStockId) {
+                    await apiClient.delete(`/calloff/deliveries/${delivery.deliveryFromStockId}`);
+                }
+                setOriginalCallOffState(pruneSnapshot);
+                return;
+            }
+
+            // Linked rows are deleted from the database directly; no save is needed.
+            const response = await apiClient.delete(`/calloff/${id}/deliveries/${delivery.id}`);
+            if (response?.data?.version) {
+                setAggregateVersion(String(response.data.version));
+            }
+            setOriginalCallOffState(pruneSnapshot);
+            setMessages((prev) => [...prev, { type: 'info', text: 'Leveransen raderades.' }]);
+        } catch (error) {
+            console.error('Failed to delete call-off delivery:', error);
+            // Restore the row so local state matches the database again.
+            setCallOffDeliveryList((prev) => (prev.some((item) => item.rowKey === rowKey) ? prev : [...prev, delivery]));
+            setMessages((prev) => [...prev, { type: 'error', text: 'Kunde inte radera leveransen.' }]);
+            flashInfoPanel(true);
+        }
     };
 
     const handleBackClick = () => {
@@ -591,9 +639,97 @@ const Calloff = () => {
         openPdfPreview?.('');
     };
 
+    const handleDeleteCallOff = async () => {
+        setShowDeleteConfirm(false);
+
+        if (isDeleting || isNewCallOff || !id) {
+            return;
+        }
+
+        setIsDeleting(true);
+        setMessages([]);
+        try {
+            await apiClient.delete(`/calloff/${id}`);
+            skipUnsavedCheckRef.current = true;
+            navigate('/logistics/calloffoverview');
+        } catch (error) {
+            console.error('Failed to delete call-off:', error);
+            const apiMessage = typeof error.response?.data === 'string' ? error.response.data : '';
+            setMessages((prev) => [...prev, { type: 'error', text: apiMessage || 'Kunde inte radera avropet.' }]);
+            flashInfoPanel(true);
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
     const handleAddDelivery = () => {
-        setMessages((prev) => [...prev, { type: 'info', text: 'Lägg till leverans från lager implementeras i nästa steg.' }]);
-        flashInfoPanel(false);
+        setAddDeliveryError('');
+        setShowAddDeliveryModal(true);
+    };
+
+    const handleCloseAddDeliveryModal = () => {
+        setShowAddDeliveryModal(false);
+    };
+
+    // Legacy parity: picking a balance group only opens the delivery details dialog; nothing is created yet.
+    const handleDeliveryCandidateSelected = (candidate, group) => {
+        setAddDeliveryError('');
+        setPendingDeliverySelection({ candidate, group });
+        setShowAddDeliveryModal(false);
+    };
+
+    const handleCloseDeliveryDetailsModal = () => {
+        if (isAddingDelivery || isLoadingViewDelivery) {
+            return;
+        }
+
+        if (viewDeliveryDetails != null) {
+            setViewDeliveryDetails(null);
+            setViewDeliveryError('');
+            return;
+        }
+
+        setPendingDeliverySelection(null);
+    };
+
+    // View mode: fetch the details of an already created delivery from stock and show them read-only.
+    const handleViewDelivery = async (delivery) => {
+        if (isLoadingViewDelivery || !delivery?.deliveryFromStockId) {
+            return;
+        }
+
+        setIsLoadingViewDelivery(true);
+        setViewDeliveryError('');
+        try {
+            const response = await apiClient.get(`/calloff/deliveries/fromstock/${delivery.deliveryFromStockId}`);
+            setViewDeliveryDetails(response?.data ?? null);
+        } catch (error) {
+            console.error('Failed to load delivery details:', error);
+            const apiMessage = typeof error.response?.data === 'string' ? error.response.data : '';
+            setViewDeliveryError(apiMessage || 'Kunde inte läsa in leveransen.');
+            setMessages((prev) => [...prev, { type: 'error', text: apiMessage || 'Kunde inte läsa in leveransen.' }]);
+            flashInfoPanel(true);
+        } finally {
+            setIsLoadingViewDelivery(false);
+        }
+    };
+
+    const handleSaveDeliveryDetails = async (details) => {
+        setIsAddingDelivery(true);
+        setAddDeliveryError('');
+        try {
+            const response = await apiClient.post('/calloff/deliveries', details);
+            const newDelivery = mapDeliveryRowDto(response?.data);
+            setCallOffDeliveryList((prev) => [...prev, newDelivery]);
+            setPendingDeliverySelection(null);
+            setMessages((prev) => [...prev, { type: 'info', text: 'Leverans tillagd. Spara avropet för att spara ändringen.' }]);
+        } catch (error) {
+            console.error('Failed to add delivery to call-off:', error);
+            const apiMessage = typeof error.response?.data === 'string' ? error.response.data : '';
+            setAddDeliveryError(apiMessage || 'Kunde inte lägga till leveransen.');
+        } finally {
+            setIsAddingDelivery(false);
+        }
     };
 
     const saveCallOff = async () => {
@@ -616,6 +752,7 @@ const Calloff = () => {
                 id: Number(delivery.id),
                 note: delivery.note || null,
                 nrOfPalletPlaces: delivery.nrOfPalletPlaces === '' ? null : Number(delivery.nrOfPalletPlaces),
+                deliveryFromStockId: delivery.id === 0 ? delivery.deliveryFromStockId : null,
             })),
         };
 
@@ -711,6 +848,34 @@ const Calloff = () => {
                 confirmText="Fortsätt ändå"
                 cancelText="Avbryt"
                 isDestructive={false}
+            />
+
+            <ConfirmationModal
+                isOpen={showDeleteConfirm}
+                onClose={() => setShowDeleteConfirm(false)}
+                onConfirm={handleDeleteCallOff}
+                title="Radera avrop"
+                message={`Är du säker på att du vill radera avropet? Åtgärden kan inte ångras.`}
+                confirmText={isDeleting ? 'Raderar...' : 'Radera'}
+                cancelText="Avbryt"
+                isDestructive={true}
+            />
+
+            <SelectNewDeliveryInfo
+                isOpen={showAddDeliveryModal}
+                onClose={handleCloseAddDeliveryModal}
+                onSelect={handleDeliveryCandidateSelected}
+            />
+
+            <DeliveryFromStock
+                isOpen={pendingDeliverySelection != null || viewDeliveryDetails != null}
+                onClose={handleCloseDeliveryDetailsModal}
+                onSave={handleSaveDeliveryDetails}
+                candidate={pendingDeliverySelection?.candidate}
+                group={pendingDeliverySelection?.group}
+                details={viewDeliveryDetails}
+                isSubmitting={isAddingDelivery || isLoadingViewDelivery}
+                submitError={addDeliveryError}
             />
 
             <div className="mt-0 flex min-h-0 flex-1 flex-col pr-10">
@@ -810,9 +975,11 @@ const Calloff = () => {
                                 </div>
                                 <div className="ml-20 flex items-center gap-2">
                                     <ActionButton
-                                        label="Delete"
+                                        label="Radera"
                                         icon={Trash2}
                                         accent="rose"
+                                        disabled={isNewCallOff || isDeleting}
+                                        onClick={() => setShowDeleteConfirm(true)}
                                     />
                                 </div>
                             </div>
@@ -977,8 +1144,8 @@ const Calloff = () => {
 
                                     </div>
 
-                                    <section aria-label="Leveranser" className="pt-6">
-                                        <div className="w-full border-b border-gray-300 pb-2">
+                                    <section aria-label="Leveranser" className="pt-10">
+                                        <div className="w-full pb-0">
                                             <div className="flex items-center gap-24">
                                                 <span className="text-center text-xs font-semibold tracking-[0.08em] text-gray-500 uppercase">Avropsleveranser</span>
                                                 <ActionButton
@@ -990,9 +1157,9 @@ const Calloff = () => {
                                             </div>
                                         </div>
 
-                                        <div className="mt-5 overflow-hidden">
+                                        <div className="mt-3 overflow-hidden">
                                             <table className="w-full text-xs text-gray-700">
-                                                <thead className="text-tiny tracking-[0.08em] text-gray-500">
+                                                <thead className="text-tiny tracking-[0.08em] text-gray-500 border-b border-gray-300">
                                                     <tr>
                                                         <th className="px-2 py-1 text-left font-medium">Ordernr</th>
                                                         <th className="px-2 py-1 text-left font-medium">Kund</th>
@@ -1011,7 +1178,7 @@ const Calloff = () => {
                                                             <td colSpan={9} className="px-2 py-3 text-center text-gray-400">Inga leveranser tillagda.</td>
                                                         </tr>
                                                     ) : callOffDeliveryList.map((delivery) => (
-                                                        <tr key={`calloff-delivery-row-${delivery.id}`} className="border-t border-gray-200">
+                                                        <tr key={`calloff-delivery-row-${delivery.rowKey}`} className="border-b border-gray-200">
                                                             <td className="px-2 pt-1.5 pb-1">{delivery.customerOrderNr}</td>
                                                             <td className="px-2 pt-1.5 pb-1">
                                                                 <div>{delivery.customerName}</div>
@@ -1020,7 +1187,7 @@ const Calloff = () => {
                                                             <td className="p-0 h-full">
                                                                 <textarea
                                                                     value={delivery.note ?? ''}
-                                                                    onChange={(event) => updateDeliveryField(delivery.id, 'note', event.target.value)}
+                                                                    onChange={(event) => updateDeliveryField(delivery.rowKey, 'note', event.target.value)}
                                                                     className="block h-full w-full resize-none border-0 bg-white px-2 py-1 text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-blue-500"
                                                                     placeholder="Notering"
                                                                 />
@@ -1035,13 +1202,18 @@ const Calloff = () => {
                                                                 <input
                                                                     type="text"
                                                                     value={delivery.nrOfPalletPlaces ?? ''}
-                                                                    onChange={(event) => updateDeliveryField(delivery.id, 'nrOfPalletPlaces', event.target.value)}
+                                                                    onChange={(event) => updateDeliveryField(delivery.rowKey, 'nrOfPalletPlaces', event.target.value)}
                                                                     className="w-16 border border-gray-300 bg-white px-2 py-0.5 text-right text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
                                                                 />
                                                             </td>
                                                             <td className="px-2 pt-1.5 pb-1 text-right">
-                                                                {/* No detail view yet; kept as a disabled placeholder for legacy layout parity. */}
-                                                                <button type="button" className="text-xs text-gray-400 cursor-not-allowed" disabled>
+                                                                {/* View mode: shows the details of an already created delivery from stock, read-only. */}
+                                                                <button
+                                                                    type="button"
+                                                                    className={delivery.deliveryFromStockId ? 'text-xs text-blue-600 hover:underline' : 'text-xs text-gray-400 cursor-not-allowed'}
+                                                                    disabled={!delivery.deliveryFromStockId || isLoadingViewDelivery}
+                                                                    onClick={() => handleViewDelivery(delivery)}
+                                                                >
                                                                     Visa
                                                                 </button>
                                                             </td>
@@ -1049,7 +1221,7 @@ const Calloff = () => {
                                                                 <button
                                                                     type="button"
                                                                     className="text-xs text-red-600 hover:underline"
-                                                                    onClick={() => removeCallOffDelivery(delivery.id)}
+                                                                    onClick={() => removeCallOffDelivery(delivery.rowKey)}
                                                                 >
                                                                     Ta bort
                                                                 </button>
