@@ -1,5 +1,5 @@
 #menu {
-    height: 72px;
+    height: 65px;
     margin-bottom: 0px;
     display: block;
 }
@@ -26,9 +26,9 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    width: 108px;
-    height: 58px;
+    gap: 4px;
+    width: 95px;
+    height: 55px;
     margin: 0 14px;
     border-radius: 16px;
     background-color: transparent;
