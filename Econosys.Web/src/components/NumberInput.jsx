@@ -6,6 +6,7 @@ const NumberInput = ({
     value,
     disabled = false,
     decimals = 2,
+    hideZeroDecimals = false,
     className,
     onChange,
     ...props
@@ -13,22 +14,30 @@ const NumberInput = ({
     const [displayValue, setDisplayValue] = useState("");
     const [isFocused, setIsFocused] = useState(false);
 
+    const getDecimalsFor = (num) => {
+        if (!hideZeroDecimals || decimals === 0) return decimals;
+        const factor = 10 ** decimals;
+        return Math.round(num * factor) % factor === 0 ? 0 : decimals;
+    };
+
     // Format number for display when blurred
     const formatNumber = (num) => {
         if (num == null || num === "") return "";
-        const parts = num.toFixed(decimals).split(".");
+        const displayDecimals = getDecimalsFor(num);
+        const parts = num.toFixed(displayDecimals).split(".");
         let intPart = parts[0];
         let decPart = parts[1];
         // Add space as thousand separator
         intPart = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-        return decimals > 0 ? `${intPart},${decPart}` : intPart;
+        return displayDecimals > 0 ? `${intPart},${decPart}` : intPart;
     };
 
     // Prepare number for editing (Swedish comma but no spaces)
     const formatForEdit = (num) => {
         if (num == null || num === "") return "";
-        return decimals > 0
-            ? num.toFixed(decimals).replace(".", ",")
+        const editDecimals = getDecimalsFor(num);
+        return editDecimals > 0
+            ? num.toFixed(editDecimals).replace(".", ",")
             : Math.round(num).toString();
     };
 

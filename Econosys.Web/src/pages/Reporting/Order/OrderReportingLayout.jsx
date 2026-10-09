@@ -12,12 +12,12 @@ const groups = [
     label: 'Hanteringstider',
     labelIcon: Clock3,
     items: [
-      { to: '/reporting/order/handlingtimes-repeat-orders', leftPadding: 'pl-11', label: 'Repeat orders' },
-      { to: '/reporting/order/handlingtimes-new-orders', leftPadding: 'pl-11', label: 'Nya orders' },
-      // { leftPadding: 'pl-11', label: 'Leverantörstider', disabled: true },
-      { to: '/reporting/order/handlingtimes-created-by', leftPadding: 'pl-11', label: 'Skapad av' },
-      { to: '/reporting/order/handlingtimes-data', leftPadding: 'pl-11', label: 'Data' },
-      { to: '/reporting/order/handlingtimes-settings', leftPadding: 'pl-11', label: 'Inställningar' },
+      { to: '/reporting/order/handlingtimes-repeat-orders', leftPadding: 'pl-10.5', label: 'Repeat orders' },
+      { to: '/reporting/order/handlingtimes-new-orders', leftPadding: 'pl-10.5', label: 'Nya orders' },
+      // { leftPadding: 'pl-10.5', label: 'Leverantörstider', disabled: true },
+      { to: '/reporting/order/handlingtimes-created-by', leftPadding: 'pl-10.5', label: 'Skapad av' },
+      { to: '/reporting/order/handlingtimes-data', leftPadding: 'pl-10.5', label: 'Data' },
+      { to: '/reporting/order/handlingtimes-settings', leftPadding: 'pl-10.5', label: 'Inställningar' },
     ],
   },
 ]

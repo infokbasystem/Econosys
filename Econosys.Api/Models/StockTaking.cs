@@ -10,6 +10,8 @@ namespace Econosys.Api.Models
         [Column("lngStockTaking_ID")]
         public int Id { get; set; }
 
+        public int CompanyId { get; set; }
+
         [Column("dteStockTakingDate")]
         public DateTime? StockTakingDate { get; set; }
 

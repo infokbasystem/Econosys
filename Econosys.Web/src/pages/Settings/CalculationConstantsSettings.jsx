@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Save } from 'lucide-react';
 import apiClient from '../../config/apiClient';
 import LabeledInput from '../../components/LabeledInput';
+import ActionButton from '../../components/ActionButton';
 
 const defaultForm = {
     freightPerPallet: '',
@@ -104,14 +106,13 @@ const CalculationConstantsSettings = () => {
             <div className="flex h-full min-w-0 items-stretch">
                 <div className="flex-1 min-w-0 px-10 py-2 overflow-x-auto">
                     <div className="flex items-center gap-5 mb-6 mt-1">
-                        <button
-                            type="button"
+                        <ActionButton
+                            label={isSaving ? 'Sparar...' : 'Spara'}
+                            icon={Save}
                             onClick={handleSave}
                             disabled={isSaving || isLoading}
-                            className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 disabled:opacity-60 disabled:cursor-not-allowed px-5 p-[5px]"
-                        >
-                            {isSaving ? 'Sparar...' : 'Spara'}
-                        </button>
+                            accent="lime"
+                        />
                     </div>
 
                     {isLoading ? (

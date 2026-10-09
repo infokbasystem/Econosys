@@ -16,6 +16,8 @@ import { parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import LabeledTextArea from '../../components/LabeledTextArea';
 import InventorySelectModal from '../../modals/InventorySelectModal';
+import OrderDetailLayout from '../../components/OrderDetailLayout';
+import useOrderDetailState from '../../hooks/useOrderDetailState';
 
 const createNewCustomerModel = () => ({
     id: 0,
@@ -124,7 +126,7 @@ const Customer = () => {
     const isNewCustomer = id === 'new';
 
     const [loading, setLoading] = useState(true);
-    const [messages, setMessages] = useState([]);
+    const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
     const [showInventorySelectModal, setShowInventorySelectModal] = useState(false);
@@ -144,6 +146,10 @@ const Customer = () => {
     const skipUnsavedCheckRef = useRef(false);
     const pendingContactFocusIdentityRef = useRef(null);
     const pendingAddressFocusIdentityRef = useRef(null);
+
+    const showMessage = useCallback((message) => {
+        setMessages([message]);
+    }, [setMessages]);
 
     const hasUnsavedChanges = useCallback(() => {
         if (skipUnsavedCheckRef.current) return false;
@@ -260,7 +266,7 @@ const Customer = () => {
             } catch (error) {
                 console.error('Failed to load customer view data:', error);
                 if (!isActive) return;
-                setMessages([{ type: 'error', text: 'Kunde inte lasa kunddata.' }]);
+                showMessage({ type: 'error', text: 'Kunde inte lasa kunddata.' });
                 setCustomer((prev) => prev ?? (isNewCustomer ? createNewCustomerModel() : null));
             } finally {
                 if (isActive) {
@@ -274,7 +280,7 @@ const Customer = () => {
         return () => {
             isActive = false;
         };
-    }, [id, isNewCustomer]);
+    }, [id, isNewCustomer, showMessage]);
 
     useEffect(() => {
         if (!isNewCustomer || !customer || customer.id !== 0) {
@@ -461,11 +467,11 @@ const Customer = () => {
         } catch (error) {
             console.error('Failed to load inventories for customer delivery place:', error);
             setInventoryOptions([]);
-            setMessages([{ type: 'error', text: 'Kunde inte hamta lager / omlastningsplatser.' }]);
+            showMessage({ type: 'error', text: 'Kunde inte hamta lager / omlastningsplatser.' });
         } finally {
             setIsLoadingInventoryOptions(false);
         }
-    }, []);
+    }, [showMessage]);
 
     const openInventorySelectModal = () => {
         setShowInventorySelectModal(true);
@@ -686,7 +692,7 @@ const Customer = () => {
 
             setCustomer(mergedCustomer);
             setOriginalCustomer(structuredClone(mergedCustomer));
-            setMessages([{ type: 'success', text: 'Kunden sparades.' }]);
+            showMessage({ type: 'success', text: 'Kunden sparades.' });
 
             if (isCreatingNew && savedCustomer?.id) {
                 skipUnsavedCheckRef.current = true;
@@ -694,7 +700,7 @@ const Customer = () => {
             }
         } catch (error) {
             console.error('Failed to save customer:', error);
-            setMessages([{ type: 'error', text: 'Kunde inte spara kunden.' }]);
+            showMessage({ type: 'error', text: 'Kunde inte spara kunden.' });
         }
     };
 
@@ -708,7 +714,7 @@ const Customer = () => {
             navigate('/order/customers');
         } catch (error) {
             console.error('Failed to delete customer:', error);
-            setMessages([{ type: 'error', text: 'Kunde inte radera kunden.' }]);
+            showMessage({ type: 'error', text: 'Kunde inte radera kunden.' });
         }
     };
 
@@ -754,7 +760,7 @@ const Customer = () => {
         }));
 
     return (
-        <div className="relative flex flex-col h-full">
+        <div className="relative flex min-h-full flex-col">
             <ConfirmationModal
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
@@ -785,14 +791,13 @@ const Customer = () => {
                 isLoading={isLoadingInventoryOptions}
             />
 
-            <h2 className="ml-96 text-sm pt-8 pb-2 text-gray-500 tracking-[0.10em] font-semibold uppercase">
-                {customer?.id ? (
-                    <>Kund <span className="ml-2">{customer.id}</span></>
-                ) : 'Ny kund'}
-            </h2>
-
-            <div className="flex h-full items-stretch">
-                <div className="flex flex-col w-80 shrink-0 border-r border-gray-300 px-2 py-2 mb-5 mr-5">
+            <OrderDetailLayout
+                title={customer?.id ? <>Kund <span className="ml-2">{customer.id}</span></> : 'Ny kund'}
+                messages={messages}
+                isInfoPanelExpanded={isInfoPanelExpanded}
+                isInfoPanelUsingResponsiveDefault={isInfoPanelUsingResponsiveDefault}
+                onToggleInfoPanel={toggleInfoPanel}
+                infoContent={(
                     <div className="space-y-3">
                         <h2 className="text-sm text-center text-gray-700">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
@@ -800,31 +805,8 @@ const Customer = () => {
                             {renderMetaRow('Redigerad:', customer?.editedAt, customer?.editedByUserName, customer?.editedBy)}
                         </div>
                     </div>
-
-                    <hr className="mt-5 border-gray-300" />
-                    <h2 className="text-sm text-center text-gray-700 mt-5">Meddelanden</h2>
-                    {messages.length === 0 ? (
-                        <p className="text-xs text-center font-light mt-4">Inga meddelanden</p>
-                    ) : (
-                        <ul className="mt-2 space-y-2">
-                            {messages.map((message, index) => (
-                                <li
-                                    key={index}
-                                    className={`text-center text-xs p-2 rounded border border-gray-200 ${message.type === 'error'
-                                        ? 'bg-red-100 text-red-700'
-                                        : message.type === 'warning'
-                                            ? 'bg-yellow-100 text-yellow-800'
-                                            : 'bg-green-100 text-green-700'
-                                        }`}
-                                >
-                                    {message.text}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </div>
-
-                <div className="flex-grow ps-10 pe-10 py-2 max-w-350">
+                )}
+            >
                     <div className="flex justify-between w-full mb-5">
                         <div className="flex items-center gap-6">
                             <ActionButton
@@ -975,14 +957,14 @@ const Customer = () => {
                                                 return (
                                                     <li
                                                         key={itemIdentity}
-                                                        className={`cursor-pointer text-xs p-1 m-0 rounded-sm hover:bg-yellow-100 ${isSelected ? 'bg-yellow-200' : ''}`}
+                                                        className={`cursor-pointer text-xs p-1 m-0 rounded-sm hover:bg-lime-50 ${isSelected ? 'bg-lime-200/50' : ''}`}
                                                         onClick={() => setSelectedContactIdentity(itemIdentity)}
                                                     >
                                                         <div className="flex justify-between items-center h-5 px-3">
                                                             <div className="">{contact?.customerContactPersonName || contact?.contactPerson || ''}</div>
                                                             <div className="">
                                                                 {contact?.title ? (
-                                                                    <span className="inline-flex max-w-full items-center rounded-full bg-gray-500 px-3 py-1 text-tiny font-medium text-slate-50">
+                                                                    <span className="inline-flex max-w-full items-center rounded-full bg-lime-600 px-3 py-[4px] text-[9px] font-medium text-slate-50">
                                                                         <span className="truncate">{contact.title}</span>
                                                                     </span>
                                                                 ) : null}
@@ -996,7 +978,7 @@ const Customer = () => {
                                         <p className="text-xs ms-1 font-light mt-5">Inga kontakter</p>
                                     )}
                                     <div className="mt-3">
-                                        <button type="button" onClick={addContact} className="w-full shadow-md/30 text-xs text-gray bg-blue-200 hover:bg-blue-300 px-4 py-2">Lagg till kontakt</button>
+                                        <button type="button" onClick={addContact} className="max-w-full text-xs text-blue-600 hover:bg-blue-50 px-2 py-1 rounded border border-transparent hover:border-blue-200">+ Lagg till kontakt</button>
                                     </div>
                                 </div>
                                 <div className={(selectedContact ? '' : 'opacity-50 pointer-events-none') + ' mt-1'}>
@@ -1133,7 +1115,7 @@ const Customer = () => {
                                                 return (
                                                     <li
                                                         key={itemIdentity}
-                                                        className={`cursor-pointer text-xs p-1 m-0 rounded-sm hover:bg-yellow-100 ${isSelected ? 'bg-yellow-200' : ''}`}
+                                                        className={`cursor-pointer text-xs p-1 m-0 rounded-sm hover:bg-lime-50 ${isSelected ? 'bg-lime-200/50' : ''}`}
                                                         onClick={() => setSelectedAddressIdentity(itemIdentity)}
                                                     >
                                                         <div className="flex justify-between items-center h-5 px-3">
@@ -1147,8 +1129,8 @@ const Customer = () => {
                                         <p className="text-xs ms-1 font-light mt-5">Inga leveransadresser</p>
                                     )}
                                     <div className="mt-3">
-                                        <button type="button" onClick={addAddress} className="w-full shadow-md/30 text-xs text-gray bg-blue-200 hover:bg-blue-300 px-4 py-[5px]">Lägg till lev.adress</button>
-                                        <button type="button" onClick={openInventorySelectModal} className="w-full mt-2 shadow-md/30 text-xs text-gray bg-blue-200 hover:bg-blue-300 px-4 py-[5px]">Lägg till lageradress / omlasningsplats</button>
+                                        <button type="button" onClick={addAddress} className="max-w-full text-xs text-blue-600 hover:bg-blue-50 px-2 py-1 rounded border border-transparent hover:border-blue-200">+ Lägg till lev.adress</button>
+                                        <button type="button" onClick={openInventorySelectModal} className="max-w-full mt-2 text-left text-xs text-blue-600 hover:bg-blue-50 px-2 py-1 rounded border border-transparent hover:border-blue-200">+ Lägg till lageradress / omlasningsplats</button>
                                     </div>
                                 </div>
                                 <div className={(selectedAddress ? '' : 'opacity-50 pointer-events-none') + ' mt-1'}>
@@ -1300,8 +1282,7 @@ const Customer = () => {
 
 
 
-                </div>
-            </div>
+            </OrderDetailLayout>
         </div>
     );
 };

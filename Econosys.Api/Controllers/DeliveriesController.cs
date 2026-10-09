@@ -1,9 +1,14 @@
 using System.Globalization;
+using System.IO;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
+using Econosys.Api.Models;
+using Econosys.Api.Common;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -26,11 +31,618 @@ namespace Econosys.Api.Controllers
 
         private readonly ApplicationDbContext _dbContext;
         private readonly ILogger<DeliveriesController> _logger;
+        private readonly IWebHostEnvironment _webHostEnvironment;
 
-        public DeliveriesController(ApplicationDbContext dbContext, ILogger<DeliveriesController> logger)
+        public DeliveriesController(
+            ApplicationDbContext dbContext,
+            ILogger<DeliveriesController> logger,
+            IWebHostEnvironment webHostEnvironment)
         {
             _dbContext = dbContext;
             _logger = logger;
+            _webHostEnvironment = webHostEnvironment;
+        }
+
+        [HttpGet("new/order/{customerOrderId:int}")]
+        public async Task<ActionResult<NewDeliveryOrderInfoDto>> GetNewDeliveryOrderInfo(int customerOrderId)
+        {
+            var order = await _dbContext.CustomerOrders.AsNoTracking()
+                .Include(x => x.SupplierOrder)
+                .Include(x => x.SelectedCalculationRow)
+                .FirstOrDefaultAsync(x => x.Id == customerOrderId);
+
+            if (order is null)
+            {
+                return NotFound();
+            }
+
+            var calculationRow = order.SelectedCalculationRow;
+            var inventoryIsInventory = order.SupplierOrder?.InventoryId is int inventoryId
+                ? await _dbContext.Inventories.AsNoTracking()
+                    .Where(x => x.Id == inventoryId)
+                    .Select(x => (bool?)x.IsInventory)
+                    .FirstOrDefaultAsync()
+                : null;
+
+            return Ok(new NewDeliveryOrderInfoDto
+            {
+                CustomerOrderId = order.Id,
+                CustomerOrderNr = order.CustomerOrderNr ?? string.Empty,
+                CustomerName = order.CustomerName ?? string.Empty,
+                CustomerOrderDeliveryDate = order.DeliveryDate,
+                ProductName = order.SupplierOrder?.Product ?? order.Product ?? string.Empty,
+                OrderedEdition = order.Edition,
+                IsPallet = order.PalletFormatId.HasValue
+                    || calculationRow?.ArchivedPalletFormatIdCustomerOrder.HasValue == true,
+                CustomerPalletFormatId = order.PalletFormatId,
+                SupplierOrderId = order.SupplierOrderId,
+                SupplierOrderNr = order.SupplierOrder?.SupplierOrderNr ?? string.Empty,
+                ProducedEdition = order.SupplierOrder?.ProducedEdition,
+                InventoryId = order.SupplierOrder?.InventoryId,
+                InventoryIsInventory = inventoryIsInventory,
+                EditionPerPallet = calculationRow?.ArchivedEditionPerPallet,
+                PalletCalcFactor = calculationRow?.ArchivedPalletCalcFactor,
+                PalletLength = calculationRow?.ArchivedPalletLength,
+                PalletWidth = calculationRow?.ArchivedPalletWidth,
+                PalletHeight = calculationRow?.ArchivedPalletHeight,
+                PalletIsStackable = calculationRow?.ArchivedPalletIsStackable ?? false,
+                CalculationAutoFreightCalc = calculationRow?.ArchivedAutoFreightCalc ?? false,
+                PackagingType = order.SupplierOrder?.PackagingType ?? string.Empty,
+                NrOfPerBundle = calculationRow?.ArchivedNrOfPerBundle,
+                NrOfPerOuterPackaging = calculationRow?.ArchivedNrOfPerOuterPackaging,
+                CustomerDeliveryAddressId = order.CustomerDeliveryAddressId
+                    ?? order.SupplierOrder?.CustomerDeliveryAddressId,
+            });
+        }
+
+        [HttpGet("new/legs")]
+        public async Task<ActionResult<List<CreateNewDeliveryLegRequest>>> GetNewDeliveryLegs(
+            [FromQuery] int customerOrderId,
+            [FromQuery] int deliveryType,
+            [FromQuery] int? inventoryId)
+        {
+            if (deliveryType is < 1 or > 3)
+            {
+                return BadRequest("Leveranstypen är ogiltig.");
+            }
+
+            var customerOrder = await _dbContext.CustomerOrders
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == customerOrderId);
+            if (customerOrder is null)
+            {
+                return NotFound();
+            }
+
+            var supplierOrder = customerOrder.SupplierOrderId.HasValue
+                ? await _dbContext.SupplierOrders.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == customerOrder.SupplierOrderId.Value)
+                : null;
+            var supplierFactoryPositionId = supplierOrder?.SupplierFactoryId.HasValue == true
+                ? await _dbContext.SupplierFactories.AsNoTracking()
+                    .Where(x => x.Id == supplierOrder.SupplierFactoryId.Value)
+                    .Select(x => x.PositionId)
+                    .FirstOrDefaultAsync()
+                : null;
+            var inventoryPositionId = inventoryId.HasValue
+                ? await _dbContext.Inventories.AsNoTracking()
+                    .Where(x => x.Id == inventoryId.Value)
+                    .Select(x => x.PositionId)
+                    .FirstOrDefaultAsync()
+                : supplierOrder?.InventoryId.HasValue == true
+                    ? await _dbContext.Inventories.AsNoTracking()
+                        .Where(x => x.Id == supplierOrder.InventoryId.Value)
+                        .Select(x => x.PositionId)
+                        .FirstOrDefaultAsync()
+                    : null;
+            var customerDeliveryAddressId = customerOrder.CustomerDeliveryAddressId
+                ?? supplierOrder?.CustomerDeliveryAddressId;
+            var customerPositionId = customerDeliveryAddressId.HasValue
+                ? await _dbContext.CustomerDeliveryAddresses.AsNoTracking()
+                    .Where(x => x.Id == customerDeliveryAddressId.Value)
+                    .Select(x => x.PositionId)
+                    .FirstOrDefaultAsync()
+                : null;
+
+            var (fromPositionId, toPositionId) = deliveryType switch
+            {
+                1 => (supplierFactoryPositionId, inventoryPositionId),
+                2 => (inventoryPositionId, customerPositionId),
+                _ => (supplierFactoryPositionId, customerPositionId),
+            };
+
+            if (!fromPositionId.HasValue || !toPositionId.HasValue)
+            {
+                return Ok(new List<CreateNewDeliveryLegRequest>());
+            }
+
+            var positions = await _dbContext.Positions.AsNoTracking()
+                .Where(x => x.Id == fromPositionId.Value || x.Id == toPositionId.Value)
+                .ToDictionaryAsync(x => x.Id);
+            if (!positions.TryGetValue(fromPositionId.Value, out var fromPosition)
+                || !positions.TryGetValue(toPositionId.Value, out var toPosition))
+            {
+                return Ok(new List<CreateNewDeliveryLegRequest>());
+            }
+
+            return Ok(new List<CreateNewDeliveryLegRequest>
+            {
+                new()
+                {
+                    FromPositionId = fromPosition.Id,
+                    ToPositionId = toPosition.Id,
+                    LegFromPositionId = fromPosition.Id,
+                    LegToPositionId = toPosition.Id,
+                    TypeOfTransport = "Väg",
+                    SortOrder = 1,
+                    LatitudeStart = fromPosition.Latitude,
+                    LongitudeStart = fromPosition.Longitude,
+                    LatitudeEnd = toPosition.Latitude,
+                    LongitudeEnd = toPosition.Longitude,
+                    FromPositionName = fromPosition.Name ?? string.Empty,
+                    FromPositionPostalAddress = fromPosition.PostalAddress ?? string.Empty,
+                    ToPositionName = toPosition.Name ?? string.Empty,
+                    ToPositionPostalAddress = toPosition.PostalAddress ?? string.Empty,
+                },
+            });
+        }
+
+        [HttpGet("positions")]
+        public async Task<ActionResult<List<DeliveryPositionDto>>> SearchDeliveryPositions([FromQuery] string? search)
+        {
+            var term = search?.Trim();
+            if (string.IsNullOrWhiteSpace(term) || term.Length < 2)
+            {
+                return Ok(new List<DeliveryPositionDto>());
+            }
+
+            var positions = await _dbContext.Positions.AsNoTracking()
+                .Where(x => (x.Name != null && x.Name.Contains(term))
+                    || (x.PostalAddress != null && x.PostalAddress.Contains(term))
+                    || (x.PostalNr != null && x.PostalNr.Contains(term)))
+                .OrderBy(x => x.Name)
+                .Take(25)
+                .Select(x => new DeliveryPositionDto
+                {
+                    Id = x.Id,
+                    Name = x.Name ?? string.Empty,
+                    PostalAddress = x.PostalAddress ?? string.Empty,
+                    Latitude = x.Latitude,
+                    Longitude = x.Longitude,
+                })
+                .ToListAsync();
+
+            return Ok(positions);
+        }
+
+        [HttpPost("{type}/{id:int}/delivery-note")]
+        [Consumes("multipart/form-data")]
+        public async Task<ActionResult<DocumentFileDto>> UploadDeliveryNote(
+            string type,
+            int id,
+            [FromForm] int supplierOrderId,
+            [FromForm] IFormFile? file)
+        {
+            if (file is null || file.Length == 0)
+            {
+                return BadRequest("Välj en fil.");
+            }
+
+            if (file.Length > 20 * 1024 * 1024)
+            {
+                return BadRequest("Filen får vara högst 20 MB.");
+            }
+
+            var normalizedType = NormalizeType(type);
+            var actualSupplierOrderId = normalizedType switch
+            {
+                "DeliveryToStock" => await _dbContext.DeliveryToStocks.AsNoTracking()
+                    .Where(x => x.Id == id)
+                    .Select(x => x.SupplierOrderId)
+                    .FirstOrDefaultAsync(),
+                "DeliveryToCustomer" => await _dbContext.DeliveryToCustomers.AsNoTracking()
+                    .Where(x => x.Id == id)
+                    .Select(x => x.SupplierOrderId)
+                    .FirstOrDefaultAsync(),
+                "DeliveryFromStock" => await _dbContext.DeliveryFromStocks.AsNoTracking()
+                    .Where(x => x.Id == id)
+                    .Select(x => x.CustomerOrder != null && x.CustomerOrder.SupplierOrder != null
+                        ? (int?)x.CustomerOrder.SupplierOrder.Id
+                        : null)
+                    .FirstOrDefaultAsync(),
+                _ => null,
+            };
+
+            if (!actualSupplierOrderId.HasValue || actualSupplierOrderId.Value != supplierOrderId)
+            {
+                return BadRequest("Leveransen är inte kopplad till vald leverantörsorder.");
+            }
+
+            if (!await _dbContext.DocumentTypes.AnyAsync(x => x.Id == 3))
+            {
+                return BadRequest("Dokumenttypen för följesedel kunde inte hittas.");
+            }
+
+            var originalName = Path.GetFileName(file.FileName.Replace('\\', '/'));
+            var extension = Path.GetExtension(originalName);
+            var storedName = $"{Guid.NewGuid():N}{extension}";
+            var attachmentDirectory = Path.Combine(_webHostEnvironment.ContentRootPath, "Attatchments");
+            Directory.CreateDirectory(attachmentDirectory);
+            var storedPath = Path.Combine(attachmentDirectory, storedName);
+
+            try
+            {
+                await using (var stream = System.IO.File.Create(storedPath))
+                {
+                    await file.CopyToAsync(stream);
+                }
+
+                var documentFile = new DocumentFile
+                {
+                    FileNamePath = Path.Combine("Attatchments", storedName),
+                    FileType = file.ContentType,
+                    DocumentTypeId = 3,
+                    SupplierOrderId = supplierOrderId,
+                    Name = originalName,
+                    Description = "Följesedel",
+                    CreatedDateTime = SwedishTime.Now,
+                };
+
+                _dbContext.DocumentFiles.Add(documentFile);
+                await _dbContext.SaveChangesAsync();
+
+                return Ok(new DocumentFileDto
+                {
+                    Id = documentFile.Id,
+                    FileNamePath = documentFile.FileNamePath,
+                    FileType = documentFile.FileType,
+                    DocumentTypeId = documentFile.DocumentTypeId,
+                    SupplierOrderId = documentFile.SupplierOrderId,
+                    Name = documentFile.Name,
+                    Description = documentFile.Description,
+                    CreatedDateTime = documentFile.CreatedDateTime,
+                });
+            }
+            catch
+            {
+                if (System.IO.File.Exists(storedPath))
+                {
+                    System.IO.File.Delete(storedPath);
+                }
+
+                throw;
+            }
+        }
+
+        [HttpGet("delivery-notes/attachments/{id:int}")]
+        public async Task<IActionResult> GetDeliveryNote(int id)
+        {
+            var documentFile = await _dbContext.DocumentFiles.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == id && x.DocumentTypeId == 3);
+            if (documentFile?.FileNamePath is null)
+            {
+                return NotFound();
+            }
+
+            var attachmentRoot = Path.GetFullPath(Path.Combine(_webHostEnvironment.ContentRootPath, "Attatchments"));
+            var filePath = Path.GetFullPath(Path.Combine(_webHostEnvironment.ContentRootPath, documentFile.FileNamePath));
+            if (!filePath.StartsWith(attachmentRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                || !System.IO.File.Exists(filePath))
+            {
+                return NotFound();
+            }
+
+            return PhysicalFile(filePath, documentFile.FileType ?? "application/octet-stream", documentFile.Name ?? Path.GetFileName(filePath));
+        }
+
+        [HttpPost("new")]
+        public async Task<ActionResult<CreateNewDeliveryResponse>> CreateNewDelivery([FromBody] CreateNewDeliveryRequest request)
+        {
+            if (request is null)
+            {
+                return BadRequest("Ingen data att spara.");
+            }
+
+            if (request.DeliveryType is < 1 or > 3)
+            {
+                return BadRequest("Leveranstypen är ogiltig.");
+            }
+
+            if (request.CustomerOrderId <= 0)
+            {
+                return BadRequest("Order måste väljas.");
+            }
+
+            if (request.DeliveryDate is null)
+            {
+                return BadRequest("Måste ange datum.");
+            }
+
+            if (request.ProducedEdition < 0)
+            {
+                return BadRequest("Producerad upplaga får inte vara negativ.");
+            }
+
+            if (request.NrOfItems < 0 || request.NrOfPallets < 0
+                || request.SlattNrOfItems < 0 || request.SlattNrOfPallets < 0)
+            {
+                return BadRequest("Antal på leveransen eller slatten får inte vara negativt.");
+            }
+
+            if (request.CallOff?.Length > 50)
+            {
+                return BadRequest("Avropsreferensen får vara högst 50 tecken.");
+            }
+
+            var customerOrder = await _dbContext.CustomerOrders
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == request.CustomerOrderId);
+
+            if (customerOrder is null)
+            {
+                return BadRequest("Ordern kunde inte hittas.");
+            }
+
+            if (!customerOrder.SupplierOrderId.HasValue
+                || !await _dbContext.SupplierOrders.AnyAsync(x => x.Id == customerOrder.SupplierOrderId.Value))
+            {
+                return BadRequest("Leverantörsorder saknas eller kunde inte hittas.");
+            }
+
+            if (request.InventoryId.HasValue
+                && !await _dbContext.Inventories.AnyAsync(x => x.Id == request.InventoryId.Value))
+            {
+                return BadRequest("Valt lager kunde inte hittas.");
+            }
+
+            if (request.PalletFormatId.HasValue
+                && !await _dbContext.PalletFormats.AnyAsync(x => x.Id == request.PalletFormatId.Value))
+            {
+                return BadRequest("Valt pallformat kunde inte hittas.");
+            }
+
+            var slattWasProvided = request.SlattNrOfItems.HasValue
+                || request.SlattNrOfPallets.HasValue
+                || request.SlattEditionPerPallet.HasValue;
+            if (slattWasProvided && (!request.SlattNrOfItems.HasValue || !request.SlattNrOfPallets.HasValue))
+            {
+                return BadRequest("Slattens antal och pallantal måste anges tillsammans.");
+            }
+
+            var slattDeliveries = request.SlattDeliveries?.ToList()
+                ?? new List<CreateNewDeliverySlattRequest>();
+            if (slattDeliveries.Count == 0 && slattWasProvided)
+            {
+                slattDeliveries.Add(new CreateNewDeliverySlattRequest
+                {
+                    NrOfItems = request.SlattNrOfItems!.Value,
+                    NrOfPallets = request.SlattNrOfPallets!.Value,
+                    EditionPerPallet = request.SlattEditionPerPallet,
+                });
+            }
+
+            if (slattDeliveries.Any(x => x.NrOfItems <= 0 || x.NrOfPallets <= 0))
+            {
+                return BadRequest("Varje slattleverans måste ha ett positivt antal och minst en pall.");
+            }
+
+            var positionIds = request.DeliveryLegs
+                .SelectMany(x => new[] { x.FromPositionId, x.ToPositionId, x.LegFromPositionId, x.LegToPositionId })
+                .Where(x => x.HasValue)
+                .Select(x => x!.Value)
+                .Distinct()
+                .ToList();
+            if (positionIds.Count > 0
+                && await _dbContext.Positions.CountAsync(x => positionIds.Contains(x.Id)) != positionIds.Count)
+            {
+                return BadRequest("En eller flera transportpositioner kunde inte hittas.");
+            }
+
+            var deliveryType = request.DeliveryType switch
+            {
+                1 => "DeliveryToStock",
+                2 => "DeliveryFromStock",
+                _ => "DeliveryToCustomer",
+            };
+            var deliveryStatus = request.IsDelivered ? 2 : 1;
+            int deliveryId;
+            var slattIds = new List<int>();
+
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            var supplierOrder = await _dbContext.SupplierOrders
+                .FirstAsync(x => x.Id == customerOrder.SupplierOrderId!.Value);
+            if (supplierOrder.ProducedEdition != request.ProducedEdition)
+            {
+                supplierOrder.ProducedEdition = request.ProducedEdition;
+                supplierOrder.Edited = SwedishTime.Now;
+            }
+
+            if (request.DeliveryType == 1)
+            {
+                var delivery = new DeliveryToStock
+                {
+                    SupplierOrderId = customerOrder.SupplierOrderId,
+                    DeliveryDate = request.DeliveryDate,
+                    NrOfItems = request.NrOfItems,
+                    NrOfPallets = request.NrOfPallets,
+                    DeliveryStatus = deliveryStatus,
+                    InventoryId = request.InventoryId,
+                    PalletFormatId = request.PalletFormatId,
+                    PalletIsStackable = request.PalletIsStackable,
+                    PalletLength = request.PalletLength,
+                    PalletWidth = request.PalletWidth,
+                    PalletHeight = request.PalletHeight,
+                    EditionPerPallet = request.EditionPerPallet,
+                    PalletCalcFactor = request.PalletCalcFactor,
+                    IsSlattPallet = false,
+                };
+
+                _dbContext.DeliveryToStocks.Add(delivery);
+                await _dbContext.SaveChangesAsync();
+                deliveryId = delivery.Id;
+
+                foreach (var slattRequest in slattDeliveries)
+                {
+                    var slatt = new DeliveryToStock
+                    {
+                        SupplierOrderId = customerOrder.SupplierOrderId,
+                        DeliveryDate = request.DeliveryDate,
+                        NrOfItems = slattRequest.NrOfItems,
+                        NrOfPallets = slattRequest.NrOfPallets,
+                        DeliveryStatus = deliveryStatus,
+                        InventoryId = request.InventoryId,
+                        PalletFormatId = request.PalletFormatId,
+                        PalletIsStackable = request.PalletIsStackable,
+                        PalletLength = request.PalletLength,
+                        PalletWidth = request.PalletWidth,
+                        PalletHeight = request.PalletHeight,
+                        PalletCalcFactor = request.PalletCalcFactor,
+                        EditionPerPallet = slattRequest.EditionPerPallet,
+                        IsSlattPallet = true,
+                        ParentDeliveryId = deliveryId,
+                    };
+                    _dbContext.DeliveryToStocks.Add(slatt);
+                    await _dbContext.SaveChangesAsync();
+                    slattIds.Add(slatt.Id);
+                }
+            }
+            else if (request.DeliveryType == 2)
+            {
+                var delivery = new DeliveryFromStock
+                {
+                    CustomerOrderId = customerOrder.Id,
+                    DeliveryDate = request.DeliveryDate,
+                    NrOfItems = request.NrOfItems,
+                    NrOfPallets = request.NrOfPallets,
+                    DeliveryStatus = deliveryStatus,
+                    CallOff = request.CallOff,
+                    InventoryId = request.InventoryId,
+                    PalletFormatId = request.PalletFormatId,
+                    PalletIsStackable = request.PalletIsStackable,
+                    PalletLength = request.PalletLength,
+                    PalletWidth = request.PalletWidth,
+                    PalletHeight = request.PalletHeight,
+                    EditionPerPallet = request.EditionPerPallet,
+                    PalletCalcFactor = request.PalletCalcFactor,
+                    IsSlattPallet = false,
+                };
+
+                _dbContext.DeliveryFromStocks.Add(delivery);
+                await _dbContext.SaveChangesAsync();
+                deliveryId = delivery.Id;
+
+                foreach (var slattRequest in slattDeliveries)
+                {
+                    var slatt = new DeliveryFromStock
+                    {
+                        CustomerOrderId = customerOrder.Id,
+                        DeliveryDate = request.DeliveryDate,
+                        NrOfItems = slattRequest.NrOfItems,
+                        NrOfPallets = slattRequest.NrOfPallets,
+                        DeliveryStatus = deliveryStatus,
+                        CallOff = request.CallOff,
+                        InventoryId = request.InventoryId,
+                        PalletFormatId = request.PalletFormatId,
+                        PalletIsStackable = request.PalletIsStackable,
+                        PalletLength = request.PalletLength,
+                        PalletWidth = request.PalletWidth,
+                        PalletHeight = request.PalletHeight,
+                        PalletCalcFactor = request.PalletCalcFactor,
+                        EditionPerPallet = slattRequest.EditionPerPallet,
+                        IsSlattPallet = true,
+                        ParentDeliveryId = deliveryId,
+                    };
+                    _dbContext.DeliveryFromStocks.Add(slatt);
+                    await _dbContext.SaveChangesAsync();
+                    slattIds.Add(slatt.Id);
+                }
+            }
+            else
+            {
+                var delivery = new DeliveryToCustomer
+                {
+                    SupplierOrderId = customerOrder.SupplierOrderId,
+                    CustomerOrderId = customerOrder.Id,
+                    DeliveryDate = request.DeliveryDate,
+                    NrOfItems = request.NrOfItems,
+                    NrOfPallets = request.NrOfPallets,
+                    DeliveryStatus = deliveryStatus,
+                    CallOff = request.CallOff,
+                    PalletFormatId = request.PalletFormatId,
+                    PalletIsStackable = request.PalletIsStackable,
+                    PalletLength = request.PalletLength,
+                    PalletWidth = request.PalletWidth,
+                    PalletHeight = request.PalletHeight,
+                    EditionPerPallet = request.EditionPerPallet,
+                    PalletCalcFactor = request.PalletCalcFactor,
+                    IsSlattPallet = false,
+                };
+
+                _dbContext.DeliveryToCustomers.Add(delivery);
+                await _dbContext.SaveChangesAsync();
+                deliveryId = delivery.Id;
+
+                foreach (var slattRequest in slattDeliveries)
+                {
+                    var slatt = new DeliveryToCustomer
+                    {
+                        SupplierOrderId = customerOrder.SupplierOrderId,
+                        CustomerOrderId = customerOrder.Id,
+                        DeliveryDate = request.DeliveryDate,
+                        NrOfItems = slattRequest.NrOfItems,
+                        NrOfPallets = slattRequest.NrOfPallets,
+                        DeliveryStatus = deliveryStatus,
+                        CallOff = request.CallOff,
+                        PalletFormatId = request.PalletFormatId,
+                        PalletIsStackable = request.PalletIsStackable,
+                        PalletLength = request.PalletLength,
+                        PalletWidth = request.PalletWidth,
+                        PalletHeight = request.PalletHeight,
+                        PalletCalcFactor = request.PalletCalcFactor,
+                        EditionPerPallet = slattRequest.EditionPerPallet,
+                        IsSlattPallet = true,
+                        ParentDeliveryId = deliveryId,
+                    };
+                    _dbContext.DeliveryToCustomers.Add(slatt);
+                    await _dbContext.SaveChangesAsync();
+                    slattIds.Add(slatt.Id);
+                }
+            }
+
+            foreach (var legRequest in request.DeliveryLegs.OrderBy(x => x.SortOrder))
+            {
+                _dbContext.DeliveryLegs.Add(new DeliveryLeg
+                {
+                    DeliveryToStockId = request.DeliveryType == 1 ? deliveryId : null,
+                    DeliveryFromStockId = request.DeliveryType == 2 ? deliveryId : null,
+                    DeliveryToCustomerId = request.DeliveryType == 3 ? deliveryId : null,
+                    FromPositionId = legRequest.FromPositionId,
+                    ToPositionId = legRequest.ToPositionId,
+                    FromPositionIdLeg = legRequest.LegFromPositionId,
+                    ToPositionIdLeg = legRequest.LegToPositionId,
+                    PositionDistanceId = legRequest.PositionDistanceId,
+                    DistanceKm = legRequest.DistanceKm,
+                    TypeOfTransport = legRequest.TypeOfTransport,
+                    SortOrder = legRequest.SortOrder,
+                    LatitudeStart = legRequest.LatitudeStart,
+                    LongitudeStart = legRequest.LongitudeStart,
+                    LatitudeEnd = legRequest.LatitudeEnd,
+                    LongitudeEnd = legRequest.LongitudeEnd,
+                });
+            }
+
+            await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            var response = new CreateNewDeliveryResponse
+            {
+                Type = deliveryType,
+                Id = deliveryId,
+                SlattId = slattIds.Count > 0 ? slattIds[0] : (int?)null,
+                SlattIds = slattIds,
+            };
+
+            return CreatedAtAction(nameof(GetByTypeAndId), new { type = deliveryType, id = deliveryId }, response);
         }
 
         [HttpGet("{type}/{id:int}")]

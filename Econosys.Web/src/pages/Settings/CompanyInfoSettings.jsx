@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { Save } from 'lucide-react';
 import apiClient from '../../config/apiClient';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledTextArea from '../../components/LabeledTextArea';
+import ActionButton from '../../components/ActionButton';
 
 const COMPANY_ID = 1;
 
@@ -184,14 +186,13 @@ const CompanyInfoSettings = () => {
                 <div className="flex-grow ps-10 pe-10 py-2 max-w-350">
                     <div className="flex justify-between w-full mb-5">
                         <div className="flex items-center space-x-4">
-                            <button
-                                type="button"
+                            <ActionButton
+                                label={isSaving ? 'Sparar...' : 'Spara'}
+                                icon={Save}
                                 onClick={handleSave}
                                 disabled={isSaving || isLoading}
-                                className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 disabled:opacity-60 disabled:cursor-not-allowed px-5 p-[5px]"
-                            >
-                                {isSaving ? 'Sparar...' : 'Spara'}
-                            </button>
+                                accent="lime"
+                            />
                             {/* <button
                                 type="button"
                                 onClick={loadCompanyInfo}

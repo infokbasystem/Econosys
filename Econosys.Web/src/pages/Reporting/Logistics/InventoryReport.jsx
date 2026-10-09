@@ -11,34 +11,54 @@ import { getSwedishTodayDateString } from '../../../helpers/dateUtils';
 import { getSharedRequest } from '../../../helpers/sharedRequest';
 
 const inventoryColumns = [
-    { key: 'supplierOrderNr', label: 'Beställning', align: 'left', width: '8%' },
-    { key: 'inventoryName', label: 'Lager', align: 'left', width: '12%' },
-    { key: 'customerName', label: 'Kund', align: 'left', width: '13%' },
-    { key: 'productName', label: 'Produkt', align: 'left', width: '18%' },
+    { key: 'supplierOrderNr', label: 'Beställning', align: 'left', width: '7%' },
+    { key: 'inventoryName', label: 'Lager', align: 'left', width: '10%' },
+    { key: 'customerName', label: 'Kund', align: 'left', width: '11%' },
+    { key: 'productName', label: 'Produkt', align: 'left', width: '15%' },
     { key: 'lastInventoryDate', label: 'Senast inventerad', align: 'left', width: '9%' },
-    { key: 'producedNrOfItems', label: 'Prod. upplaga', align: 'right', width: '7%' },
-    { key: 'currentInventoryNrOfItems', label: 'Lagernivå', align: 'right', width: '7%' },
-    { key: 'currentInventoryNrOfPallets', label: 'Antal pall', align: 'right', width: '7%' },
-    { key: 'totalStockValue', label: 'Ink.värde', align: 'right', width: '7%' },
-    { key: 'totalSalesValue', label: 'Fsg.värde', align: 'right', width: '7%' },
-    { key: 'history', label: 'Historik', align: 'right', width: '5%' },
+    { key: 'producedNrOfItems', label: 'Prod. upplaga', align: 'right', width: '6%' },
+    { key: 'currentInventoryNrOfItems', label: 'Lagernivå', align: 'right', width: '6%' },
+    { key: 'currentInventoryNrOfPallets', label: 'Antal pall', align: 'right', width: '6%' },
+    { key: 'totalStockValue', label: 'Ink.värde', align: 'right', width: '6%' },
+    { key: 'totalSalesValue', label: 'Fsg.värde', align: 'right', width: '6%' },
+    { key: 'totalPalletPurchaseValue', label: 'Pall ink.värde', align: 'right', width: '6%' },
+    { key: 'totalPalletSalesValue', label: 'Pall fsg.värde', align: 'right', width: '6%' },
+    { key: 'history', label: 'Historik', align: 'right', width: '6%' },
 ];
 
+const INVENTORY_REPORT_CACHE_KEY = 'inventory-report-state';
+
+const readInventoryReportCache = () => {
+    try {
+        const cachedState = JSON.parse(sessionStorage.getItem(INVENTORY_REPORT_CACHE_KEY));
+        return Array.isArray(cachedState?.inventoryData) && cachedState?.filters
+            ? cachedState
+            : null;
+    } catch {
+        return null;
+    }
+};
+
 const InventoryReport = () => {
+    const cachedState = readInventoryReportCache();
     const [loading, setLoading] = useState(false);
     const [showSkeleton, setShowSkeleton] = useState(false);
-    const [initialLoadCompleted, setInitialLoadCompleted] = useState(false);
+    const [initialLoadCompleted, setInitialLoadCompleted] = useState(Boolean(cachedState));
     const skeletonTimerRef = useRef(null);
+    const shouldPreserveCachedDataRef = useRef(Boolean(cachedState));
     const [loadingWarehouses, setLoadingWarehouses] = useState(false);
-    const [calcDate, setCalcDate] = useState('');
-    const [reportTotalValue, setReportTotalValue] = useState(0);
+    const [calcDate, setCalcDate] = useState(cachedState?.calcDate ?? '');
+    const [reportTotalValue, setReportTotalValue] = useState(cachedState?.reportTotalValue ?? 0);
+    const [reportPalletPurchaseValue, setReportPalletPurchaseValue] = useState(cachedState?.reportPalletPurchaseValue ?? 0);
+    const [reportPalletSalesValue, setReportPalletSalesValue] = useState(cachedState?.reportPalletSalesValue ?? 0);
+    const [showReportInfo, setShowReportInfo] = useState(false);
 
     const [filters, setFilters] = useState({
-        warehouse: 0,
-        date: ''
+        warehouse: cachedState?.filters?.warehouse ?? 0,
+        date: cachedState?.filters?.date ?? '',
     });
 
-    const [inventoryData, setInventoryData] = useState([]);
+    const [inventoryData, setInventoryData] = useState(cachedState?.inventoryData ?? []);
 
     const [warehouseOptions, setWarehouseOptions] = useState([
         { id: 0, name: 'Visa alla' },
@@ -121,7 +141,7 @@ const InventoryReport = () => {
         let isActive = true;
 
         const run = async () => {
-            await handleUpdate(isActive);
+            await handleUpdate(isActive, shouldPreserveCachedDataRef.current);
 
             if (isActive) {
                 setInitialLoadCompleted(true);
@@ -135,17 +155,22 @@ const InventoryReport = () => {
     }, [filters.warehouse, calcDate]);
 
     const handleFilterChange = (field, value) => {
+        shouldPreserveCachedDataRef.current = false;
         setFilters(prev => ({
             ...prev,
             [field]: value
         }));
     };
 
-    const handleUpdate = async (isActiveOrEvent = true) => {
+    const handleUpdate = async (isActiveOrEvent = true, preserveExistingData = false) => {
         setLoading(true);
-        setInventoryData([]);
-        setReportTotalValue(0);
-        skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 200);
+        if (!preserveExistingData) {
+            setInventoryData([]);
+            setReportTotalValue(0);
+            setReportPalletPurchaseValue(0);
+            setReportPalletSalesValue(0);
+            skeletonTimerRef.current = setTimeout(() => setShowSkeleton(true), 200);
+        }
 
         const isActive = typeof isActiveOrEvent === 'boolean' ? isActiveOrEvent : true;
 
@@ -164,14 +189,36 @@ const InventoryReport = () => {
             const response = await getSharedRequest(requestKey, () => apiClient.post('/reporting/inventory', payload));
             if (!isActive) return;
             const data = response?.data ?? {};
+            const rows = data.rows ?? [];
+            const currentInventoryValue = Number(data.currentInventoryValue) || 0;
+            const currentPalletPurchaseValue = Number(data.currentPalletPurchaseValue) || 0;
+            const currentPalletSalesValue = Number(data.currentPalletSalesValue) || 0;
 
-            setInventoryData(data.rows ?? []);
-            setReportTotalValue(Number(data.currentInventoryValue) || 0);
+            setInventoryData(rows);
+            setReportTotalValue(currentInventoryValue);
+            setReportPalletPurchaseValue(currentPalletPurchaseValue);
+            setReportPalletSalesValue(currentPalletSalesValue);
+            try {
+                sessionStorage.setItem(INVENTORY_REPORT_CACHE_KEY, JSON.stringify({
+                    filters,
+                    calcDate,
+                    inventoryData: rows,
+                    reportTotalValue: currentInventoryValue,
+                    reportPalletPurchaseValue: currentPalletPurchaseValue,
+                    reportPalletSalesValue: currentPalletSalesValue,
+                }));
+            } catch (error) {
+                console.error('Failed to cache inventory report:', error);
+            }
         } catch (error) {
             console.error('Failed to load inventory report:', error);
             if (!isActive) return;
-            setInventoryData([]);
-            setReportTotalValue(0);
+            if (!preserveExistingData) {
+                setInventoryData([]);
+                setReportTotalValue(0);
+                setReportPalletPurchaseValue(0);
+                setReportPalletSalesValue(0);
+            }
         } finally {
             if (!isActive) return;
             clearTimeout(skeletonTimerRef.current);
@@ -194,6 +241,8 @@ const InventoryReport = () => {
             'AntalPall',
             'Inkopsvarde',
             'Forsaljningsvarde',
+            'PallInkopsvarde',
+            'PallForsaljningsvarde',
         ];
 
         const dataRows = inventoryData.map((item) => ([
@@ -207,6 +256,8 @@ const InventoryReport = () => {
             Number(item.currentInventoryNrOfPallets || 0),
             Number(item.totalStockValue || 0),
             Number(item.totalSalesValue || 0),
+            Number(item.totalPalletPurchaseValue || 0),
+            Number(item.totalPalletSalesValue || 0),
         ]));
 
         const workbook = new ExcelJS.Workbook();
@@ -216,7 +267,7 @@ const InventoryReport = () => {
 
         const tableHeaderRow = 1;
         const tableLastRow = dataRows.length + 1;
-        const rightAlignedColumns = new Set([6, 7, 8, 9, 10]);
+        const rightAlignedColumns = new Set([6, 7, 8, 9, 10, 11, 12]);
 
         for (let col = 1; col <= header.length; col += 1) {
             let maxLength = String(header[col - 1] ?? '').length;
@@ -290,14 +341,14 @@ const InventoryReport = () => {
         }).format(num);
     };
 
-    const totalPallets = inventoryData.reduce((sum, item) => sum + (Number(item.currentNrOfPallets) || 0), 0);
+    const totalPallets = inventoryData.reduce((sum, item) => sum + (Number(item.currentInventoryNrOfPallets) || 0), 0);
 
     return (
         <div className="flex h-full flex-col pt-3 pb-4 ps-10 pe-0">
             {/* <div className="mt-2 text-sm text-gray-500">Largerrapport</div> */}
-            <div className={`relative z-20 flex items-center gap-4 mt-2 pb-2 ${loading ? 'opacity-60 pointer-events-none' : ''}`}>
+            <div className={`relative z-20 flex items-center justify-between gap-4 mt-2 pb-2 ${loading ? 'opacity-60 pointer-events-none' : ''}`}>
                 <div className='flex items-center'>
-                    <div className="w-90">
+                    <div className="w-70">
                         <LabeledReactSelect
                             label="Lager"
                             labelWidth="w-10"
@@ -317,7 +368,10 @@ const InventoryReport = () => {
                             name="calcDate"
                             value={calcDate}
                             valueType="input"
-                            onChange={(value) => setCalcDate(value || '')}
+                            onChange={(value) => {
+                                shouldPreserveCachedDataRef.current = false;
+                                setCalcDate(value || '');
+                            }}
                             disabled={loading}
                             placeholder="Välj datum"
                             theme="filter"
@@ -350,9 +404,41 @@ const InventoryReport = () => {
                     >
                         Exportera till EXCEL
                     </a>
+                    <div className="relative ml-6 inline-flex items-center">
+                        {showReportInfo && (
+                            <>
+                                <div
+                                    className="fixed inset-0 z-30"
+                                    onClick={() => setShowReportInfo(false)}
+                                />
+                                <div
+                                    className="absolute left-0 top-full z-40 mt-3 w-[480px] border border-gray-400 bg-yellow-50 px-8 py-6 text-xs text-yellow-900 shadow-sm"
+                                    onClick={(event) => event.stopPropagation()}
+                                >
+                                    <p>Lagernivå och antal pall utgår från den senaste inventeringen före beräkningsdatumet och justeras med efterföljande leveranser till och från lager.</p>
+                                    <p className="mt-2">Ink.värde beräknas som lagernivå × leverantörsorderns inköpspris × inköpsvalutakurs, justerat för enhetens multiplikator.</p>
+                                    <p className="mt-2">Fsg.värde beräknas som lagernivå × försäljningspriset på den första kundordern × försäljningsvalutakurs, justerat för enhetens multiplikator.</p>
+                                    <p className="mt-2">Pall ink.värde beräknas som antal pall × leverantörens pris för leverantörsorderns pallformat × inköpsvalutakurs.</p>
+                                    <p className="mt-2">Pall fsg.värde beräknas som antal pall × pallens försäljningspris på den första kundordern × försäljningsvalutakurs.</p>
+                                </div>
+                            </>
+                        )}
+                        <a
+                            href="#"
+                            onClick={(event) => {
+                                event.preventDefault();
+                                setShowReportInfo((prev) => !prev);
+                            }}
+                            className="whitespace-nowrap text-xs font-medium text-slate-500 transition-colors hover:text-slate-700"
+                        >
+                            Visa info
+                        </a>
+                    </div>
                 </div>
                 <div className='flex items-center mr-10'>
                     {reportTotalValue > 0 && <div className='ml-10 text-xs text-gray-500'>Totalt värde: <strong>{formatNumber(reportTotalValue)}</strong></div>}
+                    {reportPalletPurchaseValue > 0 && <div className='ml-10 text-xs text-gray-500'>Pall ink.värde: <strong>{formatNumber(reportPalletPurchaseValue)}</strong></div>}
+                    {reportPalletSalesValue > 0 && <div className='ml-10 text-xs text-gray-500'>Pall fsg.värde: <strong>{formatNumber(reportPalletSalesValue)}</strong></div>}
                     {totalPallets > 0 && <div className='ml-10 text-xs text-gray-500'>Antal pall: <strong>{totalPallets}</strong></div>}
                 </div>
             </div>
@@ -393,7 +479,7 @@ const InventoryReport = () => {
                             inventoryData.map((item) => (
                                 <tr key={`${item.supplierOrderId}-${item.inventoryId}`} className='hover:bg-blue-50'>
                                     <td className="pl-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">
-                                        <NavLink to={`/order/supplierorder/${item.supplierOrderId}`} target="_blank" rel="noopener noreferrer" className="text-slate-700 hover:text-slate-900 hover:underline">{item.supplierOrderNr}</NavLink>
+                                        <NavLink to={`/order/supplierorders/${item.supplierOrderId}`} className="text-slate-700 hover:text-slate-900 hover:underline">{item.supplierOrderNr}</NavLink>
                                     </td>
                                     <td className="px-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">{item.inventoryName}</td>
                                     <td className="px-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">{item.customerName}</td>
@@ -404,6 +490,8 @@ const InventoryReport = () => {
                                     <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800 text-right">{item.currentInventoryNrOfPallets ?? 0}</td>
                                     <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800 text-right">{formatNumber(Number(item.totalStockValue) || 0)}</td>
                                     <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800 text-right">{formatNumber(Number(item.totalSalesValue) || 0)}</td>
+                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800 text-right">{formatNumber(Number(item.totalPalletPurchaseValue) || 0)}</td>
+                                    <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800 text-right">{formatNumber(Number(item.totalPalletSalesValue) || 0)}</td>
                                     <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800 text-right">
                                         <button type="button" className="text-xs text-slate-700 hover:text-slate-900 hover:underline">Historik</button>
                                     </td>

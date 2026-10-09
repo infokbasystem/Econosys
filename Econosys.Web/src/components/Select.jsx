@@ -76,7 +76,7 @@ const Select = ({
                         ...provided,
                         padding: '0 0px 0 6px',
                         color: state.isFocused ? '#d97706' : '#f59e0b',
-                        cursor: 'pointer',
+                        cursor: 'auto',
                         ':hover': {
                             color: '#d97706',
                         },
@@ -85,6 +85,7 @@ const Select = ({
                         ...provided,
                         padding: '0 8px 0 0px',
                         color: state.isFocused ? '#6b7280' : '#9ca3af',
+                        cursor: 'auto',
                         ':hover': {
                             color: '#6b7280',
                         },

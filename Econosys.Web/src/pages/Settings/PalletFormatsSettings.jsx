@@ -7,6 +7,7 @@ import LabeledInput from '../../components/LabeledInput';
 import LabeledSelect from '../../components/LabeledSelect';
 import LabeledSwitch from '../../components/LabeledSwitch';
 import ActionButton from '../../components/ActionButton';
+import { Plus, Save, Trash2 } from 'lucide-react';
 
 const defaultTypeForm = {
     id: null,
@@ -423,22 +424,21 @@ const TypeSection = ({ palletTypes, isLoadingList, onRefresh, selectedTypeId, on
                             />
                         </div>
                         <div className="w-30 mr-2">
-                            <SwitchSelector
-                                name="palletTypesVisibility"
+                                                <ActionButton
+                                                    label={isSaving ? 'Sparar...' : 'Spara'}
+                                                    icon={Save}
                                 options={visibilityOptions}
                                 forcedSelectedIndex={showInactive ? 1 : 0}
-                                onChange={(value) => setShowInactive(Boolean(value))}
-                                backgroundColor="#353b48"
-                                fontColor="#374151"
-                            />
+                                                    accent="lime"
+                                                />
                         </div>
-                        <ActionButton
-                            label="Ny"
+                                                <ActionButton
+                                                    label={isDeleting ? 'Raderar...' : 'Radera'}
+                                                    icon={Trash2}
+                            icon={Plus}
                             onClick={handleCreateNew}
-                        />
-                    </div>
-
-                    <div className="mt-5 border-t border-gray-200 pt-2 space-y-0.5 max-h-[calc(50vh-210px)] overflow-y-auto">
+                                                    accent="rose"
+                                                />
                         {isLoadingList ? (
                             <p className="text-xs text-gray-500 py-2">Laddar...</p>
                         ) : filteredItems.length === 0 ? (
@@ -464,23 +464,21 @@ const TypeSection = ({ palletTypes, isLoadingList, onRefresh, selectedTypeId, on
 
                 <div className="flex-1 min-w-0 px-10 py-2 overflow-x-auto">
                     <div className="flex items-center gap-5 mb-6 mt-1">
-                        <button
-                            type="button"
+                        <ActionButton
+                            label={isSaving ? 'Sparar...' : 'Spara'}
+                            icon={Save}
                             onClick={handleSave}
                             disabled={isSaving || isEditDisabled}
-                            className="w-20 shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 disabled:opacity-60 disabled:cursor-not-allowed px-5 p-[5px] rounded-sm"
-                        >
-                            {isSaving ? 'Sparar...' : 'Spara'}
-                        </button>
+                            accent="lime"
+                        />
 
-                        <button
-                            type="button"
+                        <ActionButton
+                            label={isDeleting ? 'Raderar...' : 'Radera'}
+                            icon={Trash2}
                             onClick={handleDeleteClick}
                             disabled={!form.id || isDeleting || isSaving || isEditDisabled}
-                            className="w-20 shadow-md/30 text-xs text-white bg-red-700 hover:bg-red-900 disabled:opacity-60 disabled:cursor-not-allowed px-5 p-[5px] rounded-sm"
-                        >
-                            {isDeleting ? 'Raderar...' : 'Radera'}
-                        </button>
+                            accent="rose"
+                        />
                     </div>
 
                     <div className={`min-w-0 mt-3 ${isEditDisabled ? 'opacity-70' : ''}`}>
@@ -862,6 +860,7 @@ const FormatSection = ({ palletFormats, isLoadingList, onRefresh, selectedTypeId
                         </div>
                         <ActionButton
                             label="Ny"
+                            icon={Plus}
                             onClick={handleCreateNew}
                             disabled={selectedTypeId == null}
                         />
@@ -895,23 +894,21 @@ const FormatSection = ({ palletFormats, isLoadingList, onRefresh, selectedTypeId
 
                 <div className="flex-1 min-w-0 px-10 py-2 overflow-x-auto">
                     <div className="flex items-center gap-5 mb-6 mt-1">
-                        <button
-                            type="button"
+                        <ActionButton
+                            label={isSaving ? 'Sparar...' : 'Spara'}
+                            icon={Save}
                             onClick={handleSave}
                             disabled={isSaving || isEditDisabled || selectedTypeId == null}
-                            className="w-20 shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 disabled:opacity-60 disabled:cursor-not-allowed px-5 p-[5px] rounded-sm"
-                        >
-                            {isSaving ? 'Sparar...' : 'Spara'}
-                        </button>
+                            accent="lime"
+                        />
 
-                        <button
-                            type="button"
+                        <ActionButton
+                            label={isDeleting ? 'Raderar...' : 'Radera'}
+                            icon={Trash2}
                             onClick={handleDeleteClick}
                             disabled={!form.id || isDeleting || isSaving || isEditDisabled}
-                            className="w-20 shadow-md/30 text-xs text-white bg-red-700 hover:bg-red-900 disabled:opacity-60 disabled:cursor-not-allowed px-5 p-[5px] rounded-sm"
-                        >
-                            {isDeleting ? 'Raderar...' : 'Radera'}
-                        </button>
+                            accent="rose"
+                        />
                     </div>
 
                     <div className={`min-w-0 mt-3 ${isEditDisabled ? 'opacity-70' : ''}`}>

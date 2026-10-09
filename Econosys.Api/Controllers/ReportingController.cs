@@ -1891,6 +1891,8 @@ namespace Econosys.Api.Controllers
                         InventoryId = inventory.Id,
                         InventoryName = inventory.Name,
                         ProducedNrOfItems = supplierOrder.ProducedEdition,
+                        supplierOrder.SupplierId,
+                        supplierOrder.PalletFormatId,
                         PurchasePrice = supplierOrder.PurchasePrice,
                         PurchaseCurrencyRate = supplierOrder.PurchaseCurrencyRate,
                         UnitMultiplicator = supplierOrder.Unit != null ? supplierOrder.Unit.Multiplicator : null,
@@ -1903,11 +1905,43 @@ namespace Econosys.Api.Controllers
                     {
                         CalculationDate = calculationDate,
                         CurrentInventoryValue = 0,
+                        CurrentPalletPurchaseValue = 0,
+                        CurrentPalletSalesValue = 0,
                         Rows = Array.Empty<InventoryReportRowDto>()
                     });
                 }
 
                 var supplierOrderIds = baseOrders.Select(x => x.SupplierOrderId).ToHashSet();
+                var supplierIds = baseOrders
+                    .Where(x => x.SupplierId.HasValue)
+                    .Select(x => x.SupplierId!.Value)
+                    .ToHashSet();
+                var palletFormatIds = baseOrders
+                    .Where(x => x.PalletFormatId.HasValue)
+                    .Select(x => x.PalletFormatId!.Value)
+                    .ToHashSet();
+
+                var palletFormatPriceRows = await _context.PalletFormatPrices
+                    .AsNoTracking()
+                    .Where(price =>
+                        price.SupplierId.HasValue
+                        && supplierIds.Contains(price.SupplierId.Value)
+                        && price.PalletFormatId.HasValue
+                        && palletFormatIds.Contains(price.PalletFormatId.Value))
+                    .Select(price => new
+                    {
+                        price.Id,
+                        SupplierId = price.SupplierId!.Value,
+                        PalletFormatId = price.PalletFormatId!.Value,
+                        price.PalletPrice,
+                    })
+                    .ToListAsync();
+
+                var palletFormatPriceBySupplierAndFormat = palletFormatPriceRows
+                    .GroupBy(x => (x.SupplierId, x.PalletFormatId))
+                    .ToDictionary(
+                        group => group.Key,
+                        group => group.OrderBy(x => x.Id).First());
 
                 var stockTakingRows = await (
                     from stockTakingItem in _context.StockTakingItems.AsNoTracking()
@@ -1949,6 +1983,7 @@ namespace Econosys.Api.Controllers
                         SupplierOrderId = customerOrder.SupplierOrderId!.Value,
                         customerOrder.SalesPrice,
                         customerOrder.SalesCurrencyRate,
+                        customerOrder.EurPalletValue,
                     })
                     .ToListAsync();
 
@@ -2037,6 +2072,11 @@ namespace Econosys.Api.Controllers
                     deliveredFromStockByOrder.TryGetValue(order.SupplierOrderId, out var deliveredFromStock);
                     customerOrderPricingByOrder.TryGetValue(order.SupplierOrderId, out var customerOrderPricing);
 
+                    var hasPalletPriceKey = order.SupplierId.HasValue && order.PalletFormatId.HasValue;
+                    palletFormatPriceBySupplierAndFormat.TryGetValue(
+                        (order.SupplierId.GetValueOrDefault(), order.PalletFormatId.GetValueOrDefault()),
+                        out var palletFormatPrice);
+
                     var lastItems = latestStockTaking?.LastNrOfItems ?? 0;
                     var lastPallets = latestStockTaking?.LastNrOfPallets ?? 0;
                     var deliveredItemsToStock = deliveredToStock?.DeliveredItemsToStock ?? 0;
@@ -2067,6 +2107,14 @@ namespace Econosys.Api.Controllers
                         * (customerOrderPricing?.SalesCurrencyRate ?? 0)
                         / unitMultiplier);
 
+                    var palletPurchaseValue = currentPallets
+                        * (hasPalletPriceKey ? palletFormatPrice?.PalletPrice ?? 0m : 0m)
+                        * (decimal)order.PurchaseCurrencyRate.GetValueOrDefault();
+
+                    var palletSalesValue = currentPallets
+                        * (decimal)(customerOrderPricing?.EurPalletValue ?? 0)
+                        * (decimal)(customerOrderPricing?.SalesCurrencyRate ?? 0);
+
                     rows.Add(new InventoryReportRowDto
                     {
                         SupplierOrderId = order.SupplierOrderId,
@@ -2081,15 +2129,21 @@ namespace Econosys.Api.Controllers
                         CurrentInventoryNrOfPallets = currentPallets,
                         TotalStockValue = stockValue,
                         TotalSalesValue = salesValue,
+                        TotalPalletPurchaseValue = palletPurchaseValue,
+                        TotalPalletSalesValue = palletSalesValue,
                     });
                 }
 
                 var totalStockValue = rows.Sum(r => r.TotalStockValue);
+                var totalPalletPurchaseValue = rows.Sum(r => r.TotalPalletPurchaseValue);
+                var totalPalletSalesValue = rows.Sum(r => r.TotalPalletSalesValue);
 
                 return Ok(new InventoryReportResponseDto
                 {
                     CalculationDate = calculationDate,
                     CurrentInventoryValue = totalStockValue,
+                    CurrentPalletPurchaseValue = totalPalletPurchaseValue,
+                    CurrentPalletSalesValue = totalPalletSalesValue,
                     Rows = rows.OrderBy(r => r.SupplierOrderId).ToList()
                 });
             }

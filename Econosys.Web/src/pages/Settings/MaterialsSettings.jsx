@@ -7,6 +7,7 @@ import LabeledInput from '../../components/LabeledInput';
 import LabeledSwitch from '../../components/LabeledSwitch';
 import LabeledSelect from '../../components/LabeledSelect';
 import ActionButton from '../../components/ActionButton';
+import { Plus, Save, Trash2 } from 'lucide-react';
 
 const defaultForm = {
     id: null,
@@ -468,6 +469,7 @@ const MaterialsSettings = () => {
                         </div>
                         <ActionButton
                             label="Ny"
+                            icon={Plus}
                             onClick={handleCreateNew}
                         />
                     </div>
@@ -497,23 +499,21 @@ const MaterialsSettings = () => {
 
                 <div className="flex-1 min-w-0 px-10 py-2 overflow-x-auto">
                     <div className="flex items-center gap-5 mb-6 mt-1">
-                        <button
-                            type="button"
+                        <ActionButton
+                            label={isSaving ? 'Sparar...' : 'Spara'}
+                            icon={Save}
                             onClick={handleSave}
                             disabled={isSaving || isEditDisabled}
-                            className="w-20 shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 disabled:opacity-60 disabled:cursor-not-allowed px-5 p-[5px] rounded-sm"
-                        >
-                            {isSaving ? 'Sparar...' : 'Spara'}
-                        </button>
+                            accent="lime"
+                        />
 
-                        <button
-                            type="button"
+                        <ActionButton
+                            label={isDeleting ? 'Raderar...' : 'Radera'}
+                            icon={Trash2}
                             onClick={handleDeleteClick}
                             disabled={!form.id || isDeleting || isSaving || isEditDisabled}
-                            className="w-20 shadow-md/30 text-xs text-white bg-red-700 hover:bg-red-900 disabled:opacity-60 disabled:cursor-not-allowed px-5 p-[5px] rounded-sm"
-                        >
-                            {isDeleting ? 'Raderar...' : 'Radera'}
-                        </button>
+                            accent="rose"
+                        />
                     </div>
 
                     <div className="w-150">

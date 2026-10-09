@@ -75,14 +75,14 @@ const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, va
             ...provided,
             padding: 0,
             color: 'orange',
-            cursor: 'pointer',
+            cursor: 'auto',
             '&:hover': { color: 'orange' },
         }),
         dropdownIndicator: (provided) => ({
             ...provided,
             padding: 0,
             color: 'darkgray',
-            cursor: 'pointer',
+            cursor: 'auto',
             '&:hover': { color: '#000' },
         }),
         indicatorSeparator: () => ({

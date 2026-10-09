@@ -1,12 +1,12 @@
-import { Warehouse, Truck, HandCoins, Package, Scale } from 'lucide-react'
+import { Warehouse, Truck, HandCoins, Package, Scale, ClipboardList, FileText, Ruler } from 'lucide-react'
 import LeftMenu from '../../../components/LeftMenu'
 
 const items = [
-  { to: 'warehouses', label: 'Lager', icon: Warehouse },
-  { to: 'transporters', label: 'Transportörer', icon: Truck },
-  { to: 'transportpricelists', label: 'Transportprislistor', icon: HandCoins },
-  { to: 'pallettypes', label: 'Palltyper', icon: Package },
+  { to: 'shippers', label: 'Transportörer', icon: Truck },
+  { to: 'inventories', label: 'Lager', icon: ClipboardList },
+  { to: 'pallet-formats', label: 'Palltyper', icon: Ruler },
   { to: 'palletfactors', label: 'Pallfaktorer', icon: Scale },
+  { to: 'transportpricelists', label: 'Transportprislistor', icon: HandCoins },
 ]
 
 function RegistersSubMenu() {

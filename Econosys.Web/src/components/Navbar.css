@@ -1,5 +1,5 @@
 #menu {
-    height: 65px;
+    height: 60px;
     margin-bottom: 0px;
     display: block;
 }
@@ -27,8 +27,8 @@
     align-items: center;
     justify-content: center;
     gap: 4px;
-    width: 95px;
-    height: 55px;
+    width: 80px;
+    height: 52px;
     margin: 0 14px;
     border-radius: 16px;
     background-color: transparent;
@@ -47,12 +47,12 @@
 }
 
 #menu .menu-card-icon {
-    width: 22px;
-    height: 22px;
+    width: 18px;
+    height: 18px;
 }
 
 #menu .menu-card-label {
-    font-size: 9px;
+    font-size: 8px;
     font-weight: 600;
     letter-spacing: 0.12em;
 }

@@ -20,13 +20,6 @@ const menuGroups = [
         ],
     },
     {
-        label: "Försäljning",
-        items: [
-            { label: "Budget", icon: CircleDollarSign, disabled: true },
-            { label: "Säljrapport", icon: BarChart3, disabled: true },
-        ],
-    },
-    {
         label: "Kvalitet",
         items: [
             { to: "/management/deviations", label: "Avvikelser", icon: ClipboardList },

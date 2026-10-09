@@ -9,61 +9,62 @@ namespace Econosys.Api.Models
         [Key]
         public int Id { get; set; }
 
-        [Column(TypeName = "varchar(200)")]
+        [Column(TypeName = "varchar(100)")]
         public string? Name { get; set; }
 
-        [Column(TypeName = "varchar(200)")]
+        [Column(TypeName = "varchar(100)")]
         public string? ImportName { get; set; }
 
-        [Column(TypeName = "decimal(10,4)")]
+        [Column(TypeName = "decimal(10,5)")]
         public decimal? SecaMarpolPallet { get; set; }
 
-        [Column(TypeName = "decimal(10,4)")]
+        [Column(TypeName = "decimal(10,5)")]
         public decimal? DmtPercentPallet { get; set; }
 
-        [Column(TypeName = "decimal(10,4)")]
+        [Column(TypeName = "decimal(10,5)")]
         public decimal? AdditionCurrencyPercentPallet { get; set; }
 
-        [Column(TypeName = "decimal(10,2)")]
+        [Column(TypeName = "decimal(10,5)")]
         public decimal? OtherPallet { get; set; }
 
-        [Column(TypeName = "decimal(10,4)")]
+        [Column(TypeName = "decimal(10,5)")]
         public decimal? OtherPercentPallet { get; set; }
 
-        [Column(TypeName = "decimal(10,4)")]
+        [Column(TypeName = "decimal(10,5)")]
         public decimal? AdditionTotalPercentPallet { get; set; }
 
         public int? CurrencyId { get; set; }
 
-        [Column(TypeName = "decimal(10,4)")]
+        [Column(TypeName = "decimal(10,5)")]
         public decimal? SecaMarpolFtl { get; set; }
 
-        [Column(TypeName = "decimal(10,4)")]
+        [Column(TypeName = "decimal(10,5)")]
         public decimal? DmtPercentFtl { get; set; }
 
-        [Column(TypeName = "decimal(10,4)")]
+        [Column(TypeName = "decimal(10,5)")]
         public decimal? AdditionCurrencyPercentFtl { get; set; }
 
-        [Column(TypeName = "decimal(10,2)")]
+        [Column(TypeName = "decimal(10,5)")]
         public decimal? OtherFtl { get; set; }
 
-        [Column(TypeName = "decimal(10,4)")]
+        [Column(TypeName = "decimal(10,5)")]
         public decimal? OtherPercentFtl { get; set; }
 
-        [Column(TypeName = "decimal(10,4)")]
+        [Column(TypeName = "decimal(10,5)")]
         public decimal? AdditionTotalPercentFtl { get; set; }
 
         public bool IsStafflad { get; set; }
 
+        [Column(TypeName = "datetime2(2)")]
         public DateTime? LastImportDateTime { get; set; }
 
-        [Column(TypeName = "decimal(10,2)")]
+        [Column(TypeName = "decimal(10,5)")]
         public decimal? LoadingCost { get; set; }
 
-        [Column(TypeName = "decimal(10,2)")]
+        [Column(TypeName = "decimal(10,5)")]
         public decimal? UnloadingCost { get; set; }
 
-        [Column(TypeName = "decimal(10,4)")]
+        [Column(TypeName = "decimal(10,5)")]
         public decimal? PreCalcAdditionPercent { get; set; }
 
         [ForeignKey(nameof(CurrencyId))]

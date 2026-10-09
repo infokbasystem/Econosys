@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { Save, Trash2 } from 'lucide-react';
 import SwitchSelector from 'react-switch-selector';
 import apiClient from '../../config/apiClient';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledSwitch from '../../components/LabeledSwitch';
+import ActionButton from '../../components/ActionButton';
 
 const defaultForm = {
     id: null,
@@ -353,14 +356,12 @@ const PaymentTermsSettings = () => {
                                 fontColor="#374151"
                             />
                         </div>
-                        <button
-                            type="button"
+                        <ActionButton
+                            label="Ny"
+                            icon={Plus}
                             onClick={handleCreateNew}
                             disabled={isLoadingList || isSaving || isDeleting}
-                            className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 disabled:opacity-60 disabled:cursor-not-allowed px-5 p-[5px] rounded-sm"
-                        >
-                            Ny
-                        </button>
+                        />
                     </div>
 
                     <div className="mt-5 border-t border-gray-200 pt-2 space-y-0.5 max-h-[calc(100vh-230px)] overflow-y-auto">
@@ -394,22 +395,20 @@ const PaymentTermsSettings = () => {
 
                 <div className="flex-1 min-w-0 px-10 py-2 overflow-x-auto">
                     <div className="flex items-center gap-5 mb-6 mt-1">
-                        <button
-                            type="button"
+                        <ActionButton
+                            label={isSaving ? 'Sparar...' : 'Spara'}
+                            icon={Save}
                             onClick={handleSave}
                             disabled={isEditDisabled || isSaving || isDeleting}
-                            className="w-24 shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 disabled:opacity-60 disabled:cursor-not-allowed px-5 p-[5px] rounded-sm"
-                        >
-                            {isSaving ? 'Sparar...' : 'Spara'}
-                        </button>
-                        <button
-                            type="button"
+                            accent="lime"
+                        />
+                        <ActionButton
+                            label={isDeleting ? 'Raderar...' : 'Radera'}
+                            icon={Trash2}
                             onClick={handleDeleteClick}
                             disabled={isEditDisabled || isSaving || isDeleting || !form.id}
-                            className="w-24 shadow-md/30 text-xs text-white bg-red-600 hover:bg-red-800 disabled:opacity-60 disabled:cursor-not-allowed px-5 p-[5px] rounded-sm"
-                        >
-                            {isDeleting ? 'Raderar...' : 'Radera'}
-                        </button>
+                            accent="rose"
+                        />
                     </div>
 
                     <div className={`w-80 min-w-0 mt-3 ${isEditDisabled ? 'opacity-70' : ''}`}>

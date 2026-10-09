@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBlocker, useNavigate, useParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
-import { ArrowLeft, PanelLeftClose, PanelLeftOpen, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Save, Trash2 } from 'lucide-react';
 
 import apiClient from '../../config/apiClient';
 import ActionButton from '../../components/ActionButton';
@@ -13,7 +13,9 @@ import LabeledSwitch from '../../components/LabeledSwitch';
 import LabeledTextArea from '../../components/LabeledTextArea';
 import { parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
-import { useOrderMenu } from '../../layouts/OrderLayout';
+import { formatDateTime } from '../../helpers/dateUtils';
+import OrderDetailLayout from '../../components/OrderDetailLayout';
+import useOrderDetailState from '../../hooks/useOrderDetailState';
 
 const defaultLanguageOptions = [
     { id: 1, name: 'Svenska' },
@@ -64,10 +66,9 @@ const Supplier = () => {
     const navigate = useNavigate();
     const { id } = useParams();
     const isNewSupplier = id === 'new';
-    const orderMenu = useOrderMenu();
 
     const [loading, setLoading] = useState(true);
-    const [messages, setMessages] = useState([]);
+    const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
 
@@ -83,6 +84,10 @@ const Supplier = () => {
     const [selectedContactIdentity, setSelectedContactIdentity] = useState(null);
     const [selectedFactoryIdentity, setSelectedFactoryIdentity] = useState(null);
     const skipUnsavedCheckRef = useRef(false);
+
+    const showMessage = useCallback((message) => {
+        setMessages([message]);
+    }, [setMessages]);
 
     const hasUnsavedChanges = useCallback(() => {
         if (skipUnsavedCheckRef.current) return false;
@@ -187,7 +192,7 @@ const Supplier = () => {
             } catch (error) {
                 console.error('Failed to load supplier view data:', error);
                 if (!isActive) return;
-                setMessages([{ type: 'error', text: 'Kunde inte lasa leverantorsdata.' }]);
+                showMessage({ type: 'error', text: 'Kunde inte lasa leverantorsdata.' });
                 setSupplier((prev) => prev ?? (isNewSupplier ? createNewSupplierModel() : null));
             } finally {
                 if (isActive) {
@@ -201,7 +206,7 @@ const Supplier = () => {
         return () => {
             isActive = false;
         };
-    }, [id, isNewSupplier]);
+    }, [id, isNewSupplier, showMessage]);
 
     useEffect(() => {
         if (!isNewSupplier || !supplier || supplier.id !== 0) return;
@@ -461,7 +466,7 @@ const Supplier = () => {
 
             setSupplier(mergedSupplier);
             setOriginalSupplier(structuredClone(mergedSupplier));
-            setMessages([{ type: 'success', text: 'Leverantoren sparades.' }]);
+            showMessage({ type: 'success', text: 'Leverantoren sparades.' });
 
             if (isCreatingNew && savedSupplier?.id) {
                 skipUnsavedCheckRef.current = true;
@@ -469,7 +474,7 @@ const Supplier = () => {
             }
         } catch (error) {
             console.error('Failed to save supplier:', error);
-            setMessages([{ type: 'error', text: 'Kunde inte spara leverantoren.' }]);
+            showMessage({ type: 'error', text: 'Kunde inte spara leverantoren.' });
         }
     };
 
@@ -483,7 +488,7 @@ const Supplier = () => {
             navigate('/order/suppliers');
         } catch (error) {
             console.error('Failed to delete supplier:', error);
-            setMessages([{ type: 'error', text: 'Kunde inte radera leverantoren.' }]);
+            showMessage({ type: 'error', text: 'Kunde inte radera leverantoren.' });
         }
     };
 
@@ -509,7 +514,7 @@ const Supplier = () => {
     }
 
     return (
-        <div className="relative flex flex-col h-full md:px-[clamp(4px,3vw,6vw)]">
+        <div className="relative flex min-h-full flex-col">
             <ConfirmationModal
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
@@ -532,84 +537,34 @@ const Supplier = () => {
                 isDestructive={false}
             />
 
-            <div className="ml-83 mt-8 pb-3 flex items-center gap-3">
-                <button
-                    type="button"
-                    onClick={() => orderMenu?.toggleMenu?.()}
-                    className="inline-flex h-8 w-8 items-center justify-center text-gray-600 hover:bg-gray-50"
-                    title={orderMenu?.isMenuOpen ? 'Dolj meny' : 'Visa meny'}
-                    aria-label={orderMenu?.isMenuOpen ? 'Dolj meny' : 'Visa meny'}
-                >
-                    {orderMenu?.isMenuOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-                </button>
-                <h2 className="text-sm font-semibold uppercase tracking-[0.10em] text-gray-500">
-                    {supplier?.id ? (
-                        <>{supplier.name}</>
-                    ) : 'Ny leverantor'}
-                </h2>
-            </div>
-
-            <div className="flex h-full items-stretch pr-30">
-                <div className="flex flex-col w-75 shrink-0 border-r border-gray-300 px-2 py-2 mb-5 mr-5">
+            <OrderDetailLayout
+                title={supplier?.id ? supplier.name : 'Ny leverantor'}
+                messages={messages}
+                isInfoPanelExpanded={isInfoPanelExpanded}
+                isInfoPanelUsingResponsiveDefault={isInfoPanelUsingResponsiveDefault}
+                onToggleInfoPanel={toggleInfoPanel}
+                infoContent={(
                     <div className="space-y-3">
                         <h2 className="text-sm text-center text-gray-700">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
-                            <div className="grid grid-cols-5 gap-4 mx-2">
-                                {supplier?.createdAt && (
-                                    <>
-                                        <div className="col-span-1">
-                                            <span className="font-medium">Skapad:</span>
-                                        </div>
-                                        <div className="col-span-2">
-                                            {new Date(supplier.createdAt).toLocaleString('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                                        </div>
-                                        <div className="col-span-2 text-gray-500">
-                                            {supplier?.createdByUserName && `av ${supplier.createdByUserName}`}
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                            <div className="grid grid-cols-5 gap-4 mx-2">
-                                {supplier?.editedAt && (
-                                    <>
-                                        <div className="col-span-1">
-                                            <span className="font-medium">Redigerad:</span>
-                                        </div>
-                                        <div className="col-span-2">
-                                            {new Date(supplier.editedAt).toLocaleString('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                                        </div>
-                                        <div className="col-span-2 text-gray-500">
-                                            {supplier?.editedByUserName && `av ${supplier.editedByUserName}`}
-                                        </div>
-                                    </>
-                                )}
-                            </div>
+                            {supplier?.createdAt && (
+                                <div className="grid grid-cols-21 gap-1 mx-2">
+                                    <div className="col-span-5"><span className="font-medium">Skapad:</span></div>
+                                    <div className="col-span-8">{formatDateTime(supplier.createdAt)}</div>
+                                    <div className="col-span-8 text-gray-500">{supplier.createdByUserName && `av ${supplier.createdByUserName}`}</div>
+                                </div>
+                            )}
+                            {supplier?.editedAt && (
+                                <div className="grid grid-cols-21 gap-1 mx-2">
+                                    <div className="col-span-5"><span className="font-medium">Redigerad:</span></div>
+                                    <div className="col-span-8">{formatDateTime(supplier.editedAt)}</div>
+                                    <div className="col-span-8 text-gray-500">{supplier.editedByUserName && `av ${supplier.editedByUserName}`}</div>
+                                </div>
+                            )}
                         </div>
                     </div>
-                    <hr className="mt-5 border-gray-300" />
-                    <h2 className="text-sm text-center text-gray-700 mt-5">Meddelanden</h2>
-                    {messages.length === 0 ? (
-                        <p className="text-xs text-center font-light mt-4">Inga meddelanden</p>
-                    ) : (
-                        <ul className="mt-2 space-y-2">
-                            {messages.map((message, index) => (
-                                <li
-                                    key={index}
-                                    className={`text-center text-xs p-2 rounded border border-gray-200 ${message.type === 'error'
-                                        ? 'bg-red-100 text-red-700'
-                                        : message.type === 'warning'
-                                            ? 'bg-yellow-100 text-yellow-800'
-                                            : 'bg-green-100 text-green-700'
-                                        }`}
-                                >
-                                    {message.text}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </div>
-
-                <div className="flex-grow ps-10 pe-10 py-2">
+                )}
+            >
                     <div className="flex justify-between w-full mb-5">
                         <div className="flex items-center gap-6">
                             <ActionButton
@@ -853,8 +808,7 @@ const Supplier = () => {
                             </div>
                         </span>
                     </div>
-                </div>
-            </div>
+            </OrderDetailLayout>
         </div>
     );
 };

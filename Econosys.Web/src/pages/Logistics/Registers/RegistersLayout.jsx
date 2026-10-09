@@ -3,7 +3,7 @@ import RegistersSubMenu from './RegistersSubMenu'
 
 function RegistersLayout() {
   return (
-    <div className="flex w-full flex-col px-0 py-0 md:px-[clamp(8px,15vw,10vw)]">
+    <div className="flex w-full flex-col px-0 py-0 md:px-[clamp(4px,8vw,5vw)]">
       <div className="mt-0 flex w-full flex-col">
         <div className="flex w-full items-stretch pb-10">
           <RegistersSubMenu />

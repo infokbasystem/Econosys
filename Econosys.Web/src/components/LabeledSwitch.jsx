@@ -21,7 +21,7 @@ const LabeledSwitch = ({
 
     return (
         <div
-            className={`flex items-center w-auto py-[3.5px] ${disabled ? 'opacity-60' : ''} ${containerClassName}`}
+            className={`h-6.25 flex items-center w-auto ${disabled ? 'opacity-60' : ''} ${containerClassName}`}
             style={{
                 ...(marginTop !== undefined ? { marginTop: `${marginTop}px` } : {}),
                 ...(marginLeft !== undefined ? { marginLeft: `${marginLeft}px` } : {}),
@@ -38,7 +38,6 @@ const LabeledSwitch = ({
                 checked={value}
                 onChange={(rowId, field, checked) => onChange(rowId, field, checked)}
                 disabled={disabled}
-                
             />
             {isRightLabel && (
                 <label className={`${labelWidth || ''} mt-[1px] pl-0 flex-none text-xs text-gray-700`}>{label}</label>

@@ -13,6 +13,8 @@ import LabeledSwitch from '../../components/LabeledSwitch';
 import { formatDateTime } from '../../helpers/dateUtils';
 import { parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
+import OrderDetailLayout from '../../components/OrderDetailLayout';
+import useOrderDetailState from '../../hooks/useOrderDetailState';
 
 const createNewProductModel = () => ({
     id: 0,
@@ -62,7 +64,7 @@ const Product = () => {
     const isNewProduct = id === 'new';
 
     const [loading, setLoading] = useState(true);
-    const [messages, setMessages] = useState([]);
+    const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
 
@@ -181,7 +183,7 @@ const Product = () => {
         return () => {
             isActive = false;
         };
-    }, [id, isNewProduct]);
+    }, [id, isNewProduct, setMessages]);
 
     const handleBackClick = () => {
         if (window.history.length > 1) {
@@ -311,7 +313,7 @@ const Product = () => {
     }
 
     return (
-        <div className="relative flex flex-col h-full">
+        <div className="relative flex min-h-full flex-col">
             <ConfirmationModal
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
@@ -334,16 +336,13 @@ const Product = () => {
                 isDestructive={false}
             />
 
-            <h2 className="ml-96 text-sm pt-8 pb-2 text-gray-500 tracking-[0.10em] font-semibold uppercase">
-                {product?.id ? (
-                    <>Produkt <span className="ml-2">{product.productCode || product.id}</span></>
-                ) : 'Ny produkt'}
-            </h2>
-
-            <div className="flex h-full items-stretch">
-
-                {/* Left panel */}
-                <div className="flex flex-col w-80 shrink-0 border-r border-gray-300 px-2 py-2 mb-5 mr-5">
+            <OrderDetailLayout
+                title={product?.id ? <>Produkt <span className="ml-2">{product.productCode || product.id}</span></> : 'Ny produkt'}
+                messages={messages}
+                isInfoPanelExpanded={isInfoPanelExpanded}
+                isInfoPanelUsingResponsiveDefault={isInfoPanelUsingResponsiveDefault}
+                onToggleInfoPanel={toggleInfoPanel}
+                infoContent={(
                     <div className="space-y-3">
                         <h2 className="text-sm text-center text-gray-700">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
@@ -351,31 +350,8 @@ const Product = () => {
                             {renderProductMetaRow('Redigerad:', product?.editedAt, product?.editedByUserName, product?.editedBy)}
                         </div>
                     </div>
-
-                    <hr className="mt-5 border-gray-300" />
-                    <h2 className="text-sm text-center text-gray-700 mt-5">Meddelanden</h2>
-                    {messages.length === 0 ? (
-                        <p className="text-xs text-center font-light mt-4">Inga meddelanden</p>
-                    ) : (
-                        <ul className="mt-2 space-y-2">
-                            {messages.map((message, index) => (
-                                <li
-                                    key={index}
-                                    className={`text-center text-xs p-2 rounded border border-gray-200 ${message.type === 'error'
-                                        ? 'bg-red-100 text-red-700'
-                                        : message.type === 'warning'
-                                            ? 'bg-yellow-100 text-yellow-800'
-                                            : 'bg-green-100 text-green-700'
-                                        }`}
-                                >
-                                    {message.text}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </div>
-
-                <div className="flex-grow ps-10 pe-10 py-2 max-w-350">
+                )}
+            >
                     <div className="flex justify-between w-full mb-5">
                         <div className="flex items-center gap-6">
                             <ActionButton
@@ -568,8 +544,7 @@ const Product = () => {
                             </div>
                         </span>
                     </div>
-                </div>
-            </div>
+            </OrderDetailLayout>
         </div>
     );
 };

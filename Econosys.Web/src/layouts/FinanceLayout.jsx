@@ -11,6 +11,8 @@ import {
     PanelLeftOpen,
     Receipt,
     WalletCards,
+    CircleDollarSign,
+    BarChart3,
 } from "lucide-react";
 import Header from "../components/Header";
 import LeftMenu from "../components/LeftMenu";

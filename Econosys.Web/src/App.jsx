@@ -10,6 +10,7 @@ import OrderLayout from './layouts/OrderLayout'
 import LogisticsLayout from './layouts/LogisticsLayout'
 import ManagementLayout from './layouts/ManagementLayout'
 import FinanceLayout from './layouts/FinanceLayout'
+import BudgetLayout from './layouts/BudgetLayout'
 import ReportingLayout from './layouts/ReportingLayout'
 import SettingsLayout from './layouts/SettingsLayout'
 
@@ -35,19 +36,21 @@ import InvoiceDeliveriesAndOrderCosts from './pages/Finance/InvoiceDeliveriesAnd
 import InvoicesToAccount from './pages/Finance/InvoicesToAccount'
 import CustomersToJeeves from './pages/Finance/CustomersToJeeves'
 
+import Budget from './pages/Budget/Budget'
+import SalesReport from './pages/Budget/SalesReport'
+
 import TransportOrderOverview from './pages/Logistics/TransportOrderOverview'
 import TransportOrder from './pages/Logistics/TransportOrder'
 import CalloffOverview from './pages/Logistics/CalloffOverview'
 import Calloff from './pages/Logistics/Calloff'
-import NewDelivery from './pages/Logistics/NewDelivery'
+import NewDelivery from './modals/NewDelivery'
 import Deliveries from './pages/Logistics/Deliveries'
 import StockTakings from './pages/Logistics/StockTakings'
 import RegistersLayout from './pages/Logistics/Registers/RegistersLayout'
 import Warehouses from './pages/Logistics/Registers/Warehouses'
 import Transporters from './pages/Logistics/Registers/Transporters'
-import TransportPricelists from './pages/Logistics/Registers/TransportPricelists'
 import PalletTypes from './pages/Logistics/Registers/PalletTypes'
-import PalletFactors from './pages/Logistics/Registers/PalletFactors'
+import PalletFactors from './pages/Settings/PalletFactorsSettings'
 
 import DeviationsOverview from './pages/Management/DeviationsOverview'
 import Deviation from './pages/Management/Deviation'
@@ -100,6 +103,7 @@ import CalculationConstantsSettings from './pages/Settings/CalculationConstantsS
 import EmailSettings from './pages/Settings/EmailSettings'
 import EmailTextsSettings from './pages/Settings/EmailTextsSettings'
 import BudgetMonthDistributionSettings from './pages/Settings/BudgetMonthDistributionSettings'
+import TransportPricelists from './pages/Settings/TransportPricelists'
 
 const router = createBrowserRouter(
   createRoutesFromElements(
@@ -139,16 +143,20 @@ const router = createBrowserRouter(
         <Route path="calloffoverview" element={<ProtectedRoute>< CalloffOverview /></ProtectedRoute>} />
         <Route path="calloff/new" element={<ProtectedRoute>< Calloff /></ProtectedRoute>} />
         <Route path="calloff/:id" element={<ProtectedRoute>< Calloff /></ProtectedRoute>} />
-        <Route path="newdelivery" element={<ProtectedRoute>< NewDelivery /></ProtectedRoute>} />
+        <Route path="newdelivery" element={<ProtectedRoute><><Deliveries /><NewDelivery /></></ProtectedRoute>} />
         <Route path="deliveries" element={<ProtectedRoute>< Deliveries /></ProtectedRoute>} />
         <Route path="stocktakings" element={<ProtectedRoute>< StockTakings /></ProtectedRoute>} />
         <Route path="registers" element={<ProtectedRoute>< RegistersLayout /></ProtectedRoute>}>
           <Route index element={<Navigate to="warehouses" replace />} />
           <Route path="warehouses" element={<ProtectedRoute>< Warehouses /></ProtectedRoute>} />
           <Route path="transporters" element={<ProtectedRoute>< Transporters /></ProtectedRoute>} />
-          <Route path="transportpricelists" element={<ProtectedRoute>< TransportPricelists /></ProtectedRoute>} />
           <Route path="pallettypes" element={<ProtectedRoute>< PalletTypes /></ProtectedRoute>} />
           <Route path="palletfactors" element={<ProtectedRoute>< PalletFactors /></ProtectedRoute>} />
+          <Route path="transportpricelists" element={<ProtectedRoute>< TransportPricelists /></ProtectedRoute>} />
+          <Route path="inventories" element={<ProtectedRoute>< InventoriesSettings /></ProtectedRoute>} />
+          <Route path="pallet-formats" element={<ProtectedRoute>< PalletFormatsSettings /></ProtectedRoute>} />
+          <Route path="delivery-terms" element={<ProtectedRoute>< DeliveryTermsSettings /></ProtectedRoute>} />
+          <Route path="shippers" element={<ProtectedRoute>< ShippersSettings /></ProtectedRoute>} />
         </Route>
         <Route path="inventoryreport" element={<ProtectedRoute>< InventoryReport /></ProtectedRoute>} />
       </Route>
@@ -170,6 +178,12 @@ const router = createBrowserRouter(
         <Route path="invoice/:id" element={<ProtectedRoute><Invoice /></ProtectedRoute>} />
         <Route path="costs" element={<ProtectedRoute><CostsSettings /></ProtectedRoute>} />
         <Route path="currencies" element={<ProtectedRoute><CurrenciesSettings /></ProtectedRoute>} />
+      </Route>
+      <Route path="budget" element={< BudgetLayout />}>
+        <Route index element={<ProtectedRoute><Budget /></ProtectedRoute>} />
+        <Route path="new" element={<ProtectedRoute><Budget isNew /></ProtectedRoute>} />
+        <Route path="salesreport" element={<ProtectedRoute><SalesReport /></ProtectedRoute>} />
+        <Route path=":id" element={<ProtectedRoute><Budget /></ProtectedRoute>} />
       </Route>
       <Route path="reporting" element={< ReportingLayout />}>
         <Route index element={<ProtectedRoute><Navigate to="overview" replace /></ProtectedRoute>} />
@@ -244,6 +258,7 @@ const router = createBrowserRouter(
         <Route path="materials" element={<ProtectedRoute>< MaterialsSettings /></ProtectedRoute>} />
         <Route path="units" element={<ProtectedRoute>< UnitsSettings /></ProtectedRoute>} />
         <Route path="pallet-formats" element={<ProtectedRoute>< PalletFormatsSettings /></ProtectedRoute>} />
+        <Route path="pallet-factors" element={<ProtectedRoute>< PalletFactors /></ProtectedRoute>} />
         <Route path="currencies" element={<ProtectedRoute>< CurrenciesSettings /></ProtectedRoute>} />
         <Route path="costs" element={<ProtectedRoute>< CostsSettings /></ProtectedRoute>} />
         <Route path="users" element={<ProtectedRoute>< UsersSettings /></ProtectedRoute>} />
@@ -255,6 +270,7 @@ const router = createBrowserRouter(
         <Route path="email-settings" element={<ProtectedRoute><EmailSettings /></ProtectedRoute>} />
         <Route path="email-texts" element={<ProtectedRoute><EmailTextsSettings /></ProtectedRoute>} />
         <Route path="budget-month-distribution" element={<ProtectedRoute><BudgetMonthDistributionSettings /></ProtectedRoute>} />
+        <Route path="transportpricelists" element={<ProtectedRoute><TransportPricelists /></ProtectedRoute>} />
       </Route>
       <Route path="/login" element={<LoginPage />} />
     </Route>

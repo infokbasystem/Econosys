@@ -10,6 +10,8 @@ namespace Econosys.Api.Models
         [Column("lngDeliveryToStock_ID")]
         public int Id { get; set; }
 
+        public int CompanyId { get; set; } = 1;
+
         [Column("lngSupplierOrder_ID")]
         public int? SupplierOrderId { get; set; }
 

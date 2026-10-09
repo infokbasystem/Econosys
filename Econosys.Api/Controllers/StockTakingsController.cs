@@ -98,6 +98,326 @@ namespace Econosys.Api.Controllers
             });
         }
 
+        [HttpGet("history")]
+        public async Task<ActionResult<List<StockTakingHistoryDto>>> GetHistory()
+        {
+            var stockTakings = await _dbContext.StockTakings
+                .AsNoTracking()
+                .OrderByDescending(x => x.StockTakingDate)
+                .ThenByDescending(x => x.Id)
+                .Select(x => new StockTakingHistoryDto
+                {
+                    Id = x.Id,
+                    StockTakingDate = x.StockTakingDate
+                })
+                .ToListAsync();
+
+            if (stockTakings.Count == 0)
+            {
+                return Ok(stockTakings);
+            }
+
+            var stockTakingIds = stockTakings.Select(x => x.Id).ToList();
+            var itemRows = await _dbContext.StockTakingItems
+                .AsNoTracking()
+                .Where(x => x.StockTakingId.HasValue && stockTakingIds.Contains(x.StockTakingId.Value))
+                .Select(x => new
+                {
+                    StockTakingId = x.StockTakingId!.Value,
+                    InventoryName = x.SupplierOrder != null && x.SupplierOrder.Inventory != null
+                        ? x.SupplierOrder.Inventory.Name
+                        : null
+                })
+                .ToListAsync();
+
+            var rowsByStockTaking = itemRows.GroupBy(x => x.StockTakingId).ToDictionary(x => x.Key, x => x.ToList());
+            foreach (var stockTaking in stockTakings)
+            {
+                if (!rowsByStockTaking.TryGetValue(stockTaking.Id, out var rows))
+                {
+                    continue;
+                }
+
+                stockTaking.ItemCount = rows.Count;
+                stockTaking.InventoryNames = string.Join(
+                    ", ",
+                    rows.Select(x => x.InventoryName)
+                        .Where(x => !string.IsNullOrWhiteSpace(x))
+                        .Distinct(StringComparer.OrdinalIgnoreCase));
+            }
+
+            return Ok(stockTakings);
+        }
+
+        [HttpGet("{id:int}/aggregate")]
+        public async Task<ActionResult<StockTakingAggregateDto>> GetAggregate(int id)
+        {
+            var stockTaking = await BuildAggregateDtoAsync(id);
+            return stockTaking is null ? NotFound() : Ok(stockTaking);
+        }
+
+        [HttpPost("calculate")]
+        public async Task<ActionResult<StockTakingDraftDto>> Calculate([FromBody] CalculateStockTakingRequestDto request)
+        {
+            var stockTakingDate = NormalizeStockTakingDate(request.StockTakingDate!.Value);
+            if (request.InventoryId != 0 && !await _dbContext.Inventories.AnyAsync(x => x.Id == request.InventoryId && x.IsInventory))
+            {
+                return BadRequest(new { message = "Valt lager finns inte eller är inte ett lager." });
+            }
+
+            var items = await CalculateStockTakingItemsAsync(stockTakingDate, request.InventoryId);
+            return Ok(new StockTakingDraftDto
+            {
+                StockTakingDate = stockTakingDate,
+                InventoryId = request.InventoryId,
+                Items = items
+            });
+        }
+
+        [HttpPost]
+        public async Task<ActionResult<StockTakingAggregateDto>> Create([FromBody] CreateStockTakingRequestDto request)
+        {
+            var stockTakingDate = NormalizeStockTakingDate(request.StockTakingDate!.Value);
+            var countedItems = request.Items
+                .Where(x => x.NrOfItems.HasValue || x.NrOfPallets.HasValue)
+                .ToList();
+
+            if (countedItems.Count == 0)
+            {
+                return BadRequest(new { message = "Ange minst ett lagervärde innan inventeringen sparas." });
+            }
+
+            if (countedItems.Select(x => x.SupplierOrderId).Distinct().Count() != countedItems.Count)
+            {
+                return BadRequest(new { message = "Samma leverantörsorder kan inte förekomma flera gånger." });
+            }
+
+            var calculatedItems = await CalculateStockTakingItemsAsync(stockTakingDate, 0);
+            var calculatedBySupplierOrder = calculatedItems.ToDictionary(x => x.SupplierOrderId);
+            if (countedItems.Any(x => !calculatedBySupplierOrder.ContainsKey(x.SupplierOrderId)))
+            {
+                return BadRequest(new { message = "En eller flera rader tillhör inte längre den aktuella inventeringen." });
+            }
+
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            var stockTaking = new StockTaking
+            {
+                CompanyId = 1,
+                StockTakingDate = stockTakingDate
+            };
+
+            _dbContext.StockTakings.Add(stockTaking);
+            await _dbContext.SaveChangesAsync();
+
+            var stockTakingItems = countedItems.Select(item =>
+            {
+                var calculated = calculatedBySupplierOrder[item.SupplierOrderId];
+                return new StockTakingItem
+                {
+                    CompanyId = 1,
+                    StockTakingId = stockTaking.Id,
+                    SupplierOrderId = item.SupplierOrderId,
+                    NrOfItems = item.NrOfItems,
+                    NrOfPallets = item.NrOfPallets,
+                    DiffNrOfItems = item.NrOfItems.HasValue ? item.NrOfItems.Value - calculated.CalculatedNrOfItems!.Value : null,
+                    DiffNrOfPallets = item.NrOfPallets.HasValue ? item.NrOfPallets.Value - calculated.CalculatedNrOfPallets!.Value : null
+                };
+            }).ToList();
+
+            _dbContext.StockTakingItems.AddRange(stockTakingItems);
+            await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            var result = await BuildAggregateDtoAsync(stockTaking.Id);
+            return CreatedAtAction(nameof(GetAggregate), new { id = stockTaking.Id }, result);
+        }
+
+        private async Task<StockTakingAggregateDto?> BuildAggregateDtoAsync(int id)
+        {
+            var stockTaking = await _dbContext.StockTakings
+                .AsNoTracking()
+                .Where(x => x.Id == id)
+                .Select(x => new { x.Id, x.StockTakingDate })
+                .FirstOrDefaultAsync();
+
+            if (stockTaking is null)
+            {
+                return null;
+            }
+
+            var items = await _dbContext.StockTakingItems
+                .AsNoTracking()
+                .Where(x => x.StockTakingId == id)
+                .OrderBy(x => x.SupplierOrder != null ? x.SupplierOrder.SupplierOrderNr : null)
+                .ThenBy(x => x.Id)
+                .Select(x => new StockTakingLineDto
+                {
+                    Id = x.Id,
+                    SupplierOrderId = x.SupplierOrderId ?? 0,
+                    SupplierOrderNr = x.SupplierOrder != null ? x.SupplierOrder.SupplierOrderNr ?? string.Empty : string.Empty,
+                    ProductName = x.SupplierOrder != null ? x.SupplierOrder.Product ?? string.Empty : string.Empty,
+                    CustomerName = x.SupplierOrder != null && x.SupplierOrder.Customer != null
+                        ? x.SupplierOrder.Customer.Name ?? string.Empty
+                        : string.Empty,
+                    Edition = x.SupplierOrder != null ? x.SupplierOrder.Edition : null,
+                    InventoryName = x.SupplierOrder != null && x.SupplierOrder.Inventory != null
+                        ? x.SupplierOrder.Inventory.Name ?? string.Empty
+                        : string.Empty,
+                    CalculatedNrOfItems = 0,
+                    CalculatedNrOfPallets = 0,
+                    NrOfItems = x.NrOfItems,
+                    NrOfPallets = x.NrOfPallets,
+                    DiffNrOfItems = x.DiffNrOfItems,
+                    DiffNrOfPallets = x.DiffNrOfPallets
+                })
+                .ToListAsync();
+
+            return new StockTakingAggregateDto
+            {
+                Id = stockTaking.Id,
+                StockTakingDate = stockTaking.StockTakingDate,
+                InventoryNames = string.Join(
+                    ", ",
+                    items.Select(x => x.InventoryName)
+                        .Where(x => !string.IsNullOrWhiteSpace(x))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)),
+                Items = items
+            };
+        }
+
+        private async Task<List<StockTakingLineDto>> CalculateStockTakingItemsAsync(DateTime stockTakingDate, int inventoryId)
+        {
+            var orders = await _dbContext.SupplierOrders
+                .AsNoTracking()
+                .Where(order =>
+                    (!order.CustomerOrders.Any() || order.CustomerOrders.Any(customerOrder => !customerOrder.Completed))
+                    && order.DeliveryToStocks.Sum(delivery => delivery.NrOfItems ?? 0d) > 0
+                    && (inventoryId == 0 || order.InventoryId == inventoryId))
+                .Select(order => new
+                {
+                    SupplierOrderId = order.Id,
+                    SupplierOrderNr = order.SupplierOrderNr,
+                    ProductName = order.Product,
+                    Edition = order.Edition,
+                    CustomerName = order.Customer != null ? order.Customer.Name : null,
+                    InventoryName = order.Inventory != null ? order.Inventory.Name : null
+                })
+                .ToListAsync();
+
+            if (orders.Count == 0)
+            {
+                return new List<StockTakingLineDto>();
+            }
+
+            var supplierOrderIds = orders.Select(x => x.SupplierOrderId).ToList();
+            var snapshotRows = await _dbContext.StockTakingItems
+                .AsNoTracking()
+                .Where(item => item.SupplierOrderId.HasValue
+                    && supplierOrderIds.Contains(item.SupplierOrderId.Value)
+                    && item.StockTaking != null
+                    && item.StockTaking.StockTakingDate < stockTakingDate)
+                .Select(item => new
+                {
+                    SupplierOrderId = item.SupplierOrderId!.Value,
+                    item.Id,
+                    StockTakingDate = item.StockTaking!.StockTakingDate!.Value,
+                    item.NrOfItems,
+                    item.NrOfPallets
+                })
+                .ToListAsync();
+
+            var latestSnapshotByOrder = snapshotRows
+                .GroupBy(x => x.SupplierOrderId)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.OrderByDescending(x => x.StockTakingDate).ThenByDescending(x => x.Id).First());
+
+            var deliveredToRows = await _dbContext.DeliveryToStocks
+                .AsNoTracking()
+                .Where(delivery => delivery.SupplierOrderId.HasValue
+                    && supplierOrderIds.Contains(delivery.SupplierOrderId.Value)
+                    && delivery.DeliveryStatus == (int)DeliveryStatus.Delivered
+                    && delivery.DeliveryDate.HasValue
+                    && delivery.DeliveryDate.Value < stockTakingDate)
+                .Select(delivery => new
+                {
+                    SupplierOrderId = delivery.SupplierOrderId!.Value,
+                    DeliveryDate = delivery.DeliveryDate!.Value,
+                    delivery.NrOfItems,
+                    delivery.NrOfPallets
+                })
+                .ToListAsync();
+
+            var deliveredFromRows = await (
+                from delivery in _dbContext.DeliveryFromStocks.AsNoTracking()
+                join customerOrder in _dbContext.CustomerOrders.AsNoTracking()
+                    on delivery.CustomerOrderId equals customerOrder.Id
+                where customerOrder.SupplierOrderId.HasValue
+                    && supplierOrderIds.Contains(customerOrder.SupplierOrderId.Value)
+                    && delivery.DeliveryStatus == (int)DeliveryStatus.Delivered
+                    && delivery.DeliveryDate.HasValue
+                    && delivery.DeliveryDate.Value < stockTakingDate
+                select new
+                {
+                    SupplierOrderId = customerOrder.SupplierOrderId!.Value,
+                    DeliveryDate = delivery.DeliveryDate!.Value,
+                    delivery.NrOfItems,
+                    delivery.NrOfPallets
+                })
+                .ToListAsync();
+
+            var deliveredToByOrder = deliveredToRows.GroupBy(x => x.SupplierOrderId).ToDictionary(x => x.Key, x => x.ToList());
+            var deliveredFromByOrder = deliveredFromRows.GroupBy(x => x.SupplierOrderId).ToDictionary(x => x.Key, x => x.ToList());
+            var result = new List<StockTakingLineDto>(orders.Count);
+
+            foreach (var order in orders)
+            {
+                latestSnapshotByOrder.TryGetValue(order.SupplierOrderId, out var snapshot);
+                deliveredToByOrder.TryGetValue(order.SupplierOrderId, out var deliveredTo);
+                deliveredFromByOrder.TryGetValue(order.SupplierOrderId, out var deliveredFrom);
+
+                var deliveredItemsToStock = deliveredTo?
+                    .Where(x => snapshot is null || x.DeliveryDate > snapshot.StockTakingDate)
+                    .Sum(x => x.NrOfItems ?? 0d) ?? 0d;
+                var deliveredItemsFromStock = deliveredFrom?
+                    .Where(x => snapshot is null || x.DeliveryDate > snapshot.StockTakingDate)
+                    .Sum(x => x.NrOfItems ?? 0d) ?? 0d;
+                var deliveredPalletsToStock = deliveredTo?
+                    .Where(x => snapshot is null || x.DeliveryDate > snapshot.StockTakingDate)
+                    .Sum(x => x.NrOfPallets ?? 0) ?? 0;
+                var deliveredPalletsFromStock = deliveredFrom?
+                    .Where(x => snapshot is null || x.DeliveryDate > snapshot.StockTakingDate)
+                    .Sum(x => x.NrOfPallets ?? 0) ?? 0;
+
+                var calculatedItems = Convert.ToInt32((snapshot?.NrOfItems ?? 0) + deliveredItemsToStock - deliveredItemsFromStock);
+                var calculatedPallets = (snapshot?.NrOfPallets ?? 0) + deliveredPalletsToStock - deliveredPalletsFromStock;
+                if (calculatedItems <= 0 && calculatedPallets <= 0)
+                {
+                    continue;
+                }
+
+                result.Add(new StockTakingLineDto
+                {
+                    SupplierOrderId = order.SupplierOrderId,
+                    SupplierOrderNr = order.SupplierOrderNr ?? string.Empty,
+                    ProductName = order.ProductName ?? string.Empty,
+                    CustomerName = order.CustomerName ?? string.Empty,
+                    Edition = order.Edition,
+                    InventoryName = order.InventoryName ?? string.Empty,
+                    CalculatedNrOfItems = calculatedItems,
+                    CalculatedNrOfPallets = calculatedPallets,
+                    LastStockTakingDate = snapshot?.StockTakingDate
+                });
+            }
+
+            return result.OrderBy(x => x.SupplierOrderNr, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        private static DateTime NormalizeStockTakingDate(DateTime value)
+        {
+            return DateTime.SpecifyKind(value.Date.AddDays(1).AddSeconds(-1), DateTimeKind.Unspecified);
+        }
+
         private static Dictionary<string, PropertyInfo> BuildFieldMap()
         {
             var map = new Dictionary<string, PropertyInfo>(StringComparer.OrdinalIgnoreCase);

@@ -427,7 +427,7 @@ const Deliveries = () => {
     };
 
     return (
-        <div className="flex h-full flex-col pt-3 pb-4 ps-10 pe-0">
+        <div className="flex h-full flex-col pt-3 pb-4 px-[clamp(4px,3vw,6vw)]">
             <DeliveryFromStock
                 isOpen={viewDeliveryDetails != null}
                 onClose={handleCloseDeliveryDetailsModal}

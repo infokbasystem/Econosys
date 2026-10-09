@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Printer, Save, Trash2 } from 'lucide-react';
 import { useBlocker, useNavigate, useParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
@@ -8,6 +8,8 @@ import { usePdf } from '../../contexts/PdfContext';
 import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import OrderNavigationTree from '../../components/OrderNavigationTree';
+import OrderDetailLayout from '../../components/OrderDetailLayout';
+import useOrderDetailState from '../../hooks/useOrderDetailState';
 import OrderCost from '../../components/OrderCost';
 import LabeledDatePicker from '../../components/LabeledDatePicker';
 import LabeledInput from '../../components/LabeledInput';
@@ -15,7 +17,7 @@ import LabeledReactSelect from '../../components/LabeledReactSelect';
 import LabeledSwitch from '../../components/LabeledSwitch';
 import LabeledTextArea from '../../components/LabeledTextArea';
 import apiClient from '../../config/apiClient';
-import { formatDateTime, toSwedishDateInputValue } from '../../helpers/dateUtils';
+import { formatDateTime } from '../../helpers/dateUtils';
 import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
 import { formatNumber, parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
@@ -29,13 +31,6 @@ const parseGoodsMarking = (value) => new Set(
         .filter(Boolean),
 );
 const stringifyGoodsMarking = (flags) => Array.from(flags).join(';');
-const toDateSwedishIso = (date) => {
-    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}T00:00:00`;
-};
 const parseNullableDecimal = (value) => {
     if (value == null || value === '') return null;
     const normalized = String(value).trim().replace(',', '.');
@@ -182,7 +177,7 @@ const SupplierOrder = () => {
     } = usePdf();
 
     const [loading, setLoading] = useState(true);
-    const [messages, setMessages] = useState([]);
+    const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
     const [unsavedWarningReason, setUnsavedWarningReason] = useState('navigate');
@@ -276,7 +271,7 @@ const SupplierOrder = () => {
             ]);
             return null;
         }
-    }, [hasUnsavedChanges, openPdfPreview, supplierOrder?.id]);
+    }, [hasUnsavedChanges, openPdfPreview, setMessages, supplierOrder?.id]);
 
     const updateSupplierOrder = useCallback((patch) => {
         markStale();
@@ -285,7 +280,7 @@ const SupplierOrder = () => {
         if (showPdfPanel) {
             closePdfPreview?.();
         }
-    }, [closePdfPreview, markStale, showPdfPanel]);
+    }, [closePdfPreview, markStale, setMessages, showPdfPanel]);
 
     const handleCustomerDeliveryAddressChange = useCallback((value) => {
         const selectedAddress = selectedCustomerDetails?.deliveryAddresses?.find(
@@ -435,7 +430,7 @@ const SupplierOrder = () => {
 
             return next;
         });
-    }, [closePdfPreview, markStale, showPdfPanel]);
+    }, [closePdfPreview, markStale, setMessages, showPdfPanel]);
 
     const handleUnsavedWarningConfirm = () => {
         setShowUnsavedWarning(false);
@@ -629,7 +624,7 @@ const SupplierOrder = () => {
                 Kunde inte ladda beställning.
                 <button
                     type="button"
-                    onClick={() => navigate('/order/supplierorders')}
+                    onClick={handleBackClick}
                     className="ml-4 rounded-sm border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-100"
                 >
                     Tillbaka
@@ -667,12 +662,11 @@ const SupplierOrder = () => {
     const unitLabel = supplierOrder?.unitName ?? (supplierOrder?.unitId ? `ID ${supplierOrder.unitId}` : '');
     const purchaseCurrencyLabel = supplierOrder?.purchaseCurrencyName ?? (supplierOrder?.purchaseCurrencyId ? `ID ${supplierOrder.purchaseCurrencyId}` : '');
     const editionLabel = formatNumber(supplierOrder?.edition, 0);
-    const producedEditionLabel = formatNumber(supplierOrder?.producedEdition, 0);
     const purchasePriceLabel = formatCompactNumber(supplierOrder?.purchasePrice, 2);
     const purchaseCurrencyRateLabel = formatCompactNumber(supplierOrder?.purchaseCurrencyRate, 4);
 
     return (
-        <div className="relative flex flex-col h-full">
+        <div className="relative flex min-h-full flex-col">
             <ConfirmationModal
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
@@ -695,16 +689,13 @@ const SupplierOrder = () => {
                 isDestructive={false}
             />
 
-            <h2 className="ml-96 text-sm pt-8 pb-2 text-gray-500 tracking-[0.10em] font-semibold uppercase">
-                {supplierOrder?.id ? (
-                    <>Beställning <span className="ml-2">{supplierOrder.id}</span></>
-                ) : (
-                    'Ny beställning'
-                )}
-            </h2>
-
-            <div className="flex h-full items-stretch">
-                <div className="flex flex-col w-80 shrink-0 border-r border-gray-300 px-2 py-2 mb-5 mr-5">
+            <OrderDetailLayout
+                title={supplierOrder?.id ? <>Beställning <span className="ml-2">{supplierOrder.id}</span></> : 'Ny beställning'}
+                messages={messages}
+                isInfoPanelExpanded={isInfoPanelExpanded}
+                isInfoPanelUsingResponsiveDefault={isInfoPanelUsingResponsiveDefault}
+                onToggleInfoPanel={toggleInfoPanel}
+                infoContent={(
                     <div className="space-y-3">
                         <h2 className="text-sm text-center text-gray-700">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
@@ -712,36 +703,14 @@ const SupplierOrder = () => {
                             {renderMetaRow('Redigerad:', supplierOrder?.edited, supplierOrder?.editedByUserName)}
                         </div>
                     </div>
-
-                    <hr className="mt-5 border-gray-300 dark:border-white" />
-                    <h2 className="text-sm text-center text-gray-700 mt-5">Meddelanden</h2>
-                    {messages.length === 0 ? (
-                        <p className="text-xs text-center font-light mt-4">Inga meddelanden</p>
-                    ) : (
-                        <ul className="mt-2 space-y-2">
-                            {[...messages].map((message, index) => (
-                                <li
-                                    key={index}
-                                    className={`text-center text-xs p-2 rounded border border-gray-200 ${message.type === 'error'
-                                        ? 'bg-red-100 text-red-700'
-                                        : message.type === 'warning'
-                                            ? 'bg-yellow-100 text-yellow-800'
-                                            : 'bg-green-100 text-green-700'
-                                        }`}
-                                >
-                                    {message.text}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-
+                )}
+                infoFooter={(
                     <OrderNavigationTree
                         entityType="supplierOrder"
                         entityId={Number.isInteger(supplierOrder?.id) && supplierOrder.id > 0 ? supplierOrder.id : null}
                     />
-                </div>
-
-                <div className="flex-grow ps-10 pe-10 py-2 max-w-350">
+                )}
+            >
                     <div className="flex justify-between w-full mb-5">
                         <div className="flex items-center gap-6">
                             <ActionButton
@@ -1064,8 +1033,7 @@ const SupplierOrder = () => {
                             </div>
                         </span>
                     </div>
-                </div>
-            </div>
+            </OrderDetailLayout>
         </div>
     );
 };

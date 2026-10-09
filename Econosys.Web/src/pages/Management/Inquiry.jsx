@@ -8,6 +8,8 @@ import { usePdf } from '../../contexts/PdfContext';
 import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import OrderNavigationTree from '../../components/OrderNavigationTree';
+import OrderDetailLayout from '../../components/OrderDetailLayout';
+import useOrderDetailState from '../../hooks/useOrderDetailState';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledSelect from '../../components/LabeledSelect';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
@@ -97,7 +99,7 @@ const Inquiry = () => {
     } = usePdf();
 
     const [loading, setLoading] = useState(true);
-    const [messages, setMessages] = useState([]);
+    const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
     const [unsavedWarningReason, setUnsavedWarningReason] = useState('navigate');
@@ -106,7 +108,7 @@ const Inquiry = () => {
     const [originalInquiry, setOriginalInquiry] = useState(null);
     const [selectedSupplierDetails, setSelectedSupplierDetails] = useState(null);
     const [selectedCustomerDetails, setSelectedCustomerDetails] = useState(null);
-    const [selectedDeliveryAddressOption, setSelectedDeliveryAddressOption] = useState('');
+    const [, setSelectedDeliveryAddressOption] = useState('');
     const [legacyUserOptions, setLegacyUserOptions] = useState([]);
     const [loadedSupplierDetailsForId, setLoadedSupplierDetailsForId] = useState(null);
     const [loadedCustomerDetailsForId, setLoadedCustomerDetailsForId] = useState(null);
@@ -166,7 +168,7 @@ const Inquiry = () => {
         if (showPdfPanel) {
             closePdfPreview?.();
         }
-    }, [closePdfPreview, markStale, showPdfPanel]);
+    }, [closePdfPreview, markStale, setMessages, showPdfPanel]);
 
     const handleCustomerDeliveryAddressChange = useCallback((value) => {
         const selectedAddress = selectedCustomerDetails?.deliveryAddresses?.find(
@@ -572,7 +574,7 @@ const Inquiry = () => {
         : [];
 
     return (
-        <div className="relative flex flex-col h-full">
+        <div className="relative flex min-h-full flex-col">
             <ConfirmationModal
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
@@ -597,80 +599,28 @@ const Inquiry = () => {
                 isDestructive={false}
             />
 
-            <h2 className="ml-96 text-sm pt-8 pb-2 text-gray-500 tracking-[0.10em] font-semibold uppercase">
-                {inquiry?.id ? (
-                    <>Förfrågan <span className="ml-2">{inquiry.id}</span></>
-                ) : (
-                    'Ny förfrågan'
-                )}
-            </h2>
-
-            <div className="flex h-full items-stretch">
-                <div className="flex flex-col w-80 shrink-0 border-r border-gray-300 px-2 py-2 mb-5 mr-5">
+            <OrderDetailLayout
+                title={inquiry?.id ? <>Förfrågan <span className="ml-2">{inquiry.id}</span></> : 'Ny förfrågan'}
+                messages={messages}
+                isInfoPanelExpanded={isInfoPanelExpanded}
+                isInfoPanelUsingResponsiveDefault={isInfoPanelUsingResponsiveDefault}
+                onToggleInfoPanel={toggleInfoPanel}
+                infoContent={(
                     <div className="space-y-3">
                         <h2 className="text-sm text-center text-gray-700">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
                             {renderInquiryMetaRow('Skapad:', inquiry?.createdAt, inquiry?.createdByUserName)}
                             {renderInquiryMetaRow('Redigerad:', inquiry?.editedAt, inquiry?.editedByUserName)}
-                            {/* {inquiry?.createdAt && (
-                                <div className="grid grid-cols-5 gap-4 mx-2">
-                                    <div className="col-span-1"><span className="font-medium">Skapad:</span></div>
-                                    <div className="col-span-4">{formatDateTime(inquiry.createdAt)}</div>
-                                </div>
-                            )}
-                            {inquiry?.editedAt && (
-                                <div className="grid grid-cols-5 gap-4 mx-2">
-                                    <div className="col-span-1"><span className="font-medium">Redigerad:</span></div>
-                                    <div className="col-span-4">{formatDateTime(inquiry.editedAt)}</div>
-                                </div>
-                            )} */}
-                            {/* <div className="grid grid-cols-5 gap-4 mx-2">
-                                <div className="col-span-1"><span className="font-medium">Kund:</span></div>
-                                <div className="col-span-4">{selectedCustomer?.name ?? inquiry.customerName ?? 'Saknas'}</div>
-                            </div>
-                            <div className="grid grid-cols-5 gap-4 mx-2">
-                                <div className="col-span-1"><span className="font-medium">Leverantör:</span></div>
-                                <div className="col-span-4">{selectedSupplier?.name ?? 'Saknas'}</div>
-                            </div>
-                            {inquiry?.answerDueDate && (
-                                <div className="grid grid-cols-5 gap-4 mx-2">
-                                    <div className="col-span-1"><span className="font-medium">Svar senast:</span></div>
-                                    <div className="col-span-4">{formatDateTime(inquiry.answerDueDate)}</div>
-                                </div>
-                            )} */}
                         </div>
                     </div>
-
-                    <hr className="mt-5 border-gray-300 dark:border-white" />
-                    <h2 className="text-sm text-center text-gray-700 mt-5">Meddelanden</h2>
-                    {messages.length === 0 ? (
-                        <p className='text-xs text-center font-light mt-4'>Inga meddelanden</p>
-                    ) : (
-                        <ul className="mt-2 space-y-2">
-                            {[...messages].map((message, index) => (
-                                <li
-                                    key={index}
-                                    className={`text-center text-xs p-2 rounded border border-gray-200 ${message.type === 'error'
-                                        ? 'bg-red-100 text-red-700'
-                                        : message.type === 'warning'
-                                            ? 'bg-yellow-100 text-yellow-800'
-                                            : 'bg-green-100 text-green-700'
-                                        }`}
-                                >
-                                    {message.text}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-
+                )}
+                infoFooter={(
                     <OrderNavigationTree
                         entityType="inquiry"
                         entityId={Number.isInteger(inquiry?.id) && inquiry.id > 0 ? inquiry.id : null}
                     />
-
-                </div>
-
-                <div className="flex-grow ps-10 pe-10 py-2 max-w-350">
+                )}
+            >
                     <div className="flex justify-between w-full mb-5">
                         <div className="flex items-center gap-6">
                             <ActionButton
@@ -914,8 +864,7 @@ const Inquiry = () => {
                             </table>
                         )}
                     </div>
-                </div>
-            </div>
+            </OrderDetailLayout>
         </div>
     );
 };

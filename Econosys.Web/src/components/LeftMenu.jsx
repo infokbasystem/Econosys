@@ -39,7 +39,7 @@ const LeftMenu = ({ groups = [], showGroupLabels = false }) => (
             const GroupIcon = group.labelIcon ?? group.icon;
 
             return (
-                <div key={group.label ?? 'overview'}>
+                <div key={group.label ?? `group-${groupIndex}`}>
                     {showGroupLabels && group.label && (
                         <div className="mb-0 flex items-center gap-2 px-5 pb-2 text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
                             {GroupIcon && <GroupIcon className="h-3.5 w-3.5 shrink-0" />}

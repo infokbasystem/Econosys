@@ -66,6 +66,9 @@ const OrderLayout = () => {
     const pathSegments = location.pathname.split('/').filter(Boolean);
     const hasIdLikeLastSegment = /^\d+$/.test(pathSegments[pathSegments.length - 1] || '');
     const isDetailPage = pathSegments.length >= 3 || (pathSegments.length === 2 && hasIdLikeLastSegment);
+    const isScrollableOrderDetailPage = pathSegments[0] === 'order'
+        && ['products', 'customers', 'suppliers', 'inquiries', 'quotations', 'supplierorders', 'customerorders'].includes(pathSegments[1])
+        && pathSegments.length >= 3;
 
     const orderMenuContextValue = useMemo(() => ({
         isMenuOpen,
@@ -85,7 +88,7 @@ const OrderLayout = () => {
                 <div className="sticky top-0 z-50 shrink-0">
                     <Navbar />
                 </div>
-                <div className="relative flex min-h-0 grow items-stretch md:px-[clamp(4px,3vw,3vw)] overflow-hidden">
+                <div className={`relative flex ${isScrollableOrderDetailPage ? 'grow' : 'min-h-0 grow overflow-hidden'} items-stretch 2xl:px-[clamp(4px,3vw,3vw)]`}>
                     {!isDetailPage && (
                         <div className="flex min-h-0 w-50 mt-10 mb-20 shrink-0 flex-col overflow-y-auto border-r border-gray-300">
                             {menuContent}
@@ -117,8 +120,8 @@ const OrderLayout = () => {
                         </>
                     )}
 
-                    <div className="flex-grow min-w-0 pt-4 px-0 relative overflow-hidden">
-                        <div className="outlet-leading-none h-full pt-0">
+                    <div className={`flex-grow min-w-0 pt-4 px-0 relative ${isScrollableOrderDetailPage ? '' : 'overflow-hidden'}`}>
+                        <div className={`outlet-leading-none pt-0 ${isScrollableOrderDetailPage ? '' : 'h-full'}`}>
                             <OrderMenuContext.Provider value={orderMenuContextValue}>
                                 <Outlet />
                             </OrderMenuContext.Provider>

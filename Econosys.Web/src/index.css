@@ -7,9 +7,24 @@
     font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
   }
   button:not(:disabled),
+  a[href],
   [role="button"]:not(:disabled) {
     cursor: pointer;
   }
+}
+
+.cursor-pointer {
+  cursor: auto !important;
+}
+
+button:not(:disabled).cursor-pointer,
+a[href].cursor-pointer,
+[role="button"]:not(:disabled).cursor-pointer,
+th.cursor-pointer,
+button:not(:disabled) .cursor-pointer,
+a[href] .cursor-pointer,
+[role="button"]:not(:disabled) .cursor-pointer {
+  cursor: pointer !important;
 }
 
 @theme {

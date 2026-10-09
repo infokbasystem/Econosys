@@ -10,6 +10,8 @@ namespace Econosys.Api.DTOs
     {
         public DateTime CalculationDate { get; set; }
         public decimal CurrentInventoryValue { get; set; }
+        public decimal CurrentPalletPurchaseValue { get; set; }
+        public decimal CurrentPalletSalesValue { get; set; }
         public IReadOnlyList<InventoryReportRowDto> Rows { get; set; } = Array.Empty<InventoryReportRowDto>();
     }
 
@@ -27,5 +29,7 @@ namespace Econosys.Api.DTOs
         public int CurrentInventoryNrOfPallets { get; set; }
         public decimal TotalStockValue { get; set; }
         public decimal TotalSalesValue { get; set; }
+        public decimal TotalPalletPurchaseValue { get; set; }
+        public decimal TotalPalletSalesValue { get; set; }
     }
 }
