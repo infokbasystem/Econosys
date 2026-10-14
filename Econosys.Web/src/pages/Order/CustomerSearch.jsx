@@ -264,7 +264,7 @@ const CustomerSearch = () => {
                                         <button
                                             type="button"
                                             onClick={(event) => handleOpenCustomer(event, row.id)}
-                                            className="text-slate-700 hover:text-slate-900 hover:underline"
+                                            className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                         >
                                             {row.id}
                                         </button>

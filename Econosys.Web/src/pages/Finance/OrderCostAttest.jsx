@@ -410,7 +410,7 @@ const OrderCostAttest = () => {
                                         {row.invoiceId ? (
                                             <Link
                                                 to={`/finance/invoice/${row.invoiceId}`}
-                                                className="text-slate-700 hover:text-slate-900 hover:underline"
+                                                className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                             >
                                                 {row.invoiceNumber ?? row.invoiceId}
                                             </Link>

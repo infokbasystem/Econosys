@@ -481,8 +481,8 @@ const DeviationsOverview = () => {
                                                     type="button"
                                                     onClick={(event) => handleOpenDeviation(event, item.id)}
                                                     className={selectedOpenItemId === item.id || item.openDays > 10
-                                                        ? 'text-white hover:text-white hover:underline'
-                                                        : 'text-slate-700 hover:text-slate-900 hover:underline'}
+                                                        ? 'text-white decoration-sky-300 underline-offset-2 hover:underline hover:text-white'
+                                                        : 'text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800'}
                                                 >
                                                     {item.deviationNr ?? item.id}
                                                 </button>
@@ -719,7 +719,7 @@ const DeviationsOverview = () => {
                                             <button
                                                 type="button"
                                                 onClick={(event) => handleOpenDeviation(event, row.id)}
-                                                className="text-slate-700 hover:text-slate-900 hover:underline"
+                                                className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                             >
                                                 {row.deviationNr ?? row.id}
                                             </button>

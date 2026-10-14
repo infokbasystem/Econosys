@@ -1,0 +1,69 @@
+@baseUrl = https://localhost:5001
+@accessToken = REPLACE_WITH_ACCESS_TOKEN
+
+### Read saved calculation details (no price refresh or database writes)
+GET {{baseUrl}}/api/calculations/24050/aggregate
+Authorization: Bearer {{accessToken}}
+
+### Missing calculation returns 404 when authenticated
+GET {{baseUrl}}/api/calculations/2147483647/aggregate
+Authorization: Bearer {{accessToken}}
+
+### Search calculations (authentication via bearer token or existing access_token cookie)
+POST {{baseUrl}}/api/calculations/search
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "filter": { "conditions": [] },
+  "pagination": { "pageNumber": 1, "pageSize": 25 },
+  "orderBy": [{ "field": "id", "direction": "desc" }]
+}
+
+### Combine all five filters using the visible supplier order number
+POST {{baseUrl}}/api/calculations/search
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "filter": {
+    "conditions": [
+      { "field": "productname", "operator": "contains", "value": "kartong" },
+      { "field": "suppliername", "operator": "contains", "value": "Bart" },
+      { "field": "customername", "operator": "contains", "value": "Plasto" },
+      { "field": "id", "operator": "eq", "value": 24050 },
+      { "field": "supplierordernr", "operator": "contains", "value": "44654" }
+    ]
+  },
+  "pagination": { "pageNumber": 1, "pageSize": 25 },
+  "orderBy": [{ "field": "productname", "direction": "asc" }]
+}
+
+### Excel export batch (repeat subsequent pages while hasNextPage is true)
+POST {{baseUrl}}/api/calculations/search
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "filter": { "conditions": [{ "field": "suppliername", "operator": "contains", "value": "Bart" }] },
+  "pagination": { "pageNumber": 1, "pageSize": 200 },
+  "orderBy": [{ "field": "id", "direction": "desc" }]
+}
+
+### Invalid calculation number returns 400
+POST {{baseUrl}}/api/calculations/search
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "filter": { "conditions": [{ "field": "id", "operator": "eq", "value": "abc" }] }
+}
+
+### Null filter entry returns 400
+POST {{baseUrl}}/api/calculations/search
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "filter": { "conditions": [null] }
+}

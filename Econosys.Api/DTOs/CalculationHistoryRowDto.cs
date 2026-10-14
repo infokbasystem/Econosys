@@ -1,0 +1,24 @@
+namespace Econosys.Api.DTOs;
+
+public sealed record CalculationHistoryRowDto(
+    string? CreatedDate,
+    int? SupplierOrderId,
+    string? SupplierOrderNr,
+    int? CustomerOrderId,
+    string? CustomerOrderNr,
+    string? DeliveryTime,
+    int? Edition,
+    double? PurchasePrice,
+    string? PurchaseCurrencyName,
+    double? PurchaseCurrencyRate,
+    double? FreightCost,
+    double? OtherCost,
+    double? StorageCost,
+    decimal? PackagingCost,
+    double? PurchaseCostTotal,
+    double? PercentAddition,
+    double? SalesPrice,
+    string? SalesCurrencyName,
+    double? SalesCurrencyRate,
+    double? TbTotalSek,
+    string? Info);

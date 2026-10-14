@@ -394,7 +394,7 @@ const SupplierReport = () => {
                                                             event.stopPropagation();
                                                             navigate(`/management/deviations/${row.deviationId}`);
                                                         }}
-                                                        className="text-slate-700 hover:text-slate-900 hover:underline"
+                                                        className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                                     >
                                                         {row.deviationNr ?? row.deviationId}
                                                     </button>

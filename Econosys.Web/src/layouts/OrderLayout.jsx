@@ -34,9 +34,9 @@ const menuGroups = [
     },
     {
         label: "Kalkyl",
-        items: [
-            { label: "Kalkyler", icon: Calculator, disabled: true },
+        items: [            
             { to: "/order/products", label: "Produkter", icon: Package },
+            { to: "/order/calculations", label: "Kalkyler", icon: Calculator },
         ],
     },
     {
@@ -67,7 +67,7 @@ const OrderLayout = () => {
     const hasIdLikeLastSegment = /^\d+$/.test(pathSegments[pathSegments.length - 1] || '');
     const isDetailPage = pathSegments.length >= 3 || (pathSegments.length === 2 && hasIdLikeLastSegment);
     const isScrollableOrderDetailPage = pathSegments[0] === 'order'
-        && ['products', 'customers', 'suppliers', 'inquiries', 'quotations', 'supplierorders', 'customerorders'].includes(pathSegments[1])
+        && ['calculations', 'products', 'customers', 'suppliers', 'inquiries', 'quotations', 'supplierorders', 'customerorders'].includes(pathSegments[1])
         && pathSegments.length >= 3;
 
     const orderMenuContextValue = useMemo(() => ({

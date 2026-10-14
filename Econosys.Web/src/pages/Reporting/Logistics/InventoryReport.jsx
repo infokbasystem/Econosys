@@ -479,7 +479,7 @@ const InventoryReport = () => {
                             inventoryData.map((item) => (
                                 <tr key={`${item.supplierOrderId}-${item.inventoryId}`} className='hover:bg-blue-50'>
                                     <td className="pl-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">
-                                        <NavLink to={`/order/supplierorders/${item.supplierOrderId}`} className="text-slate-700 hover:text-slate-900 hover:underline">{item.supplierOrderNr}</NavLink>
+                                        <NavLink to={`/order/supplierorders/${item.supplierOrderId}`} className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800">{item.supplierOrderNr}</NavLink>
                                     </td>
                                     <td className="px-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">{item.inventoryName}</td>
                                     <td className="px-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">{item.customerName}</td>

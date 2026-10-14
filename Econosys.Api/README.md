@@ -51,6 +51,41 @@ The API will start at `https://localhost:5001` (or the configured port).
 
 Open your browser and navigate to: `https://localhost:5001`
 
+## Calculation Implementation
+
+The initial calculation milestone adds `GET /api/calculations/{id}/aggregate`
+and the web detail route `/order/calculations/:id`. Both calculation-number
+and product-name search links open the detail page. The page currently displays
+saved values; editing, approvals, transactional saving, explicit price refresh,
+price snapshots, document creation and calculation PDF generation remain planned.
+
+The detail endpoint requires authentication and performs no database writes or
+price-list refresh. Saved sales prices and markups remain unchanged. Archived
+rows use their recorded exchange rates. Audit dates carry the Swedish offset,
+including daylight-saving time. Computed display totals are returned by the API.
+
+`CalculationPricingService` contains independently tested legacy freight,
+price-tier, surcharge, sales-price and packaging primitives. It does not mutate
+entities or apply calculation previews to sales rows.
+
+Run the regression suite from the workspace root:
+
+```bash
+dotnet test Econosys.Api.Tests/Econosys.Api.Tests.csproj
+```
+
+Normal API startup retains its existing database initialization behavior. For
+read-only verification against an already provisioned database, disable both
+startup migrations and identity seeding:
+
+```bash
+ASPNETCORE_ENVIRONMENT=Development DatabaseInitialization__Enabled=false \
+  dotnet run --project Econosys.Api/Econosys.Api.csproj --no-launch-profile \
+  --urls https://localhost:5003
+```
+
+No schema migration is included in this initial milestone.
+
 ## API Endpoints
 
 ### Authentication

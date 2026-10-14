@@ -590,7 +590,7 @@ const Deliveries = () => {
                                                     handleViewDelivery(row);
                                                 }}
                                                 disabled={isLoadingViewDelivery}
-                                                className="text-slate-700 hover:text-slate-900 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                                                className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800 disabled:cursor-not-allowed disabled:opacity-50"
                                             >
                                                 {`${deliveryTypeLabels[row.type] ?? row.type} (${row.id})`}
                                             </button>
@@ -613,7 +613,7 @@ const Deliveries = () => {
                                             <Link
                                                 to={`/order/supplierorders/${row.supplierOrderId}`}
                                                 onClick={(event) => event.stopPropagation()}
-                                                className="text-slate-700 hover:text-slate-900 hover:underline"
+                                                className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                             >
                                                 {row.supplierOrderNr ?? row.supplierOrderId}
                                             </Link>
@@ -628,7 +628,7 @@ const Deliveries = () => {
                                             <Link
                                                 to={`/logistics/transportorder/${row.transportOrderId}`}
                                                 onClick={(event) => event.stopPropagation()}
-                                                className="text-slate-700 hover:text-slate-900 hover:underline"
+                                                className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                             >
                                                 {row.transportOrderNr ?? row.transportOrderId}
                                             </Link>
@@ -639,7 +639,7 @@ const Deliveries = () => {
                                             <Link
                                                 to={`/logistics/calloff/${row.callOffNr}`}
                                                 onClick={(event) => event.stopPropagation()}
-                                                className="text-slate-700 hover:text-slate-900 hover:underline"
+                                                className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                             >
                                                 {row.callOffNr}
                                             </Link>

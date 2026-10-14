@@ -9,6 +9,7 @@ A modern React application built with Vite and Tailwind CSS for the Econosys pla
 - 🎨 **Tailwind CSS** - Utility-first CSS framework
 - 🔐 **Authentication** - Login page with Econopack.Api integration
 - 🔄 **API Client** - Configured axios client with interceptors
+- **Calculation product overview** - Read-only product information, including dimensions, weight, codes and notes, with a link to open the product in a new tab. Format shows available length, width and height separated by ` x `, falling back to the saved format text when no dimensions are present.
 
 ## Prerequisites
 

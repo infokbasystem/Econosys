@@ -419,7 +419,7 @@ const CalloffOverview = () => {
               event.stopPropagation()
               openReportOrderInfo(row.customerOrderId)
             }}
-            className="text-slate-600 hover:text-slate-800 hover:underline"
+            className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
           >
             Rapp.
           </button>
@@ -584,7 +584,7 @@ const CalloffOverview = () => {
                     className={['h-6 cursor-pointer border-b border-gray-100', row.id === selectedActiveId ? 'bg-lime-200/80' : '', 'hover:bg-lime-200/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-amber-600'].join(' ')}
                   >
                     <td className="truncate px-2 py-1 text-gray-800">
-                      <Link to={`/logistics/calloff/${row.id}`} onClick={(event) => event.stopPropagation()} className="truncate text-slate-700 hover:text-slate-900 hover:underline" title={`Öppna avrop ${row.id}`}>
+                      <Link to={`/logistics/calloff/${row.id}`} onClick={(event) => event.stopPropagation()} className="truncate text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800" title={`Öppna avrop ${row.id}`}>
                         {row.id}
                       </Link>
                     </td>

@@ -260,7 +260,7 @@ const InvoicesToAccount = () => {
                             return (
                                 <tr key={row.invoiceId} className={`cursor-pointer border-b border-gray-100 ${row.selected ? 'bg-lime-100' : 'hover:bg-lime-50'}`} onClick={() => toggleInvoice(row.invoiceId)}>
                                     <td className="px-2 py-[4px]" onClick={(event) => event.stopPropagation()}><SelectCircleCheckbox checked={Boolean(row.selected)} onChange={() => toggleInvoice(row.invoiceId)} ariaLabel={`Markera faktura ${row.invoiceNumber}`} /></td>
-                                    <td className="px-2 py-[6px] text-xs text-gray-800"><Link to={`/finance/invoice/${row.invoiceId}`} target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()} className="text-sky-700 underline-offset-2 hover:text-sky-800 hover:underline">{row.invoiceNumber ?? row.invoiceId}</Link></td>
+                                    <td className="px-2 py-[6px] text-xs text-gray-800"><Link to={`/finance/invoice/${row.invoiceId}`} target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()} className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800">{row.invoiceNumber ?? row.invoiceId}</Link></td>
                                     <td className="px-2 py-[6px] text-xs text-gray-800">{row.customerName}</td>
                                     <td className="px-2 py-[6px] text-xs text-gray-800">{formatDateShort(row.invoiceDate)}</td>
                                     <td className="px-2 py-[6px] text-xs text-gray-800">{formatDateShort(row.dueDate)}</td>

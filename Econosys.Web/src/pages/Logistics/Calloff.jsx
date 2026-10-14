@@ -1210,7 +1210,7 @@ const Calloff = () => {
                                                                 {/* View mode: shows the details of an already created delivery from stock, read-only. */}
                                                                 <button
                                                                     type="button"
-                                                                    className={delivery.deliveryFromStockId ? 'text-xs text-blue-600 hover:underline' : 'text-xs text-gray-400 cursor-not-allowed'}
+                                                                    className={delivery.deliveryFromStockId ? 'text-xs text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800' : 'text-xs text-gray-400 cursor-not-allowed'}
                                                                     disabled={!delivery.deliveryFromStockId || isLoadingViewDelivery}
                                                                     onClick={() => handleViewDelivery(delivery)}
                                                                 >

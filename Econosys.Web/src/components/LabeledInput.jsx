@@ -18,6 +18,9 @@ const LabeledInput = ({
     popupLabelField = 'name',
     maxLength,
     showCharCounter = false,
+    prefix,
+    suffix,
+    suffixPaddingWidth,
     ...props
 }) => {
 
@@ -140,6 +143,11 @@ const LabeledInput = ({
 
             <div className="flex flex-row items-center w-full">
                 <div className="relative w-full">
+                {prefix != null && prefix !== '' && (
+                    <span className="pointer-events-none absolute left-2 top-1/2 z-10 -translate-y-1/2 whitespace-nowrap text-xs text-gray-400">
+                        {prefix}
+                    </span>
+                )}
                 <input
                     name={name}
                     type={type === 'number' ? 'text' : type}
@@ -147,9 +155,17 @@ const LabeledInput = ({
                     disabled={disabled}
                     onChange={handleChange}
                     onBlur={handleBlur}
-                    className={`h-6.25 text-xs ${inputWidth || 'w-full'} border border-gray-300 rounded-sm px-2 py-1 focus:outline-none ${showCharCounter && maxLength ? 'pr-16' : ''} ${!disabled ? 'bg-white' : ''}`}
+                    className={`h-6.25 text-xs ${inputWidth || 'w-full'} border border-gray-300 rounded-sm py-1 focus:outline-none ${prefix != null && prefix !== '' ? 'pl-7' : 'px-2'} ${suffix != null && suffix !== '' ? showCharCounter && maxLength ? 'pr-24' : 'pr-7' : showCharCounter && maxLength ? 'pr-16' : ''} ${!disabled ? 'bg-white' : ''}`}
                     {...props}
+                    style={suffixPaddingWidth
+                        ? { ...props.style, paddingRight: `${suffixPaddingWidth}px` }
+                        : props.style}
                 />
+                {suffix != null && suffix !== '' && (
+                    <span className={`pointer-events-none absolute top-1/2 z-10 -translate-y-1/2 whitespace-nowrap text-xs text-gray-400 ${showCharCounter && maxLength ? 'right-16' : 'right-2'}`}>
+                        {suffix}
+                    </span>
+                )}
                 {showCharCounter && maxLength && (
                     <span className={`pointer-events-none absolute right-2 pt-[3px] top-1/2 -translate-y-1/2 text-tiny whitespace-nowrap ${
                         String(displayValue || '').length > maxLength

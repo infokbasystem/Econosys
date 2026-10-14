@@ -315,7 +315,7 @@ const ImprovementPropositionsOverview = () => {
                                                     e.stopPropagation();
                                                     handleOpenProposalModal(item);
                                                 }}
-                                                className="text-blue-600 hover:text-blue-800 hover:underline"
+                                                className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                             >
                                                 {item.id}
                                             </button>
@@ -459,7 +459,7 @@ const ImprovementPropositionsOverview = () => {
                                                     e.stopPropagation();
                                                     handleOpenProposalModal(item);
                                                 }}
-                                                className="text-blue-600 hover:text-blue-800 hover:underline"
+                                                className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                             >
                                                 {item.id}
                                             </button>

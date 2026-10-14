@@ -1174,7 +1174,7 @@ const TransportOrder = () => {
                                                                         to={`/order/supplierorders/${delivery.supplierOrderId}`}
                                                                         target="_blank"
                                                                         rel="noopener noreferrer"
-                                                                        className="text-xs font-semibold text-blue-800 hover:text-blue-900 hover:underline"
+                                                                        className="text-xs font-semibold text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                                                     >
                                                                         {delivery.supplierOrderNr || '-'}
                                                                     </NavLink>

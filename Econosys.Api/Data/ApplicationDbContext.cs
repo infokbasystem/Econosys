@@ -63,6 +63,7 @@ namespace Econosys.Api.Data
         public DbSet<TransportOrderCostCalc> TransportOrderCostCalcs => Set<TransportOrderCostCalc>();
         public DbSet<TransportOrderCostCalcSupplierOrder> TransportOrderCostCalcSupplierOrders => Set<TransportOrderCostCalcSupplierOrder>();
         public DbSet<TransportOrderCostCalcSupplierOrderDelivery> TransportOrderCostCalcSupplierOrderDeliveries => Set<TransportOrderCostCalcSupplierOrderDelivery>();
+        public DbSet<CostPrice> CostPrices => Set<CostPrice>();
         public DbSet<TransportCostPriceList> TransportCostPriceLists => Set<TransportCostPriceList>();
         public DbSet<TransportCostPriceListData> TransportCostPriceListDatas => Set<TransportCostPriceListData>();
         public DbSet<SupplierFactoryTransportCostPriceList> SupplierFactoryTransportCostPriceLists => Set<SupplierFactoryTransportCostPriceList>();
@@ -1030,6 +1031,11 @@ namespace Econosys.Api.Data
                     .WithMany(x => x.TransportOrderDeliveryPallets)
                     .HasForeignKey(x => x.TransportOrderDeliveryId)
                     .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<CostPrice>(entity =>
+            {
+                entity.ToTable("CostPrice", tableBuilder => tableBuilder.ExcludeFromMigrations());
             });
 
             builder.Entity<TransportCostPriceList>(entity =>

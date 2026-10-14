@@ -17,6 +17,8 @@ import SettingsLayout from './layouts/SettingsLayout'
 import Overview from './pages/Overview'
 
 import OrderOverview from './pages/Order/OrderOverview'
+import CalculationSearch from './pages/Calculation/CalculationSearch'
+import Calculation from './pages/Calculation/Calculation'
 import ProductSearch from './pages/Order/ProductSearch'
 import Product from './pages/Order/Product'
 import CustomerSearch from './pages/Order/CustomerSearch'
@@ -113,6 +115,8 @@ const router = createBrowserRouter(
       </Route>
       <Route path="order" element={< OrderLayout />}>
         <Route index element={<ProtectedRoute>< OrderOverview /></ProtectedRoute>} />
+        <Route path="calculations" element={<ProtectedRoute><CalculationSearch /></ProtectedRoute>} />
+        <Route path="calculations/:id" element={<ProtectedRoute><Calculation /></ProtectedRoute>} />
         <Route path="products" element={<ProtectedRoute><ProductSearch /></ProtectedRoute>} />
         <Route path="products/:id" element={<ProtectedRoute><Product /></ProtectedRoute>} />
         <Route path="materials" element={<ProtectedRoute><MaterialsSettings /></ProtectedRoute>} />

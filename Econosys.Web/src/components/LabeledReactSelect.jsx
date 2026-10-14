@@ -1,7 +1,8 @@
 import Select, { components } from 'react-select';
+import { ChevronDown, ExternalLink } from 'lucide-react';
 
 
-const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, value, items, onChange, disableInactive, allowRawValueLabel = false, filterStyle = false, ...props }) => {
+const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, value, items, onChange, disableInactive, allowRawValueLabel = false, filterStyle = false, openInNewTabUrl, openInNewTabLabel = 'Öppna i ny flik', ...props }) => {
     const normalizedItems = Array.isArray(items) ? items : [];
 
     const options = normalizedItems
@@ -34,6 +35,42 @@ const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, va
                 <span>{optionProps.label}</span>
             </div>
         </components.Option>
+    );
+
+    const IndicatorsContainer = (containerProps) => (
+        <components.IndicatorsContainer {...containerProps}>
+            {openInNewTabUrl ? (
+                <button
+                    type="button"
+                    onMouseDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        window.open(openInNewTabUrl, '_blank', 'noopener,noreferrer');
+                    }}
+                    aria-label={openInNewTabLabel}
+                    title={openInNewTabLabel}
+                    className="inline-flex h-5 w-5 items-center justify-center text-gray-500 hover:text-gray-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-700"
+                >
+                    <ExternalLink size={14} aria-hidden="true" />
+                </button>
+            ) : null}
+            {containerProps.children}
+        </components.IndicatorsContainer>
+    );
+
+    const DropdownIndicator = (indicatorProps) => (
+        <components.DropdownIndicator {...indicatorProps}>
+            <ChevronDown
+                aria-hidden="true"
+                className={`pointer-events-none h-4 w-4 transition-colors ${indicatorProps.isDisabled
+                    ? 'text-gray-400'
+                    : 'text-[#a9a9a9] group-hover:text-black'}`}
+            />
+        </components.DropdownIndicator>
     );
 
     const customStyles = {
@@ -98,14 +135,18 @@ const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, va
                 options={options}
                 value={selectedValue}
                 onChange={handleChange}
-                className={`text-xs ${inputWidth || 'w-full'}`}
+                className={`group text-xs ${inputWidth || 'w-full'}`}
                 placeholder="Välj"
                 isClearable
                 isSearchable
                 styles={customStyles}
                 closeMenuOnSelect={!isMultiSelect}
                 hideSelectedOptions={false}
-                components={isMultiSelect ? { Option: CheckboxOption } : undefined}
+                components={{
+                    ...(isMultiSelect ? { Option: CheckboxOption } : {}),
+                    ...(openInNewTabUrl ? { IndicatorsContainer } : {}),
+                    DropdownIndicator,
+                }}
                 {...props}
             />
         </div>

@@ -863,7 +863,7 @@ const TransportOrderOverview = () => {
                                                     event.stopPropagation();
                                                     openReportOrderInfo(row.customerOrderId);
                                                 }}
-                                                className="text-slate-600 hover:text-slate-800 hover:underline"
+                                                className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                             >
                                                 Rapp.
                                             </button>
@@ -945,7 +945,7 @@ const TransportOrderOverview = () => {
                                                     <Link
                                                         to={`/logistics/transportorder/${row.id}`}
                                                         onClick={(event) => event.stopPropagation()}
-                                                        className="truncate text-slate-700 hover:text-slate-900 hover:underline"
+                                                        className="truncate text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                                         title={`Öppna transportorder ${row.transportOrderNr}`}
                                                     >
                                                         {row.transportOrderNr}
@@ -1021,7 +1021,7 @@ const TransportOrderOverview = () => {
                                                     <Link
                                                         to={`/logistics/transportorder/${row.id}`}
                                                         onClick={(event) => event.stopPropagation()}
-                                                        className="truncate text-slate-700 hover:text-slate-900 hover:underline"
+                                                        className="truncate text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                                         title={`Öppna transportorder ${row.transportOrderNr}`}
                                                     >
                                                         {row.transportOrderNr}
@@ -1101,7 +1101,7 @@ const TransportOrderOverview = () => {
                                                     <Link
                                                         to={`/logistics/transportorder/${row.id}`}
                                                         onClick={(event) => event.stopPropagation()}
-                                                        className="truncate text-slate-700 hover:text-slate-900 hover:underline"
+                                                        className="truncate text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                                         title={`Öppna transportorder ${row.transportOrderNr}`}
                                                     >
                                                         {row.transportOrderNr}

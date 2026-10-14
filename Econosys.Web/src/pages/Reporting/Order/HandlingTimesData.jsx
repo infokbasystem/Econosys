@@ -594,7 +594,7 @@ const HandlingTimesData = () => {
                                     <td className="truncate px-2 py-0 text-gray-800">
                                         <Link
                                             to={`/order/supplierorders/${row.supplierOrderId}`}
-                                            className="text-slate-700 hover:text-slate-900 hover:underline"
+                                            className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                         >
                                             {row.supplierOrderNr || row.supplierOrderId}
                                         </Link>
@@ -603,7 +603,7 @@ const HandlingTimesData = () => {
                                         {row.customerOrderId ? (
                                             <Link
                                                 to={`/order/customerorders/${row.customerOrderId}`}
-                                                className="text-slate-700 hover:text-slate-900 hover:underline"
+                                                className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                             >
                                                 {row.customerOrderNr || row.customerOrderId}
                                             </Link>

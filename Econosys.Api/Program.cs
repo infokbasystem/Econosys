@@ -154,6 +154,7 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<ILegacyUserResolutionService, LegacyUserResolutionService>();
+builder.Services.AddScoped<CalculationFreightPriceService>();
 builder.Services.AddScoped<IPalletFormatOptionsService, PalletFormatOptionsService>();
 builder.Services.AddScoped<ITransportOrderCostCalculationService, TransportOrderCostCalculationService>();
 builder.Services.AddSingleton<IProtectedSecretService, ProtectedSecretService>();
@@ -197,6 +198,7 @@ builder.Logging.AddDebug();
 var app = builder.Build();
 
 // Initialize database and roles
+if (builder.Configuration.GetValue("DatabaseInitialization:Enabled", true))
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

@@ -280,7 +280,7 @@ const CustomersToJeeves = () => {
                             return (
                                 <tr key={row.id} className={`h-6 cursor-pointer border-b border-gray-100 ${row.selected ? 'bg-lime-100/80' : 'hover:bg-lime-200/70'}`} onClick={() => toggleCustomer(row.id)}>
                                     <td className="px-2 py-1" onClick={(event) => event.stopPropagation()}><SelectCircleCheckbox checked={Boolean(row.selected)} onChange={() => toggleCustomer(row.id)} ariaLabel={`Markera kund ${row.id}`} /></td>
-                                    <td className="truncate px-2 py-1 text-gray-800"><button type="button" onClick={(event) => { event.stopPropagation(); navigate(`/order/customers/${row.id}`); }} className="text-slate-700 hover:text-slate-900 hover:underline">{row.id}</button></td>
+                                    <td className="truncate px-2 py-1 text-gray-800"><button type="button" onClick={(event) => { event.stopPropagation(); navigate(`/order/customers/${row.id}`); }} className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800">{row.id}</button></td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.name}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.orgNr}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.email}</td>
