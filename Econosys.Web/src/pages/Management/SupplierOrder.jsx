@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Printer, Save, Trash2 } from 'lucide-react';
-import { useBlocker, useNavigate, useParams } from 'react-router-dom';
+import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
@@ -166,6 +166,8 @@ const renderReadOnlyInfoRow = (label, value) => (
 const SupplierOrder = () => {
     const navigate = useNavigate();
     const { id } = useParams();
+    const [searchParams] = useSearchParams();
+    const calculationId = parseNullableInt(searchParams.get('calculationId'));
     const isNewSupplierOrder = id === 'new' || id == null;
 
     const {
@@ -192,6 +194,15 @@ const SupplierOrder = () => {
     const [orderCostOptions, setOrderCostOptions] = useState([]);
     const [currencyOptions, setCurrencyOptions] = useState([]);
     const [palletFormatOptions, setPalletFormatOptions] = useState([]);
+    const [workflowOpen, setWorkflowOpen] = useState(false);
+    const [workflowLoading, setWorkflowLoading] = useState(false);
+    const [workflowSaving, setWorkflowSaving] = useState(false);
+    const [workflowDraftReady, setWorkflowDraftReady] = useState(false);
+    const [workflowStep, setWorkflowStep] = useState('inquiry');
+    const [workflowOptions, setWorkflowOptions] = useState(null);
+    const [selectedCalculationRowId, setSelectedCalculationRowId] = useState('');
+    const [selectedInquiryId, setSelectedInquiryId] = useState('');
+    const [selectedQuotationId, setSelectedQuotationId] = useState('');
 
     const skipUnsavedCheckRef = React.useRef(false);
 
@@ -302,11 +313,20 @@ const SupplierOrder = () => {
         id: parseNullableInt(source?.id) ?? 0,
         supplierOrderNr: source?.supplierOrderNr || null,
         basedOnSupplierOrderId: parseNullableInt(source?.basedOnSupplierOrderId),
+        inquiryId: parseNullableInt(source?.inquiryId),
+        quotationId: parseNullableInt(source?.quotationId),
+        calculationId: parseNullableInt(source?.calculationId),
         supplierId: parseNullableInt(source?.supplierId),
         supplierFactoryId: parseNullableInt(source?.supplierFactoryId),
         inventoryId: parseNullableInt(source?.inventoryId),
         supplierName: source?.supplierName || null,
+        address: source?.address || null,
+        address2: source?.address2 || null,
+        postalNr: source?.postalNr || null,
+        postalAddress: source?.postalAddress || null,
+        country: source?.country || null,
         customerId: parseNullableInt(source?.customerId),
+        customerDeliveryAddressId: parseNullableInt(source?.customerDeliveryAddressId),
         customerOrderNr: source?.customerOrderNr || null,
         deliveryAddressName: source?.deliveryAddressName || null,
         deliveryAddress: source?.deliveryAddress || null,
@@ -321,11 +341,20 @@ const SupplierOrder = () => {
         termsOfPayment: source?.termsOfPayment || null,
         message: source?.message || null,
         product: source?.product || null,
+        productCode: source?.productCode || null,
         material: source?.material || null,
         format: source?.format || null,
         color: source?.color || null,
         construction: source?.construction || null,
         goodsMarking: source?.goodsMarking || null,
+        preparation: source?.preparation || null,
+        loadingInstruction: source?.loadingInstruction || null,
+        unitId: parseNullableInt(source?.unitId),
+        selectedCalculationRowId: parseNullableInt(source?.selectedCalculationRowId),
+        edition: parseNullableInt(source?.edition),
+        purchasePrice: parseNullableDecimal(source?.purchasePrice),
+        purchaseCurrencyId: parseNullableInt(source?.purchaseCurrencyId),
+        purchaseCurrencyRate: parseNullableDecimal(source?.purchaseCurrencyRate),
         hideCustomerInfoOnPrint: Boolean(source?.hideCustomerInfoOnPrint),
         hideCustomerNameOnPrint: Boolean(source?.hideCustomerNameOnPrint),
         hideProductNameOnPrint: Boolean(source?.hideProductNameOnPrint),
@@ -339,11 +368,160 @@ const SupplierOrder = () => {
         packagingType: source?.packagingType || null,
         palletFormatId: parseNullableInt(source?.palletFormatId),
         eurPallet: Boolean(source?.eurPallet),
+        oneWayPallet: Boolean(source?.oneWayPallet),
         producedEdition: parseNullableInt(source?.producedEdition),
         orderCosts: toArray(source?.orderCosts)
             .filter((row) => row.costId != null)
             .map(buildOrderCostPayload),
     });
+
+    useEffect(() => {
+        if (!isNewSupplierOrder || !calculationId || calculationId <= 0) {
+            return undefined;
+        }
+
+        let isActive = true;
+        setWorkflowOpen(true);
+        setWorkflowLoading(true);
+        apiClient.get(`/supplierorder-workflow/calculations/${calculationId}`)
+            .then((response) => {
+                if (!isActive) return;
+                const options = response?.data ?? {};
+                setWorkflowOptions(options);
+                setSelectedCalculationRowId(String(options?.calculationRows?.[0]?.id ?? ''));
+                setSelectedInquiryId(String(options?.inquiries?.[0]?.id ?? ''));
+                setSelectedQuotationId(String(options?.quotations?.[0]?.id ?? ''));
+
+                const errors = toArray(options?.errors);
+                if (errors.length > 0) {
+                    setMessages((previous) => [
+                        ...previous.filter((message) => message.type !== 'error'),
+                        ...errors.map((text) => ({ type: 'error', text })),
+                    ]);
+                    setWorkflowOpen(false);
+                    return;
+                }
+                const warnings = toArray(options?.warnings);
+                if (warnings.length > 0) {
+                    setMessages((previous) => [
+                        ...previous.filter((message) => message.type !== 'warning'),
+                        ...warnings.map((text) => ({ type: 'warning', text })),
+                    ]);
+                }
+            })
+            .catch((error) => {
+                console.error('Failed to load supplier order workflow options:', error);
+                if (!isActive) return;
+                setWorkflowOpen(false);
+                setMessages((previous) => [
+                    ...previous.filter((message) => message.type !== 'error'),
+                    { type: 'error', text: error?.response?.data?.message || 'Kunde inte läsa valen för beställningen.' },
+                ]);
+            })
+            .finally(() => {
+                if (isActive) setWorkflowLoading(false);
+            });
+
+        return () => {
+            isActive = false;
+        };
+    }, [calculationId, isNewSupplierOrder, setMessages]);
+
+    const createWorkflowInquiry = async () => {
+        setWorkflowSaving(true);
+        try {
+            const response = await apiClient.post(`/supplierorder-workflow/calculations/${calculationId}/inquiries`);
+            const inquiry = response?.data;
+            setWorkflowOptions((previous) => ({
+                ...previous,
+                inquiries: [inquiry, ...toArray(previous?.inquiries)],
+            }));
+            setSelectedInquiryId(String(inquiry?.id ?? ''));
+        } catch (error) {
+            console.error('Failed to create inquiry from calculation:', error);
+            setMessages((previous) => [
+                ...previous.filter((message) => message.type !== 'error'),
+                { type: 'error', text: error?.response?.data?.message || 'Kunde inte skapa förfrågan från kalkylen.' },
+            ]);
+        } finally {
+            setWorkflowSaving(false);
+        }
+    };
+
+    const createWorkflowQuotation = async () => {
+        if (!selectedInquiryId) return;
+        setWorkflowSaving(true);
+        try {
+            const response = await apiClient.post(
+                `/supplierorder-workflow/calculations/${calculationId}/inquiries/${selectedInquiryId}/quotations`,
+            );
+            const quotation = response?.data;
+            setWorkflowOptions((previous) => ({
+                ...previous,
+                quotations: [quotation, ...toArray(previous?.quotations)],
+            }));
+            setSelectedQuotationId(String(quotation?.id ?? ''));
+        } catch (error) {
+            console.error('Failed to create quotation from calculation:', error);
+            setMessages((previous) => [
+                ...previous.filter((message) => message.type !== 'error'),
+                { type: 'error', text: error?.response?.data?.message || 'Kunde inte skapa affärsförslag från kalkylen.' },
+            ]);
+        } finally {
+            setWorkflowSaving(false);
+        }
+    };
+
+    const finishSupplierOrderWorkflow = async () => {
+        if (!selectedCalculationRowId || !selectedInquiryId || !selectedQuotationId) return;
+        setWorkflowSaving(true);
+        try {
+            const response = await apiClient.post(
+                `/supplierorder-workflow/calculations/${calculationId}/draft`,
+                {
+                    calculationRowId: Number(selectedCalculationRowId),
+                    inquiryId: Number(selectedInquiryId),
+                    quotationId: Number(selectedQuotationId),
+                },
+            );
+            const draft = response?.data?.supplierOrder;
+            if (!draft) {
+                throw new Error('Supplier order draft response did not contain a supplier order.');
+            }
+            const editableDraft = {
+                ...createNewSupplierOrderModel(),
+                ...draft,
+                orderCosts: [],
+            };
+            setSupplierFactoryOptions(toArray(response?.data?.supplierFactories));
+            setPalletFormatOptions(toArray(response?.data?.palletFormats));
+            setSupplierOrder(editableDraft);
+            setOriginalSupplierOrder(structuredClone(editableDraft));
+            setWorkflowDraftReady(true);
+            setWorkflowOpen(false);
+            const warnings = toArray(response?.data?.warnings);
+            if (warnings.length > 0) {
+                setMessages((previous) => [
+                    ...previous.filter((message) => !warnings.includes(message.text)),
+                    ...warnings.map((text) => ({ type: 'warning', text })),
+                ]);
+            }
+        } catch (error) {
+            console.error('Failed to create supplier order draft:', error);
+            setMessages((previous) => [
+                ...previous.filter((message) => message.type !== 'error'),
+                { type: 'error', text: error?.response?.data?.message || error.message || 'Kunde inte skapa beställning från kalkylen.' },
+            ]);
+        } finally {
+            setWorkflowSaving(false);
+        }
+    };
+
+    const cancelSupplierOrderWorkflow = () => {
+        setWorkflowOpen(false);
+        skipUnsavedCheckRef.current = true;
+        navigate('/order/supplierorders', { replace: true });
+    };
 
     const handleSave = async () => {
         if (!supplierOrder) return;
@@ -550,20 +728,28 @@ const SupplierOrder = () => {
                 if (!isActive) return;
 
                 setLegacyUserOptions(toLegacyUserOptions(usersRes?.data));
-                setSupplierFactoryOptions([]);
+                setSupplierFactoryOptions((previous) => (
+                    calculationId && calculationId > 0 ? previous : []
+                ));
                 setInventoryOptions(toArray(inventoriesRes?.data?.items));
                 setOrderCostOptions(toArray(costsRes?.data));
                 setCurrencyOptions(Array.isArray(currenciesRes?.data?.items) ? currenciesRes.data.items : []);
-                setPalletFormatOptions([]);
+                setPalletFormatOptions((previous) => (
+                    calculationId && calculationId > 0 ? previous : []
+                ));
             } catch (error) {
                 console.error('Failed to load supplier order form options:', error);
                 if (!isActive) return;
                 setLegacyUserOptions([]);
-                setSupplierFactoryOptions([]);
+                setSupplierFactoryOptions((previous) => (
+                    calculationId && calculationId > 0 ? previous : []
+                ));
                 setInventoryOptions([]);
                 setOrderCostOptions([]);
                 setCurrencyOptions([]);
-                setPalletFormatOptions([]);
+                setPalletFormatOptions((previous) => (
+                    calculationId && calculationId > 0 ? previous : []
+                ));
             }
         };
 
@@ -572,7 +758,7 @@ const SupplierOrder = () => {
         return () => {
             isActive = false;
         };
-    }, [id, isNewSupplierOrder]);
+    }, [calculationId, id, isNewSupplierOrder]);
 
     useEffect(() => {
         const customerId = parseNullableInt(supplierOrder?.customerId);
@@ -667,6 +853,158 @@ const SupplierOrder = () => {
 
     return (
         <div className="relative flex min-h-full flex-col">
+            {workflowOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <section
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="supplier-order-workflow-title"
+                        className="w-full max-w-2xl rounded-md bg-white p-6 shadow-xl"
+                    >
+                        <h2 id="supplier-order-workflow-title" className="text-base font-semibold text-gray-800">
+                            {workflowStep === 'inquiry' ? 'Välj förfrågan och kalkylrad' : 'Välj affärsförslag'}
+                        </h2>
+                        {workflowLoading ? (
+                            <p className="mt-5 text-sm text-gray-600">Laddar val från kalkylen…</p>
+                        ) : workflowStep === 'inquiry' ? (
+                            <div className="mt-5 space-y-5">
+                                <fieldset>
+                                    <legend className="mb-2 text-sm font-medium text-gray-700">Förfrågan</legend>
+                                    {toArray(workflowOptions?.inquiries).length === 0 ? (
+                                        <p className="text-sm text-gray-500">Det finns ingen förfrågan kopplad till kalkylen.</p>
+                                    ) : (
+                                        <div className="max-h-48 space-y-1 overflow-y-auto">
+                                            {workflowOptions.inquiries.map((inquiry) => (
+                                                <label key={inquiry.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-gray-50">
+                                                    <input
+                                                        type="radio"
+                                                        name="supplier-order-inquiry"
+                                                        value={inquiry.id}
+                                                        checked={selectedInquiryId === String(inquiry.id)}
+                                                        onChange={(event) => setSelectedInquiryId(event.target.value)}
+                                                    />
+                                                    <span>
+                                                        {inquiry.customerName || `Förfrågan ${inquiry.id}`}
+                                                        <span className="ml-2 text-xs text-gray-500">
+                                                            #{inquiry.id}{inquiry.createdAt ? ` · ${formatDateTime(inquiry.createdAt)}` : ''}
+                                                        </span>
+                                                    </span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={createWorkflowInquiry}
+                                        disabled={workflowSaving}
+                                        className="mt-2 rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                    >
+                                        Ny förfrågan
+                                    </button>
+                                </fieldset>
+
+                                <fieldset>
+                                    <legend className="mb-2 text-sm font-medium text-gray-700">Kalkylrad</legend>
+                                    <div className="max-h-48 space-y-1 overflow-y-auto">
+                                        {toArray(workflowOptions?.calculationRows).map((row) => (
+                                            <label key={row.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-gray-50">
+                                                <input
+                                                    type="radio"
+                                                    name="supplier-order-calculation-row"
+                                                    value={row.id}
+                                                    checked={selectedCalculationRowId === String(row.id)}
+                                                    onChange={(event) => setSelectedCalculationRowId(event.target.value)}
+                                                />
+                                                <span>
+                                                    Upplaga {row.edition ?? '-'} · Inköpspris {formatCompactNumber(row.purchasePrice)}
+                                                </span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </fieldset>
+                                <div className="flex justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={cancelSupplierOrderWorkflow}
+                                        className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                    >
+                                        Avbryt
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setWorkflowStep('quotation')}
+                                        disabled={!selectedInquiryId || !selectedCalculationRowId || workflowSaving}
+                                        className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+                                    >
+                                        Nästa
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="mt-5">
+                                {toArray(workflowOptions?.quotations).length === 0 ? (
+                                    <p className="text-sm text-gray-500">Det finns inget affärsförslag kopplat till kalkylen.</p>
+                                ) : (
+                                    <div className="max-h-64 space-y-1 overflow-y-auto">
+                                        {workflowOptions.quotations.map((quotation) => (
+                                            <label key={quotation.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-gray-50">
+                                                <input
+                                                    type="radio"
+                                                    name="supplier-order-quotation"
+                                                    value={quotation.id}
+                                                    checked={selectedQuotationId === String(quotation.id)}
+                                                    onChange={(event) => setSelectedQuotationId(event.target.value)}
+                                                />
+                                                <span>
+                                                    {quotation.customerName || `Affärsförslag ${quotation.id}`}
+                                                    <span className="ml-2 text-xs text-gray-500">
+                                                        #{quotation.id}{quotation.createdAt ? ` · ${formatDateTime(quotation.createdAt)}` : ''}
+                                                    </span>
+                                                </span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={createWorkflowQuotation}
+                                    disabled={workflowSaving}
+                                    className="mt-2 rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                >
+                                    Nytt affärsförslag
+                                </button>
+                                <div className="mt-6 flex justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setWorkflowStep('inquiry')}
+                                        disabled={workflowSaving}
+                                        className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                    >
+                                        Tillbaka
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={cancelSupplierOrderWorkflow}
+                                        disabled={workflowSaving}
+                                        className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                    >
+                                        Avbryt
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={finishSupplierOrderWorkflow}
+                                        disabled={!selectedQuotationId || workflowSaving}
+                                        className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+                                    >
+                                        {workflowSaving ? 'Skapar…' : 'Skapa beställning'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </section>
+                </div>
+            )}
+
             <ConfirmationModal
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
@@ -723,6 +1061,7 @@ const SupplierOrder = () => {
                                 label="Spara"
                                 icon={Save}
                                 onClick={handleSave}
+                                disabled={Boolean(calculationId && calculationId > 0 && !workflowDraftReady)}
                                 accent="lime"
                             />
                             {supplierOrder?.id !== 0 && (

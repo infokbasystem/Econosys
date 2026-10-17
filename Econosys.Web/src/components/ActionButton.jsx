@@ -45,7 +45,7 @@ export default function ActionButton({
             disabled={disabled}
             className="group inline-flex items-center gap-2 py-0 text-xs font-medium tracking-[0.10em] text-[#4b5563] transition enabled:focus:underline enabled:focus:outline-none enabled:focus:text-[#111827] enabled:focus:decoration-[#4b5563] enabled:hover:text-[#111827] enabled:hover:underline enabled:active:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none"
         >
-            <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full border transition-colors ${iconBaseClassName} ${iconAccentClassName}`}>
+            <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full border transition-colors ${iconBaseClassName} ${iconAccentClassName}`}>
                 {DisplayIcon && <DisplayIcon className="h-4 w-4" strokeWidth={2.2} />}
             </span>
             <span className="pr-1 uppercase">{label}</span>

@@ -155,7 +155,7 @@ const LabeledInput = ({
                     disabled={disabled}
                     onChange={handleChange}
                     onBlur={handleBlur}
-                    className={`h-6.25 text-xs ${inputWidth || 'w-full'} border border-gray-300 rounded-sm py-1 focus:outline-none ${prefix != null && prefix !== '' ? 'pl-7' : 'px-2'} ${suffix != null && suffix !== '' ? showCharCounter && maxLength ? 'pr-24' : 'pr-7' : showCharCounter && maxLength ? 'pr-16' : ''} ${!disabled ? 'bg-white' : ''}`}
+                    className={`h-6 text-xs ${inputWidth || 'w-full'} border border-gray-300 rounded-sm py-1 focus:outline-none ${prefix != null && prefix !== '' ? 'pl-7' : 'px-2'} ${suffix != null && suffix !== '' ? showCharCounter && maxLength ? 'pr-24' : 'pr-7' : showCharCounter && maxLength ? 'pr-16' : ''} ${!disabled ? 'bg-white' : ''}`}
                     {...props}
                     style={suffixPaddingWidth
                         ? { ...props.style, paddingRight: `${suffixPaddingWidth}px` }

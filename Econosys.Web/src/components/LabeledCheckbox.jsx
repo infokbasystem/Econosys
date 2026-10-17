@@ -91,7 +91,7 @@ const LabeledCheckbox = ({
             disabled={disabled}
             onClick={handleToggle}
             onKeyDown={handleKeyDown}
-            className={`inline-flex h-6.5 w-6.5 shrink-0 items-center justify-center rounded-full border border-[#e5e7eb] bg-white p-[2px] align-middle text-xs leading-none transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime-700 ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'} ${checkboxClassName}`}
+            className={`inline-flex h-6.25 w-6.25 shrink-0 items-center justify-center rounded-full border border-[#e5e7eb] bg-white p-[2px] align-middle text-xs leading-none transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime-700 ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'} ${checkboxClassName}`}
         >
             <span
                 className="inline-flex h-full w-full items-center justify-center rounded-full border text-xs font-semibold leading-none transition-all"

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, FileSpreadsheet, LoaderCircle, RefreshCw, Search } from 'lucide-react';
+import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, RefreshCw, Search } from 'lucide-react';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
@@ -207,15 +207,6 @@ const CalculationSearch = () => {
     return (
         <div className="flex h-full min-w-0 flex-col pt-3 pb-4 ps-4 md:ps-10 pe-0">
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-3 pb-2">
-                <div className="shrink-0">
-                    <ActionButton
-                        label={exporting ? 'Exporterar' : 'Excel'}
-                        icon={exporting ? LoaderCircle : FileSpreadsheet}
-                        onClick={handleExportExcel}
-                        disabled={exporting || loading || filtersPending || Boolean(numberError) || Boolean(loadError) || !pagination.totalCount}
-                        accent="lime"
-                    />
-                </div>
                 <div className="flex min-w-0 flex-wrap items-center gap-3">
                     {FILTER_FIELDS.map((field) => (
                         <div key={field.key} className={`relative max-w-full ${field.width}`}>
@@ -229,10 +220,24 @@ const CalculationSearch = () => {
                                 value={filters[field.key]}
                                 onChange={(event) => setFilters((previous) => ({ ...previous, [field.key]: event.target.value }))}
                                 placeholder={field.label}
-                                className="h-7 w-full rounded-full border border-lime-600 bg-white pl-8 pr-3 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
+                                className="h-6 w-full rounded-full border border-lime-600 bg-white pl-8 pr-3 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
                             />
                         </div>
                     ))}
+                </div>
+
+                <div className="shrink-0">
+                    <button
+                        type="button"
+                        onClick={handleExportExcel}
+                        disabled={exporting || loading || filtersPending || Boolean(numberError) || Boolean(loadError) || !pagination.totalCount}
+                        className={`inline-flex items-center whitespace-nowrap text-xs font-medium transition-colors ${exporting || loading || filtersPending || Boolean(numberError) || Boolean(loadError) || !pagination.totalCount
+                            ? 'text-gray-300 cursor-not-allowed pointer-events-none'
+                            : 'text-slate-500 hover:text-slate-700'
+                            }`}
+                    >
+                        {exporting ? 'Exporterar...' : 'Exportera till Excel'}
+                    </button>
                 </div>
 
                 <div className="ml-auto flex max-w-full flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-600" style={TABLE_FONT_STYLE}>

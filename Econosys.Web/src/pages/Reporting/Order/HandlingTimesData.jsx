@@ -473,7 +473,7 @@ const HandlingTimesData = () => {
                         value={filterInput}
                         onChange={(event) => setFilterInput(event.target.value ?? '')}
                         placeholder="Sok leverantor"
-                        className="h-7 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
+                        className="h-6 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
                     />
                 </div> */}
 
@@ -484,7 +484,7 @@ const HandlingTimesData = () => {
                             setFilters((prev) => ({ ...prev, supplierId: event.target.value }));
                             setPagination((prev) => ({ ...prev, pageNumber: 1 }));
                         }}
-                        className="h-7 w-full rounded-full border border-lime-600 bg-white px-3 text-xs text-gray-700 outline-none transition focus:border-lime-700"
+                        className="h-6 w-full rounded-full border border-lime-600 bg-white px-3 text-xs text-gray-700 outline-none transition focus:border-lime-700"
                     >
                         <option value="">Alla leverantorer</option>
                         {filteredSupplierOptions.map((supplier) => (

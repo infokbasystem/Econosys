@@ -57,6 +57,30 @@ public static class CalculationUpdateMapper
         calculation.EditedBy = editedBy;
     }
 
+    public static void ApplyApprovals(Calculation calculation, UpdateCalculationRequest request, string? approvedBy, DateTime approvedAt)
+    {
+        if (request.ApprovePackaging)
+        {
+            calculation.PackagingApprovedBy = approvedBy;
+            calculation.PackagingApprovedDateTime = approvedAt;
+        }
+        if (request.ApproveFreight)
+        {
+            calculation.FreightApprovedBy = approvedBy;
+            calculation.FreightApprovedDateTime = approvedAt;
+        }
+        if (request.ApproveOtherCosts)
+        {
+            calculation.OtherCostApprovedBy = approvedBy;
+            calculation.OtherCostApprovedDateTime = approvedAt;
+        }
+        if (request.ApproveStorage)
+        {
+            calculation.StorageApprovedBy = approvedBy;
+            calculation.StorageApprovedDateTime = approvedAt;
+        }
+    }
+
     public static void ApplyRow(
         CalculationRow row,
         UpdateCalculationRowRequest request,

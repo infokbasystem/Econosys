@@ -52,7 +52,9 @@ namespace Econosys.Api.Services
             }
 
             return await items
-                .OrderBy(x => x.PalletFormat.Name)
+                .OrderBy(x => x.PalletFormat.PalletType != null ? x.PalletFormat.PalletType.SortNr : 0)
+                .ThenBy(x => x.PalletFormat.SortNr)
+                .ThenBy(x => x.PalletFormat.Name)
                 .Select(x => new PalletFormatDto
                 {
                     Id = x.PalletFormat.Id,
@@ -60,7 +62,9 @@ namespace Econosys.Api.Services
                     M2 = x.PalletFormat.M2,
                     SupplierPrice = x.SupplierPrice,
                     CustomerPrice = x.CustomerPrice,
-                    Active = x.PalletFormat.Active,
+                    Active = x.PalletFormat.Active
+                        && x.PalletFormat.PalletType != null
+                        && x.PalletFormat.PalletType.IsActive,
                     OldDbId = x.PalletFormat.OldDbId,
                     Width = x.PalletFormat.Width,
                     Height = x.PalletFormat.Height,

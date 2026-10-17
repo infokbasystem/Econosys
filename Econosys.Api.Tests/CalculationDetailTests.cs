@@ -151,6 +151,48 @@ public class CalculationDetailTests
         Assert.Equal(new DateTime(2025, 2, 1), calculation.FreightApprovedDateTime);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(8)]
+    [InlineData(15)]
+    public void ApprovalFlagsStampOnlyRequestedSectionsAndRoundTripInDetails(int flags)
+    {
+        var previousTime = new DateTime(2025, 2, 1);
+        var approvedAt = new DateTime(2026, 10, 16, 12, 30, 0);
+        var calculation = new Calculation
+        {
+            PackagingApprovedBy = "Previous",
+            PackagingApprovedDateTime = previousTime,
+            FreightApprovedBy = "Previous",
+            FreightApprovedDateTime = previousTime,
+            OtherCostApprovedBy = "Previous",
+            OtherCostApprovedDateTime = previousTime,
+            StorageApprovedBy = "Previous",
+            StorageApprovedDateTime = previousTime,
+        };
+        CalculationUpdateMapper.ApplyApprovals(calculation, new UpdateCalculationRequest
+        {
+            ApprovePackaging = (flags & 1) != 0,
+            ApproveFreight = (flags & 2) != 0,
+            ApproveOtherCosts = (flags & 4) != 0,
+            ApproveStorage = (flags & 8) != 0,
+        }, "Current user", approvedAt);
+
+        var approvals = CalculationDetailMapper.Map(calculation, new Dictionary<int, string?>()).Approvals;
+        var components = new[] { "packaging", "freight", "other", "storage" };
+        for (var index = 0; index < components.Length; index++)
+        {
+            var changed = (flags & (1 << index)) != 0;
+            var approval = Assert.Single(approvals, item => item.Component == components[index]);
+            Assert.Equal(changed ? "Current user" : "Previous", approval.ApprovedBy);
+            Assert.Equal(changed ? approvedAt : previousTime, approval.ApprovedAt!.Value.DateTime);
+        }
+    }
+
     [Fact]
     public void CalculationRowUpdateRecalculatesSalesPriceWhenLocked()
     {

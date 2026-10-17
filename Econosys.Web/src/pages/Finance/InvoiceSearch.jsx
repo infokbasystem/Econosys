@@ -360,10 +360,10 @@ const InvoiceSearch = () => {
                         handleFilterChange({ startDate, endDate });
                     }}
                     triggerRadius="full"
-                    triggerClassName="h-7 w-[260px] border-lime-600 px-3 text-xs text-gray-700 focus:border-lime-700"
+                    triggerClassName="h-6 border-lime-600 px-3 text-xs text-gray-700 focus:border-lime-700"
                     openTriggerClassName="border-lime-700 ring-1 ring-lime-200"
                     closedTriggerClassName="border-lime-600 hover:border-lime-700"
-                    widthClassName="w-60"
+                    widthClassName="w-55"
 
                 />
 
@@ -374,7 +374,7 @@ const InvoiceSearch = () => {
                         value={filters.invoiceNumber}
                         onChange={(event) => handleFilterChange({ invoiceNumber: String(event.target.value ?? '') })}
                         placeholder="Sök fakturanr"
-                        className="h-7 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
+                        className="h-6 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
                     />
                 </div>
 
@@ -385,7 +385,7 @@ const InvoiceSearch = () => {
                         value={filters.customerName}
                         onChange={(event) => handleFilterChange({ customerName: event.target.value ?? '' })}
                         placeholder="Sök kundnamn"
-                        className="h-7 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
+                        className="h-6 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
                     />
                 </div>
 

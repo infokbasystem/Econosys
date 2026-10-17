@@ -268,16 +268,7 @@ public class CalculationsController(
         }
 
         CalculationUpdateMapper.Apply(calculation, request, legacyUser.Id, SwedishTime.Now);
-        if (request.ApproveOtherCosts)
-        {
-            calculation.OtherCostApprovedBy = legacyUser.Name;
-            calculation.OtherCostApprovedDateTime = SwedishTime.Now;
-        }
-        if (request.ApproveStorage)
-        {
-            calculation.StorageApprovedBy = legacyUser.Name;
-            calculation.StorageApprovedDateTime = SwedishTime.Now;
-        }
+        CalculationUpdateMapper.ApplyApprovals(calculation, request, legacyUser.Name, SwedishTime.Now);
 
         if (request.Rows is not null)
         {

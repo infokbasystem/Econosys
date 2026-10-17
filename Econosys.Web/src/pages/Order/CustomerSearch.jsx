@@ -169,7 +169,7 @@ const CustomerSearch = () => {
                         value={searchInput}
                         onChange={(event) => setSearchInput(event.target.value)}
                         placeholder="Sok kund"
-                        className="h-7 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
+                        className="h-6 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
                     />
                 </div>
 
@@ -269,7 +269,15 @@ const CustomerSearch = () => {
                                             {row.id}
                                         </button>
                                     </td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{row.name}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">
+                                        <button
+                                            type="button"
+                                            onClick={(event) => handleOpenCustomer(event, row.id)}
+                                            className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
+                                        >
+                                            {row.name}
+                                        </button>
+                                    </td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.orgNr}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.email}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.active ? 'Ja' : 'Nej'}</td>

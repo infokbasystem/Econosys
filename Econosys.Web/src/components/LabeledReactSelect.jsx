@@ -76,8 +76,8 @@ const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, va
     const customStyles = {
         control: (provided, state) => ({
             ...provided,
-            minHeight: filterStyle ? 28 : 25,
-            height: isMultiSelect ? 'auto' : filterStyle ? 28 : 25,
+            minHeight: filterStyle ? 26 : 24,
+            height: isMultiSelect ? 'auto' : filterStyle ? 26 : 24,
             borderColor: filterStyle ? (state.isFocused ? '#65a30d' : '#65a30d') : '#ccc',
             borderRadius: filterStyle ? 9999 : provided.borderRadius,
             boxShadow: state.isFocused ? 'none' : 'none',

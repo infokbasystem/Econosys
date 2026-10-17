@@ -860,7 +860,7 @@ const Customer = () => {
                                 />
                             </div>
                             {/* <LabeledInput label="Besoksadr." value={customer?.visitingAddress || ''} onChange={(value) => handleChange('visitingAddress', value)} labelWidth="w-20" margintop="1" /> */}
-                            <div className="flex items-center pb-[1px] text-xs">
+                            <div className="flex items-center text-xs">
                                 <label className="w-20 flex-none text-xs text-gray-700">Land</label>
                                 <div className="w-24">
                                     <LabeledReactSelect
@@ -876,7 +876,7 @@ const Customer = () => {
                                     type="text"
                                     value={customer?.country || ''}
                                     onChange={(event) => handleChange('country', event.target.value)}
-                                    className="ml-1 flex-1 rounded-sm border border-gray-300 bg-white px-2 py-1 text-xs focus:outline-none"
+                                    className="h-6 ml-1 flex-1 rounded-sm border border-gray-300 bg-white px-2 text-xs focus:outline-none"
                                 />
                             </div>
                             <LabeledInput label="Referens" value={customer?.reference || ''} onChange={(value) => handleChange('reference', value)} labelWidth="w-20" margintop="2" />

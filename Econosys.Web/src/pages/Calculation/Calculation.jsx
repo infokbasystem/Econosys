@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link, useBlocker, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Check, ChevronDown, ExternalLink, Info as InfoIcon, Minus, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ExternalLink, FilePlus2, Info as InfoIcon, Minus, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Save, Send, ShoppingCart, Trash2 } from 'lucide-react';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
@@ -19,6 +19,9 @@ import SegmentedFilter from '../../components/SegmentedFilter';
 import apiClient from '../../config/apiClient';
 import { formatDateTime } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
+import { calculatePackagesPerPallet, updateAutomaticLoadingInstruction } from './calculationPackaging';
+import { applyApprovalRows, calculatePackagingCost, getApprovalText, getFreightForApproval, updateAndApproveAllSections } from './calculationApprovals';
+import { changeFreightMode, getAutomaticFreightGeometry, getFreightMode, parseFreightFactors } from './calculationFreight';
 
 const EMPTY_ROWS = [];
 const INFO_PANEL_WIDE_QUERY = '(min-width: 96rem)';
@@ -61,18 +64,18 @@ const FREIGHT_COLUMNS = [
     { field: 'freightPerUnit', label: 'Tot /enhet', width: '80px' },
 ];
 const FREIGHT_LOOKUP_FIELDS = new Set(['nrOfPallets', 'nrOfVehicles', 'customerDeliveryAddressId']);
-const FREIGHT_RECALC_FIELDS = new Set(['editionPerPallet', 'autoFreightCalc', 'palletIsStackable']);
+const FREIGHT_RECALC_FIELDS = new Set(['editionPerPallet', 'autoFreightCalc', 'palletIsStackable', 'palletLength', 'palletWidth']);
 const COST_COLUMNS = [
-    { field: 'edition', label: 'Upplaga', width: '80px' },
-    { field: 'costId', label: 'Kostnad', width: '150px' },
-    { field: 'nrOf', label: 'Ant', width: '56px' },
-    { field: 'inPrice', label: 'Inpris', width: '150px' },
-    { field: 'doDebit', label: 'Deb', width: '44px' },
-    { field: 'outPrice', label: 'Utpris', width: '130px' },
-    { field: 'price', label: 'Kost SEK', width: '90px' },
-    { field: 'pricePerUnit', label: 'SEK/enh', width: '90px' },
-    { field: 'totalPricePerUnit', label: 'Tot SEK/enh', width: '90px' },
-    { field: 'costTypeText', label: 'Kommentar', width: '190px' },
+    { field: 'edition', label: 'Upplaga', width: '80px', align: 'right' },
+    { field: 'costId', label: 'Kostnad', width: '150px', align: 'left' },
+    { field: 'nrOf', label: 'Ant', width: '56px', align: 'center' },
+    { field: 'inPrice', label: 'Inpris', width: '150px', align: 'left' },
+    { field: 'doDebit', label: 'Deb', width: '44px', align: 'center' },
+    { field: 'outPrice', label: 'Utpris', width: '130px', align: 'right' },
+    { field: 'price', label: 'Kost SEK', width: '90px', align: 'right' },
+    { field: 'pricePerUnit', label: 'SEK/enh', width: '90px', align: 'right' },
+    { field: 'totalPricePerUnit', label: 'Tot SEK/enh', width: '90px', align: 'right' },
+    { field: 'costTypeText', label: 'Kommentar', width: '190px', align: 'left' },
 ];
 const STORAGE_COLUMNS = [
     { field: 'edition', label: 'Upplaga', precision: 0, width: '80px' },
@@ -110,6 +113,8 @@ const createCalculationDraft = (data) => ({
     deletedRowIds: [],
     approveOtherCosts: false,
     approveStorage: false,
+    approvePackaging: false,
+    approveFreight: false,
     rows: [
         ...(data.rows ?? []).map((row) => {
             const clientKey = `row-${row.id}`;
@@ -307,6 +312,7 @@ const toNumber = (value) => {
 };
 
 const isAutomaticFreightCalc = (calculation) => Boolean(calculation.autoFreightCalc)
+    && !calculation.deactivateFreightCalculation
     && toNumber(calculation.palletsPerTruck) > 0;
 
 const getPalletPlaces = (row, calculation) => {
@@ -339,6 +345,7 @@ const deriveNrOfPallets = (row, calculation) => {
 
 // Mirrors CalculationPricingService.CalculateFreight on the server.
 const recalculateFreightRow = (row, calculation, unitMultiplier) => {
+    if (calculation.deactivateFreightCalculation) return row;
     const isAutomatic = isAutomaticFreightCalc(calculation);
     const pallets = toNumber(row.nrOfPallets);
     const nrOfVehicles = isAutomatic
@@ -589,16 +596,6 @@ const numberText = (value, decimals) => {
         });
 };
 
-const calculatePackagesPerPallet = (editionPerPallet, unitsPerPackage) => {
-    const palletQuantity = Number(editionPerPallet);
-    const packageQuantity = Number(unitsPerPackage);
-    if (!palletQuantity || !packageQuantity) return { count: null, uneven: false };
-    return {
-        count: Math.floor(palletQuantity / packageQuantity),
-        uneven: palletQuantity % packageQuantity !== 0,
-    };
-};
-
 const SavedField = ({ label, value, numeric = false, integerOnly = false, editing = false, onChange, maxLength }) => (
     <LabeledInput
         label={label}
@@ -695,7 +692,7 @@ const FreightHeaderField = ({ label, value, onChange, integerOnly = false, disab
     </div>
 );
 
-const CalculationSection = ({ title, children, initiallyOpen = false, className = '' }) => {
+const CalculationSection = ({ title, children, initiallyOpen = false, className = '', onApprove, approvalText, actionDisabled = false, actionPending = false }) => {
     const [isOpen, setIsOpen] = useState(initiallyOpen);
     const contentId = useId();
 
@@ -703,20 +700,40 @@ const CalculationSection = ({ title, children, initiallyOpen = false, className 
         <section className={`min-w-0 mt-5 ${isOpen
             ? 'rounded-sm border border-gray-200 bg-lime-50 px-5 pt-2 pb-1 shadow-sm'
             : 'px-5 pt-2 pb-1'} ${className}`}>
-            <button
-                type="button"
-                className="mb-4 inline-flex w-fit items-center gap-1 text-xs font-semibold uppercase text-sky-700 decoration-sky-300 underline-offset-2 hover:text-sky-800 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700"
-                aria-expanded={isOpen}
-                aria-controls={contentId}
-                onClick={() => setIsOpen((open) => !open)}
-            >
-                <ChevronDown
-                    size={16}
-                    aria-hidden="true"
-                    className={`shrink-0 transition-transform ${isOpen ? 'rotate-0' : 'rotate-270'}`}
-                />
-                {title}
-            </button>
+            <div className={`mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 ${isOpen ? 'justify-between' : ''}`}>
+                <div className="flex items-center gap-2 w-150">
+                    <button
+                        type="button"
+                        className="inline-flex w-fit items-center gap-1 text-xs font-semibold uppercase text-sky-700 decoration-sky-300 underline-offset-2 hover:text-sky-800 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700"
+                        aria-expanded={isOpen}
+                        aria-controls={contentId}
+                        onClick={() => setIsOpen((open) => !open)}
+                    >
+                        <ChevronDown
+                            size={16}
+                            aria-hidden="true"
+                            className={`shrink-0 transition-transform ${isOpen ? 'rotate-0' : 'rotate-270'}`}
+                        />
+                        {title}
+                    </button>
+                </div>
+                <div className="flex items-center gap-2">
+                    {onApprove ? (
+                        <button
+                            type="button"
+                            onClick={onApprove}
+                            disabled={actionDisabled}
+                            aria-label={`Uppdatera och godkänn ${title}`}
+                            aria-busy={actionPending}
+                            className="inline-flex items-center gap-1 text-xs font-medium text-sky-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-700 disabled:cursor-not-allowed disabled:text-gray-400"
+                        >
+                            <RefreshCw size={14} aria-hidden="true" className={actionPending ? 'animate-spin' : ''} />
+                            Uppdatera och godkänn
+                        </button>
+                    ) : null}
+                    {approvalText ? <span role="status" className="text-xs text-gray-600">{approvalText}</span> : null}
+                </div>
+            </div>
             <div
                 id={contentId}
                 className={`grid transition-[grid-template-rows,opacity] duration-300 ease-in-out ${isOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
@@ -781,9 +798,8 @@ const FreightRowsTable = ({
     onAdjustEdition,
 }) => {
     const salesDecimals = calculation.salesDecimals ?? 0;
-    const isDeactivated = Boolean(calculation.deactivateFreightCalculation);
-    const isAutoCalc = Boolean(calculation.autoFreightCalc);
-    const isAutoPrice = Boolean(calculation.autoFreightPrice);
+    const { active, automaticCalculation: isAutoCalc, automaticPrices: isAutoPrice } = getFreightMode(calculation);
+    const isDeactivated = !active;
     const canAdjustEdition = toNumber(calculation.editionPerPallet) > 0;
     const labelOf = (field) => FREIGHT_COLUMNS.find((column) => column.field === field)?.label ?? field;
 
@@ -798,7 +814,7 @@ const FreightRowsTable = ({
                         <th scope="col" style={{ width: '56px' }} className="px-2 py-1 font-normal"></th>
                     </tr>
                 </thead>
-                <tbody className="bg-white">
+                <tbody className="">
                     {rows.length === 0 ? (
                         <tr>
                             <td colSpan={FREIGHT_COLUMNS.length + 1} className="px-2 py-4 text-center text-gray-400">
@@ -837,20 +853,22 @@ const FreightRowsTable = ({
                                 enabled: !isLocked && !isDeactivated && !isAutoCalc,
                             }),
                             customerDeliveryAddressId: (
-                                <LabeledSelect
-                                    label=""
-                                    labelWidth="w-0"
-                                    margintop="0"
-                                    value={row.customerDeliveryAddressId ?? ''}
-                                    items={addressItems}
-                                    onChange={(value) => onRowChange(
-                                        row.clientKey,
-                                        'customerDeliveryAddressId',
-                                        value === '' ? null : Number(value),
-                                    )}
-                                    disabled={isLocked || isDeactivated || !isAutoPrice}
-                                    aria-label={`${labelOf('customerDeliveryAddressId')}, ${rowLabel}`}
-                                />
+                                <div className={`${isLocked || isDeactivated || !isAutoPrice ? 'bg-gray-100' : 'bg-white'}`}>
+                                    <LabeledSelect
+                                        label=""
+                                        labelWidth="w-0"
+                                        margintop="0"
+                                        value={row.customerDeliveryAddressId ?? ''}
+                                        items={addressItems}
+                                        onChange={(value) => onRowChange(
+                                            row.clientKey,
+                                            'customerDeliveryAddressId',
+                                            value === '' ? null : Number(value),
+                                        )}
+                                        disabled={isLocked || isDeactivated || !isAutoPrice}
+                                        aria-label={`${labelOf('customerDeliveryAddressId')}, ${rowLabel}`}
+                                    />
+                                </div>
                             ),
                             freightDomesticPerPallet: numberCell('freightDomesticPerPallet', {
                                 decimals: salesDecimals,
@@ -926,83 +944,83 @@ const StorageRowsTable = ({ rows, calculation, unitMultiplier, decimals, onRowCh
     const storageRows = rows.filter((row) => !row.isDraft);
 
     return (
-    <div
-        className="min-w-0 overflow-x-auto"
-        role="region"
-        aria-label="Lagringskostnader"
-        tabIndex={0}
-        onKeyDown={(event) => {
-            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-            const currentInput = event.target.closest('[data-storage-field]');
-            if (!currentInput) return;
-            const field = currentInput.dataset.storageField;
-            const inputs = Array.from(event.currentTarget.querySelectorAll(`[data-storage-field="${field}"]`));
-            const currentIndex = inputs.indexOf(currentInput);
-            const nextIndex = currentIndex + (event.key === 'ArrowDown' ? 1 : -1);
-            if (nextIndex < 0 || nextIndex >= inputs.length) return;
-            event.preventDefault();
-            inputs[nextIndex].focus();
-            inputs[nextIndex].select();
-        }}
-    >
-        <table className="w-full min-w-max border-collapse text-xs tabular-nums" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
-            <thead>
-                <tr className="border-b border-gray-300 text-gray-500 text-tiny uppercase">
-                    {STORAGE_COLUMNS.map(({ field, label, width }) => (
-                        <th key={field} scope="col" style={{ width }} className="px-2 py-1 font-normal text-right">{label}</th>
-                    ))}
-                </tr>
-            </thead>
-            <tbody className="bg-white">
-                {storageRows.length === 0 ? (
-                    <tr>
-                        <td colSpan={STORAGE_COLUMNS.length} className="px-2 py-4 text-center text-gray-400">
-                            Inga kalkylrader.
-                        </td>
+        <div
+            className="min-w-0 overflow-x-auto"
+            role="region"
+            aria-label="Lagringskostnader"
+            tabIndex={0}
+            onKeyDown={(event) => {
+                if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+                const currentInput = event.target.closest('[data-storage-field]');
+                if (!currentInput) return;
+                const field = currentInput.dataset.storageField;
+                const inputs = Array.from(event.currentTarget.querySelectorAll(`[data-storage-field="${field}"]`));
+                const currentIndex = inputs.indexOf(currentInput);
+                const nextIndex = currentIndex + (event.key === 'ArrowDown' ? 1 : -1);
+                if (nextIndex < 0 || nextIndex >= inputs.length) return;
+                event.preventDefault();
+                inputs[nextIndex].focus();
+                inputs[nextIndex].select();
+            }}
+        >
+            <table className="w-full min-w-max border-collapse text-xs tabular-nums" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                <thead>
+                    <tr className="border-b border-gray-300 text-gray-500 text-tiny uppercase">
+                        {STORAGE_COLUMNS.map(({ field, label, width }) => (
+                            <th key={field} scope="col" style={{ width }} className="px-2 py-1 font-normal text-right">{label}</th>
+                        ))}
                     </tr>
-                ) : storageRows.map((row) => {
-                    const derived = calculateStorageRow(row, calculation, unitMultiplier, decimals);
-                    const values = {
-                        edition: numberText(row.edition, 0),
-                        storageNrOfPallets: null,
-                        storageMonths: null,
-                        storageUnloading: numberText(derived.unloading, decimals),
-                        storageAmount: numberText(derived.storage, decimals),
-                        storageInterest: numberText(derived.interest, decimals),
-                        storageFreight: numberText(derived.freight, decimals),
-                        storageTotal: numberText(derived.total, decimals),
-                        storageTotalPerUnit: numberText(derived.perUnit, decimals),
-                    };
-
-                    return (
-                        <tr key={row.clientKey} className="h-6 border-b border-gray-100 text-gray-800">
-                            {STORAGE_COLUMNS.map(({ field, width }) => (
-                                <td key={field} style={{ width }} className="relative h-5 px-0 text-right">
-                                    {field === 'storageNrOfPallets' || field === 'storageMonths' ? (
-                                        <div className={`absolute inset-0 border border-transparent ${row.archived ? 'bg-gray-100' : 'bg-white focus-within:border-blue-400'}`}>
-                                            <NumberInput
-                                                rowId={row.clientKey}
-                                                field={field}
-                                                value={row[field] ?? ''}
-                                                decimals={field === 'storageMonths' ? 1 : 0}
-                                                disabled={row.archived}
-                                                onChange={onRowChange}
-                                                data-storage-field={field}
-                                                className="h-full w-full border-0 px-2 text-right text-xs focus:outline-none"
-                                                aria-label={`${field === 'storageNrOfPallets' ? 'Ant pall' : 'Antal månader'}, upplaga ${row.edition}`}
-                                            />
-                                        </div>
-                                    ) : (
-                                        <div className="absolute inset-0 bg-gray-100 px-2 py-1 text-right text-gray-700">{values[field]}</div>
-                                    )}
-                                </td>
-                            ))}
+                </thead>
+                <tbody className="bg-white">
+                    {storageRows.length === 0 ? (
+                        <tr>
+                            <td colSpan={STORAGE_COLUMNS.length} className="px-2 py-4 text-center text-gray-400">
+                                Inga kalkylrader.
+                            </td>
                         </tr>
-                    );
-                })}
-            </tbody>
-        </table>
-    </div>
+                    ) : storageRows.map((row) => {
+                        const derived = calculateStorageRow(row, calculation, unitMultiplier, decimals);
+                        const values = {
+                            edition: numberText(row.edition, 0),
+                            storageNrOfPallets: null,
+                            storageMonths: null,
+                            storageUnloading: numberText(derived.unloading, decimals),
+                            storageAmount: numberText(derived.storage, decimals),
+                            storageInterest: numberText(derived.interest, decimals),
+                            storageFreight: numberText(derived.freight, decimals),
+                            storageTotal: numberText(derived.total, decimals),
+                            storageTotalPerUnit: numberText(derived.perUnit, decimals),
+                        };
+
+                        return (
+                            <tr key={row.clientKey} className="h-6 border-b border-gray-100 text-gray-800">
+                                {STORAGE_COLUMNS.map(({ field, width }) => (
+                                    <td key={field} style={{ width }} className="relative h-5 px-0 text-right">
+                                        {field === 'storageNrOfPallets' || field === 'storageMonths' ? (
+                                            <div className={`absolute inset-0 border border-transparent ${row.archived ? 'bg-gray-100' : 'bg-white focus-within:border-blue-400'}`}>
+                                                <NumberInput
+                                                    rowId={row.clientKey}
+                                                    field={field}
+                                                    value={row[field] ?? ''}
+                                                    decimals={field === 'storageMonths' ? 1 : 0}
+                                                    disabled={row.archived}
+                                                    onChange={onRowChange}
+                                                    data-storage-field={field}
+                                                    className="h-full w-full border-0 px-2 text-right text-xs focus:outline-none"
+                                                    aria-label={`${field === 'storageNrOfPallets' ? 'Ant pall' : 'Antal månader'}, upplaga ${row.edition}`}
+                                                />
+                                            </div>
+                                        ) : (
+                                            <div className="absolute inset-0 bg-gray-100 px-2 py-1 text-right text-gray-700">{values[field]}</div>
+                                        )}
+                                    </td>
+                                ))}
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
     );
 };
 
@@ -1048,8 +1066,8 @@ const CalculationCostsTable = ({
             <table className="w-full min-w-max border-collapse text-xs tabular-nums" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                 <thead>
                     <tr className="border-b border-gray-300 text-gray-500 text-tiny uppercase">
-                        {COST_COLUMNS.map(({ field, label, width }) => (
-                            <th key={field} scope="col" style={{ width }} className="px-2 py-1 font-normal text-right">{label}</th>
+                        {COST_COLUMNS.map(({ field, label, width, align }) => (
+                            <th key={field} scope="col" style={{ width, textAlign: align }} className="px-2 py-1 font-normal">{label}</th>
                         ))}
                         <th scope="col" style={{ width: '56px' }} className="px-2 py-1 font-normal"></th>
                     </tr>
@@ -1100,7 +1118,7 @@ const CalculationCostsTable = ({
                                 ),
                                 inPrice: (
                                     <div className="absolute inset-0 flex">
-                                        <div className="relative w-16 shrink-0">
+                                        <div className="relative w-20 shrink-0">
                                             <CostNumberCell
                                                 cost={cost}
                                                 field="inPrice"
@@ -1124,7 +1142,7 @@ const CalculationCostsTable = ({
                                     </div>
                                 ),
                                 doDebit: (
-                                    <div className="flex h-full items-center justify-center">
+                                    <div className="flex h-full items-center bg-gray-100" style={{ justifyContent: 'var(--cost-justify)' }}>
                                         <SelectCircleCheckbox
                                             checked={cost.doDebit}
                                             disabled={!isRowEnabled}
@@ -1134,8 +1152,8 @@ const CalculationCostsTable = ({
                                     </div>
                                 ),
                                 outPrice: (
-                                    <div className="absolute inset-0 flex items-center justify-end gap-1">
-                                        <span className="w-8 text-right text-gray-600">{cost.nrOf == null ? '' : numberText(cost.nrOf, 0)}</span>
+                                    <div className="absolute inset-0 flex items-center gap-1 bg-gray-100" style={{ justifyContent: 'var(--cost-justify)' }}>
+                                        <span className="w-8 text-gray-600">{cost.nrOf == null ? '' : numberText(cost.nrOf, 0)}</span>
                                         <span className="text-gray-500">*</span>
                                         <div className="relative h-full w-16">
                                             <CostNumberCell
@@ -1180,8 +1198,16 @@ const CalculationCostsTable = ({
 
                             return (
                                 <tr key={cost.clientKey} className="h-6 border-b border-gray-100 text-gray-800">
-                                    {COST_COLUMNS.map(({ field, width }) => (
-                                        <td key={field} style={{ width }} className="relative h-5 px-0 text-right">
+                                    {COST_COLUMNS.map(({ field, width, align }) => (
+                                        <td
+                                            key={field}
+                                            style={{
+                                                width,
+                                                textAlign: align,
+                                                '--cost-justify': align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center',
+                                            }}
+                                            className="relative h-5 px-0 [&_input]:[text-align:inherit] [&_select]:[text-align:inherit]"
+                                        >
                                             {cells[field]}
                                         </td>
                                     ))}
@@ -1462,6 +1488,12 @@ const CalculationPage = ({ id }) => {
     const [draft, setDraft] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isRefreshingFreight, setIsRefreshingFreight] = useState(false);
+    const [isLoadingFreightFactors, setIsLoadingFreightFactors] = useState(false);
+    const freightFactorsRef = useRef(null);
+    const [freightFactorError, setFreightFactorError] = useState('');
+    const [sectionAction, setSectionAction] = useState(null);
+    const sectionActionRef = useRef(false);
+    const currentDraftRef = useRef(null);
     const [pendingFreightRefreshKeys, setPendingFreightRefreshKeys] = useState(null);
     const [costOptions, setCostOptions] = useState([]);
     const [costPrices, setCostPrices] = useState([]);
@@ -1474,6 +1506,7 @@ const CalculationPage = ({ id }) => {
     const isSavingRef = useRef(false);
     const freightRefreshSequenceRef = useRef(0);
     const pendingAutoFreightRefreshRef = useRef(false);
+    const manualFreightDestinationRef = useRef(false);
     const rowDraftSequenceRef = useRef(0);
     const costSequenceRef = useRef(0);
     const messagesRef = useRef([]);
@@ -1490,6 +1523,7 @@ const CalculationPage = ({ id }) => {
     const historyError = historyResult?.key === historyKey ? historyResult.error : '';
     const baselineDraft = data ? createCalculationDraft(data) : null;
     const formDraft = draft ?? baselineDraft;
+    currentDraftRef.current = formDraft;
     const bundlesPerPallet = calculatePackagesPerPallet(formDraft?.editionPerPallet, formDraft?.nrOfPerBundle);
     const outerPackagesPerPallet = calculatePackagesPerPallet(formDraft?.editionPerPallet, formDraft?.nrOfPerOuterPackaging);
     const selectedSupplierId = formDraft?.supplier?.id ?? null;
@@ -1586,7 +1620,9 @@ const CalculationPage = ({ id }) => {
         ...currencyWarnings,
         ...messages,
     ];
-    const packagingApproval = data?.approvals?.find((approval) => approval.component === 'packaging');
+    const approvalTextFor = (component, flag) => getApprovalText(
+        data?.approvals?.find((approval) => approval.component === component), formDraft?.[flag],
+    );
     const palletPriceInSek = Number(formDraft?.palletPriceIn ?? 0) * Number(formDraft?.purchaseCurrencyRate ?? 0);
     const palletPriceOutSek = Number(formDraft?.palletPriceOut ?? 0) * Number(formDraft?.salesCurrencyRate ?? 0);
     const palletDebitDifference = palletPriceOutSek - palletPriceInSek;
@@ -1661,12 +1697,30 @@ const CalculationPage = ({ id }) => {
                 pagination: { pageNumber: 1, pageSize: 500 },
                 orderBy: [{ field: 'id', direction: 'asc' }],
             })),
-            getSharedRequest('calculations:palletformat-options', () => apiClient.get('/palletformats/search')),
-        ]).then(([unitsResponse, currenciesResponse, palletFormatsResponse]) => {
+        ]).then(([unitsResponse, currenciesResponse]) => {
             if (!active) return;
             setUnitOptions(unitsResponse?.data?.items ?? []);
             setCurrencyOptions(currenciesResponse?.data?.items ?? []);
+        }).catch((optionsError) => {
+            console.error('Failed to load calculation options:', optionsError);
+        });
+        return () => {
+            active = false;
+        };
+    }, []);
 
+    useEffect(() => {
+        setPalletFormatOptions([]);
+        if (!selectedCustomerId || !selectedSupplierId) return undefined;
+
+        let active = true;
+        getSharedRequest(
+            `calculations:palletformat-options:${selectedCustomerId}:${selectedSupplierId}`,
+            () => apiClient.get('/palletformats/searchwithprices', {
+                params: { customerId: selectedCustomerId, supplierId: selectedSupplierId },
+            }),
+        ).then((palletFormatsResponse) => {
+            if (!active) return;
             const mappedPalletFormats = (Array.isArray(palletFormatsResponse?.data) ? palletFormatsResponse.data : [])
                 .map((item) => ({
                     ...item,
@@ -1682,12 +1736,14 @@ const CalculationPage = ({ id }) => {
 
             setPalletFormatOptions([{ id: '', name: 'Välj packning' }, ...mappedPalletFormats]);
         }).catch((optionsError) => {
-            console.error('Failed to load calculation options:', optionsError);
+            if (!active) return;
+            console.error('Failed to load calculation pallet formats:', optionsError);
+            appendMessage('error', 'Kunde inte hämta pall/packning för vald kund och leverantör.');
         });
         return () => {
             active = false;
         };
-    }, []);
+    }, [appendMessage, selectedCustomerId, selectedSupplierId]);
 
     useEffect(() => {
         if (!selectedSupplierId) {
@@ -1778,16 +1834,16 @@ const CalculationPage = ({ id }) => {
     }, [selectedCustomerId]);
 
     useEffect(() => {
-        if (!formDraft?.autoFreightPrice || formDraft.supplierFactoryId != null) return;
+        if (formDraft?.deactivateFreightCalculation || !formDraft?.autoFreightPrice || formDraft.supplierFactoryId != null) return;
         const defaultFactory = supplierFactoryOptions.find((factory) => factory.isDefault);
         if (!defaultFactory) return;
         setDraft((previous) => previous?.autoFreightPrice && previous.supplierFactoryId == null
             ? { ...previous, supplierFactoryId: defaultFactory.id }
             : previous);
-    }, [formDraft?.autoFreightPrice, formDraft?.supplierFactoryId, supplierFactoryOptions]);
+    }, [formDraft?.autoFreightPrice, formDraft?.deactivateFreightCalculation, formDraft?.supplierFactoryId, supplierFactoryOptions]);
 
     useEffect(() => {
-        if (!formDraft?.autoFreightPrice || formDraft.customerDeliveryAddressId != null) return;
+        if (manualFreightDestinationRef.current || formDraft?.deactivateFreightCalculation || !formDraft?.autoFreightPrice || formDraft.customerDeliveryAddressId != null) return;
         const defaultAddress = customerDeliveryAddressOptions.find((address) => address.isDefault);
         if (!defaultAddress) return;
         const postalValue = defaultAddress.postalNrValue ?? defaultAddress.postalNr;
@@ -1802,7 +1858,7 @@ const CalculationPage = ({ id }) => {
                 deliveryAddressPostalNr: Number.isFinite(parsedPostalValue) ? parsedPostalValue : null,
             }
             : previous);
-    }, [customerDeliveryAddressOptions, formDraft?.autoFreightPrice, formDraft?.customerDeliveryAddressId]);
+    }, [customerDeliveryAddressOptions, formDraft?.autoFreightPrice, formDraft?.deactivateFreightCalculation, formDraft?.customerDeliveryAddressId]);
 
     const handlePalletFormatChange = (value) => {
         const palletFormatId = value === '' ? null : Number(value);
@@ -1811,12 +1867,12 @@ const CalculationPage = ({ id }) => {
             if (!previous) return previous;
 
             if (palletFormatId == null) {
-                return {
+                return updateAutomaticLoadingInstruction(previous, {
                     ...previous,
                     palletFormatId: null,
                     palletLength: null,
                     palletWidth: null,
-                };
+                });
             }
 
             const selectedPalletFormat = (Array.isArray(palletFormatOptions) ? palletFormatOptions : [])
@@ -1839,7 +1895,7 @@ const CalculationPage = ({ id }) => {
                 if (Number.isFinite(outPrice)) next.palletPriceOut = outPrice;
             }
 
-            return next;
+            return updateAutomaticLoadingInstruction(previous, next);
         });
     };
 
@@ -1867,9 +1923,28 @@ const CalculationPage = ({ id }) => {
         else navigate('/order/calculations');
     };
 
+    const openCalculationDocument = (path) => {
+        const documentUrl = new URL(path, window.location.origin);
+        documentUrl.searchParams.set('calculationId', String(data.id));
+        window.open(documentUrl.toString(), '_blank', 'noopener,noreferrer');
+    };
+
     const getUnitMultiplier = (unitId) => unitOptions.find((unit) => Number(unit.id) === Number(unitId))?.multiplicator
         ?? data?.unitMultiplier
         ?? 1;
+
+    const recalculateDraftFreight = (row, calculation, unitMultiplier) => {
+        if (row.archived || row.isDraft) return row;
+        const { automaticCalculation } = getFreightMode(calculation);
+        const length = Math.max(Number(calculation.palletLength), Number(calculation.palletWidth));
+        const width = Math.min(Number(calculation.palletLength), Number(calculation.palletWidth));
+        const cached = freightFactorsRef.current;
+        if (automaticCalculation && cached?.key === `${length}:${width}`) {
+            const geometry = getAutomaticFreightGeometry(row, calculation, cached.values);
+            return recalculateFreightRow({ ...row, ...geometry }, { ...calculation, palletsPerTruck: geometry.palletsPerTruck }, unitMultiplier);
+        }
+        return recalculateFreightRow(row, calculation, unitMultiplier);
+    };
 
     const queueFreightRefresh = (clientKeys) => {
         if (!formDraft?.autoFreightPrice || formDraft.deactivateFreightCalculation) return;
@@ -1877,18 +1952,23 @@ const CalculationPage = ({ id }) => {
     };
 
     const updateDraft = (field, value) => {
+        if (field === 'deliveryAddressCountryCode' || field === 'deliveryAddressPostalNr') {
+            manualFreightDestinationRef.current = true;
+            queueFreightRefresh((formDraft?.rows ?? []).filter((row) => !row.archived && !row.isDraft).map((row) => row.clientKey));
+        }
         if (FREIGHT_RECALC_FIELDS.has(field)) {
             queueFreightRefresh((formDraft?.rows ?? []).filter((row) => !row.archived).map((row) => row.clientKey));
         }
         setDraft((previous) => {
             if (!previous) return previous;
             const next = { ...previous, [field]: value };
+            if (field === 'deliveryAddressCountryCode' || field === 'deliveryAddressPostalNr') next.customerDeliveryAddressId = null;
             if (FREIGHT_RECALC_FIELDS.has(field)) {
                 const freightUnitMultiplier = getUnitMultiplier(next.unitId);
                 next.rows = (next.rows ?? []).map((row) => (
                     row.archived
                         ? row
-                        : recalculateFreightRow(deriveNrOfPallets(row, next), next, freightUnitMultiplier)
+                        : recalculateDraftFreight(deriveNrOfPallets(row, next), next, freightUnitMultiplier)
                 ));
             }
             if (field === 'purchaseCurrencyRate' || field === 'salesCurrencyRate') {
@@ -1913,39 +1993,89 @@ const CalculationPage = ({ id }) => {
                     row.archived ? row : recalculateSalesRow(row, next, unitMultiplier)
                 ));
             }
-            return next;
+            return updateAutomaticLoadingInstruction(previous, next);
         });
     };
 
     const updateField = (field) => (value) => updateDraft(field, value);
 
-    const handleAutoFreightPriceChange = (enabled) => {
-        pendingAutoFreightRefreshRef.current = enabled;
+    const handleFreightModeChange = (field) => (enabled) => {
+        if (field !== 'deactivateFreightCalculation' && formDraft?.deactivateFreightCalculation) return;
+        clearMessages();
+        ++freightRefreshSequenceRef.current;
+        setIsRefreshingFreight(false);
+        setPendingFreightRefreshKeys(null);
+        pendingAutoFreightRefreshRef.current = field === 'autoFreightPrice' ? enabled
+            : field === 'autoFreightCalc' && Boolean(formDraft?.autoFreightPrice);
+        if (field === 'autoFreightPrice' && enabled) manualFreightDestinationRef.current = false;
         setDraft((previous) => {
             if (!previous) return previous;
-            if (enabled) {
-                return {
-                    ...previous,
-                    autoFreightPrice: true,
-                    freightPerPallet: null,
-                    freightPerVehicle: null,
-                };
-            }
-            return {
-                ...previous,
-                autoFreightPrice: false,
-                supplierFactoryId: null,
-                customerDeliveryAddressId: null,
-                deliveryAddressCountryCode: '',
-                deliveryAddressPostalNr: null,
-                rows: previous.rows.map((row) => row.archived
-                    ? row
-                    : { ...row, preCalcAdditionPercent: 0 }),
-            };
+            const next = changeFreightMode(previous, field, enabled);
+            const multiplier = getUnitMultiplier(next.unitId);
+            next.rows = next.rows.map((row) => row.archived || row.isDraft ? row
+                : next.deactivateFreightCalculation
+                    ? recalculateSalesRow(row, next, multiplier)
+                    : recalculateDraftFreight(field === 'autoFreightCalc' ? deriveNrOfPallets(row, next) : row, next, multiplier));
+            return next;
         });
     };
 
+    useEffect(() => {
+        if (!formDraft?.autoFreightCalc || formDraft.deactivateFreightCalculation) {
+            setIsLoadingFreightFactors(false);
+            setFreightFactorError('');
+            return undefined;
+        }
+        const length = Math.max(Number(formDraft.palletLength), Number(formDraft.palletWidth));
+        const width = Math.min(Number(formDraft.palletLength), Number(formDraft.palletWidth));
+        let active = true;
+        setIsLoadingFreightFactors(true);
+        setFreightFactorError('');
+        const key = `${length}:${width}`;
+        const load = async () => {
+            try {
+                if (length < 1200 || length > 13600 || width < 800 || width > 2430) {
+                    throw new Error('Pallens mått saknar stöd för automatisk fraktberäkning.');
+                }
+                const response = await getSharedRequest(`calculation:pallet-factors:${key}`, () => apiClient.post('/palletfactors/search', {
+                    lengthFrom: length, lengthTo: length, widthFrom: width, widthTo: width,
+                    pageNumber: 1, pageSize: 100,
+                }));
+                const values = parseFreightFactors(response.data.items, length, width);
+                if (!active) return;
+                freightFactorsRef.current = { key, values };
+                setDraft((previous) => {
+                    if (!previous || !previous.autoFreightCalc || previous.deactivateFreightCalculation) return previous;
+                    const capacity = values[34] * (previous.palletIsStackable ? 2 : 1);
+                    const next = { ...previous, palletsPerTruck: capacity };
+                    const multiplier = unitOptions.find((unit) => Number(unit.id) === Number(next.unitId))?.multiplicator
+                        ?? data?.unitMultiplier ?? 1;
+                    next.rows = previous.rows.map((row) => row.archived || row.isDraft ? row : recalculateFreightRow({
+                        ...row, ...getAutomaticFreightGeometry(row, next, values),
+                    }, next, multiplier));
+                    return next;
+                });
+                if (formDraft.autoFreightPrice) pendingAutoFreightRefreshRef.current = true;
+            } catch (factorError) {
+                if (!active) return;
+                console.error('Failed to calculate freight pallet factors:', factorError);
+                freightFactorsRef.current = null;
+                setFreightFactorError(factorError.message);
+                setDraft((previous) => previous ? {
+                    ...previous, palletsPerTruck: null,
+                    rows: previous.rows.map((row) => row.archived || row.isDraft ? row : { ...row, palletCalcFactor: null }),
+                } : previous);
+            } finally {
+                if (active) setIsLoadingFreightFactors(false);
+            }
+        };
+        void load();
+        return () => { active = false; };
+    }, [formDraft?.autoFreightCalc, formDraft?.deactivateFreightCalculation, formDraft?.palletLength,
+        formDraft?.palletWidth, formDraft?.palletIsStackable, formDraft?.autoFreightPrice, unitOptions, data?.unitMultiplier]);
+
     const handleCalculationCustomerSelect = (customer) => {
+        manualFreightDestinationRef.current = false;
         setDraft((previous) => {
             if (!previous) return previous;
             const nextCustomer = customer ? { id: customer.id, name: customer.name ?? '' } : null;
@@ -1975,9 +2105,11 @@ const CalculationPage = ({ id }) => {
 
     const handleSupplierFactoryChange = (value) => {
         updateDraft('supplierFactoryId', value === '' ? null : Number(value));
+        queueFreightRefresh((formDraft?.rows ?? []).filter((row) => !row.archived && !row.isDraft).map((row) => row.clientKey));
     };
 
     const handleDeliveryAddressChange = (value) => {
+        manualFreightDestinationRef.current = false;
         const selectedAddress = customerDeliveryAddressOptions.find((address) => String(address.id) === String(value));
         const postalValue = selectedAddress?.postalNrValue ?? selectedAddress?.postalNr;
         const parsedPostalValue = postalValue == null || postalValue === ''
@@ -1990,6 +2122,7 @@ const CalculationPage = ({ id }) => {
             deliveryAddressCountryCode: selectedAddress?.countryCode ?? '',
             deliveryAddressPostalNr: Number.isFinite(parsedPostalValue) ? parsedPostalValue : null,
         } : previous);
+        queueFreightRefresh((formDraft?.rows ?? []).filter((row) => !row.archived && !row.isDraft).map((row) => row.clientKey));
     };
 
     const supplierFactoryItems = [
@@ -2028,19 +2161,6 @@ const CalculationPage = ({ id }) => {
     const otherCostWarning = formDraft
         ? getOtherCostWarnings(formDraft.rows, otherCostUnitMultiplier, costContext)
         : '';
-    const otherCostApproval = data?.approvals?.find((approval) => approval.component === 'other');
-    const otherCostApprovalText = formDraft?.approveOtherCosts
-        ? 'Godkänns när kalkylen sparas'
-        : otherCostApproval?.approvedAt
-            ? `Godkänd ${formatDateTime(otherCostApproval.approvedAt)}${otherCostApproval.approvedBy ? ` av ${otherCostApproval.approvedBy}` : ''}`
-            : 'Ännu ej godkänd';
-    const storageApproval = data?.approvals?.find((approval) => approval.component === 'storage');
-    const storageApprovalText = formDraft?.approveStorage
-        ? 'Godkänns när kalkylen sparas'
-        : storageApproval?.approvedAt
-            ? `Godkänd ${formatDateTime(storageApproval.approvedAt)}${storageApproval.approvedBy ? ` av ${storageApproval.approvedBy}` : ''}`
-            : 'Ännu ej godkänd';
-
     const handleCalculationRowChange = (clientKey, field, value) => {
         const unitMultiplier = unitOptions.find((unit) => unit.id === formDraft?.unitId)?.multiplicator
             ?? data?.unitMultiplier
@@ -2062,7 +2182,7 @@ const CalculationPage = ({ id }) => {
                     ? { ...updatedRow, costs: createInitialCosts(updatedRow, previous, unitMultiplier, costContext) }
                     : updatedRow;
                 return field === 'edition'
-                    ? recalculateFreightRow(deriveNrOfPallets(costedRow, previous), previous, unitMultiplier)
+                    ? recalculateDraftFreight(deriveNrOfPallets(costedRow, previous), previous, unitMultiplier)
                     : costedRow;
             });
 
@@ -2085,7 +2205,7 @@ const CalculationPage = ({ id }) => {
             if (!previous) return previous;
             const nextRows = previous.rows.map((row) => (
                 row.clientKey === clientKey && !row.archived
-                    ? recalculateFreightRow({ ...row, [field]: value }, previous, unitMultiplier)
+                    ? recalculateDraftFreight({ ...row, [field]: value }, previous, unitMultiplier)
                     : row
             ));
             return { ...previous, rows: nextRows };
@@ -2108,7 +2228,7 @@ const CalculationPage = ({ id }) => {
             next.rows = previous.rows.map((row) => (
                 row.archived
                     ? row
-                    : recalculateFreightRow({ ...row, [rowField]: value }, next, unitMultiplier)
+                    : recalculateDraftFreight({ ...row, [rowField]: value }, next, unitMultiplier)
             ));
             return next;
         });
@@ -2125,32 +2245,6 @@ const CalculationPage = ({ id }) => {
                         : row
                 )),
             };
-        });
-    };
-
-    const handleApproveStorage = async () => {
-        let currentInterest = null;
-        try {
-            const response = await apiClient.get('/calculationvariables');
-            currentInterest = response?.data?.interest ?? null;
-        } catch (settingsError) {
-            if (settingsError.response?.status !== 404) {
-                console.error('Failed to refresh calculation interest:', settingsError);
-            }
-        }
-
-        setDraft((previous) => {
-            if (!previous) return previous;
-            const next = currentInterest == null ? previous : { ...previous, interest: currentInterest };
-            const selectedUnit = unitOptions.find((unit) => Number(unit.id) === Number(next.unitId));
-            const unitMultiplier = Number(selectedUnit?.multiplicator) > 0 ? Number(selectedUnit.multiplicator) : 1;
-            const unitDecimals = selectedUnit?.nrOfCalcDecimals ?? 0;
-            const nextRows = next.rows.map((row) => {
-                if (row.archived || row.isDraft) return row;
-                const { perUnit } = calculateStorageRow(row, next, unitMultiplier, unitDecimals);
-                return recalculateSalesRow({ ...row, storage: perUnit }, next, unitMultiplier);
-            });
-            return { ...next, rows: nextRows, approveStorage: true };
         });
     };
 
@@ -2200,28 +2294,6 @@ const CalculationPage = ({ id }) => {
                     ? [createCostItem(costKey)]
                     : row.costs.filter((cost) => cost.clientKey !== costKey),
             };
-        });
-    };
-
-    const handleUpdateOtherCosts = () => {
-        const unitMultiplier = getUnitMultiplier(formDraft?.unitId);
-        updateCostRows((row, calculation) => refreshOtherCosts(row, calculation, unitMultiplier, costContext));
-    };
-
-    const handleApproveOtherCosts = () => {
-        const unitMultiplier = getUnitMultiplier(formDraft?.unitId);
-        setDraft((previous) => {
-            if (!previous) return previous;
-            const nextRows = previous.rows.map((row) => {
-                if (row.archived || row.isDraft) return row;
-                const other = row.costs.reduce((sum, cost) => {
-                    const option = costOptions.find((item) => Number(item.id) === Number(cost.costId));
-                    const { pricePerUnit } = calculateCostRow(cost, row, previous, unitMultiplier, option, currencyOptions);
-                    return sum + toNumber(pricePerUnit);
-                }, 0);
-                return recalculateSalesRow({ ...row, other }, previous, unitMultiplier);
-            });
-            return { ...previous, rows: nextRows, approveOtherCosts: true };
         });
     };
 
@@ -2281,9 +2353,11 @@ const CalculationPage = ({ id }) => {
         return refreshCurrencyRate(kind, currencyId);
     };
 
-    const handleRefreshFreightPrices = useCallback(async ({ rowKeys, silent = false } = {}) => {
-        if (!formDraft || isRefreshingFreight || !formDraft.autoFreightPrice) return;
+    const handleRefreshFreightPrices = useCallback(async ({ rowKeys, silent = false, forApproval = false, calculation = formDraft } = {}) => {
+        if (!calculation || isRefreshingFreight || isLoadingFreightFactors || calculation.deactivateFreightCalculation || !calculation.autoFreightPrice
+            || (sectionActionRef.current && !forApproval)) return;
 
+        const formDraft = calculation;
         const sequence = ++freightRefreshSequenceRef.current;
         const unitMultiplier = unitOptions.find((unit) => Number(unit.id) === Number(formDraft.unitId))?.multiplicator
             ?? data?.unitMultiplier
@@ -2324,9 +2398,19 @@ const CalculationPage = ({ id }) => {
             if (sequence !== freightRefreshSequenceRef.current) return;
             const refreshedRows = Array.isArray(response?.data?.rows) ? response.data.rows : [];
             const resultByKey = new Map(refreshedRows.map((row) => [row.clientKey, row]));
-            setDraft((previous) => {
+            if (forApproval) {
+                if ((response?.data?.warnings ?? []).length > 0) {
+                    throw new Error(response.data.warnings.join(' '));
+                }
+                if (formDraft.rows.some((row) => !row.archived && !row.isDraft
+                    && Number(resultByKey.get(row.clientKey)?.edition) !== Number(row.edition))) {
+                    throw new Error('Fraktpriser saknas för en eller flera kalkylrader.');
+                }
+            }
+            const applyRefresh = (previous) => {
                 if (!previous) return previous;
                 const nextRows = previous.rows.map((row) => {
+                    if (row.archived || row.isDraft) return row;
                     const refreshed = resultByKey.get(row.clientKey);
                     if (!refreshed || Number(row.edition) !== Number(refreshed.edition)) return row;
                     const refreshedPrices = {
@@ -2344,7 +2428,7 @@ const CalculationPage = ({ id }) => {
                     return recalculateSalesRow({
                         ...row,
                         ...refreshedPrices,
-                        freight: refreshed.freightPerUnit,
+                        freight: forApproval ? getFreightForApproval(refreshed, previous) : refreshed.freightPerUnit,
                         nrOfPallets: refreshed.nrOfPallets,
                         nrOfVehicles: refreshed.nrOfVehicles,
                         freightTotal: refreshed.freightTotal,
@@ -2353,8 +2437,10 @@ const CalculationPage = ({ id }) => {
                         calcFtlPriceUsed: refreshed.calcFtlPriceUsed,
                     }, previous, unitMultiplier);
                 });
-                return { ...previous, rows: nextRows };
-            });
+                return { ...previous, rows: nextRows, ...(forApproval ? { approveFreight: true } : {}) };
+            };
+            if (forApproval) return applyRefresh(formDraft);
+            setDraft(applyRefresh);
 
             for (const warning of response?.data?.warnings ?? []) {
                 appendMessage('warning', warning);
@@ -2363,34 +2449,182 @@ const CalculationPage = ({ id }) => {
                 appendMessage('info', 'Fraktpriserna uppdaterades.');
             }
         } catch (refreshError) {
+            if (forApproval) throw refreshError;
             console.error('Failed to refresh calculation freight prices:', refreshError);
             appendMessage('error', refreshError.response?.data?.message ?? 'Fraktpriserna kunde inte uppdateras.');
         } finally {
             if (sequence === freightRefreshSequenceRef.current) setIsRefreshingFreight(false);
         }
-    }, [appendMessage, clearMessages, data?.unitMultiplier, formDraft, id, isRefreshingFreight, unitOptions]);
+    }, [appendMessage, clearMessages, data?.unitMultiplier, formDraft, id, isRefreshingFreight, isLoadingFreightFactors, unitOptions]);
+
+    const handleSectionApproval = async (component) => {
+        if (!formDraft || sectionActionRef.current || isSavingRef.current || isRefreshingFreight || isLoadingFreightFactors || hasPendingPartySelection) return;
+        const snapshot = formDraft;
+        const selectedUnit = unitOptions.find((unit) => Number(unit.id) === Number(snapshot.unitId));
+        const unitMultiplier = Number(selectedUnit?.multiplicator ?? data?.unitMultiplier);
+        sectionActionRef.current = true;
+        setSectionAction(component);
+        setPendingFreightRefreshKeys(null);
+        pendingAutoFreightRefreshRef.current = false;
+        clearMessages();
+        try {
+            if (!(unitMultiplier > 0) || !(Number(snapshot.salesCurrencyRate) > 0)) {
+                throw new Error('Enhet och försäljningskurs måste vara giltiga innan kostnaderna kan godkännas.');
+            }
+            const warnings = [];
+            const updateSection = async (component, snapshot) => {
+                let next;
+                if (component === 'packaging') {
+                    if (!snapshot.customer?.id || !snapshot.supplier?.id || !snapshot.palletFormatId) {
+                        throw new Error('Välj kund, leverantör och pall/packning först.');
+                    }
+                    const response = await apiClient.get('/palletformats/searchwithprices', {
+                        params: { customerId: snapshot.customer.id, supplierId: snapshot.supplier.id },
+                    });
+                    const format = response.data.find((item) => Number(item.id) === Number(snapshot.palletFormatId));
+                    if (!format) throw new Error('Pall/packning saknar koppling till vald kund och leverantör.');
+                    const updated = {
+                        ...snapshot,
+                        palletPriceIn: format.supplierPrice,
+                        palletPriceOut: snapshot.doDebitPalletPrice ? format.customerPrice : 0,
+                    };
+                    if (snapshot.doDebitPalletPrice && Number(format.customerPrice ?? 0) === 0) {
+                        updated.doDebitPalletPrice = false;
+                        warnings.push('Pallpriset är 0 i registret.');
+                    }
+                    if (currentDraftRef.current === formDraft) {
+                        setPalletFormatOptions([{ id: '', name: 'Välj packning' }, ...response.data.map((item) => ({
+                            ...item, isActive: item.active,
+                        }))]);
+                    }
+                    next = applyApprovalRows(updated, 'approvePackaging', (row) => {
+                        const packagingCost = calculatePackagingCost(row, updated, unitMultiplier);
+                        if (Number(updated.editionPerPallet) > 0
+                            && Math.ceil(Number(row.nrOfPallets)) !== Math.ceil(Number(row.edition) / Number(updated.editionPerPallet))) {
+                            warnings.push(`Antalet pall för upplaga ${row.edition} stämmer inte med antal/pall.`);
+                        }
+                        return recalculateSalesRow({ ...row, packagingCost }, updated, unitMultiplier);
+                    });
+                } else if (component === 'freight') {
+                    if (snapshot.autoFreightCalc && !snapshot.deactivateFreightCalculation && freightFactorError) {
+                        throw new Error(freightFactorError);
+                    }
+                    if (snapshot.autoFreightPrice && !snapshot.deactivateFreightCalculation) {
+                        next = await handleRefreshFreightPrices({ forApproval: true, calculation: snapshot });
+                    } else {
+                        next = applyApprovalRows(snapshot, 'approveFreight', (row) => {
+                            const refreshed = recalculateDraftFreight(row, snapshot, unitMultiplier);
+                            return recalculateSalesRow({
+                                ...refreshed,
+                                freight: getFreightForApproval(refreshed, snapshot),
+                            }, snapshot, unitMultiplier);
+                        });
+                    }
+                } else if (component === 'other') {
+                    const [optionsResponse, pricesResponse] = await Promise.all([
+                        apiClient.post('/costs/search', {}),
+                        apiClient.get('/calculations/cost-prices', {
+                            params: { customerId: snapshot.customer?.id, supplierId: snapshot.supplier?.id },
+                        }),
+                    ]);
+                    const options = optionsResponse.data;
+                    const prices = pricesResponse.data;
+                    const context = {
+                        ...costContext,
+                        costOptions: options,
+                        customerPrices: prices.filter((price) => price.customerId != null),
+                        supplierPrices: prices.filter((price) => price.supplierId != null),
+                    };
+                    next = applyApprovalRows(snapshot, 'approveOtherCosts', (row) => {
+                        const updated = refreshOtherCosts(row, snapshot, unitMultiplier, context);
+                        const other = updated.costs.reduce((sum, cost) => {
+                            const option = options.find((item) => Number(item.id) === Number(cost.costId));
+                            if (cost.costId != null && !option) {
+                                throw new Error('En vald kostnad saknas i registret.');
+                            }
+                            const { pricePerUnit } = calculateCostRow(cost, updated, snapshot, unitMultiplier, option, currencyOptions);
+                            return sum + toNumber(pricePerUnit);
+                        }, 0);
+                        return recalculateSalesRow({ ...updated, other }, snapshot, unitMultiplier);
+                    });
+                    if (currentDraftRef.current === formDraft) {
+                        setCostOptions(options);
+                        setCostPrices(prices);
+                    }
+                } else if (component === 'storage') {
+                    const response = await apiClient.get('/calculationvariables');
+                    const interest = response.data?.interest;
+                    if (interest == null || !Number.isFinite(Number(interest)) || Number(interest) < 0) {
+                        throw new Error('Kalkylränta saknas eller är ogiltig i registret.');
+                    }
+                    const updated = { ...snapshot, interest };
+                    next = applyApprovalRows(updated, 'approveStorage', (row) => {
+                        const { perUnit } = calculateStorageRow(row, updated, unitMultiplier, selectedUnit?.nrOfCalcDecimals ?? 0);
+                        return recalculateSalesRow({ ...row, storage: perUnit }, updated, unitMultiplier);
+                    });
+                }
+                if (currentDraftRef.current !== formDraft) {
+                    throw new Error('Kalkylen ändrades under uppdateringen. Uppdatera och godkänn igen.');
+                }
+                if (!next) throw new Error('Kostnaderna kunde inte uppdateras och godkännas.');
+                return next;
+            };
+            const next = component === 'all'
+                ? await updateAndApproveAllSections(snapshot, updateSection)
+                : await updateSection(component, snapshot);
+            if (currentDraftRef.current !== snapshot) {
+                throw new Error('Kalkylen ändrades under uppdateringen. Uppdatera och godkänn igen.');
+            }
+            if (!next) throw new Error('Kostnaderna kunde inte uppdateras och godkännas.');
+            setDraft((previous) => previous === snapshot ? next : previous);
+            warnings.forEach((warning) => appendMessage('warning', warning));
+        } catch (approvalError) {
+            console.error('Failed to update and approve calculation section:', approvalError);
+            appendMessage('error', approvalError.response?.data?.message ?? approvalError.message ?? 'Kunde inte uppdatera och godkänna.');
+        } finally {
+            sectionActionRef.current = false;
+            setSectionAction(null);
+        }
+    };
+
+    const sectionApprovalProps = (component, flag) => ({
+        onApprove: () => handleSectionApproval(component),
+        approvalText: approvalTextFor(component, flag),
+        actionDisabled: Boolean(sectionAction) || isSaving || isRefreshingFreight || isLoadingFreightFactors || hasPendingPartySelection,
+        actionPending: sectionAction === component || sectionAction === 'all',
+    });
 
     useEffect(() => {
-        if (!pendingAutoFreightRefreshRef.current || !formDraft?.autoFreightPrice) return;
-        if (formDraft.supplierFactoryId == null || formDraft.customerDeliveryAddressId == null) return;
+        if (sectionAction || isSaving || isRefreshingFreight || isLoadingFreightFactors || freightFactorError
+            || formDraft?.deactivateFreightCalculation || !pendingAutoFreightRefreshRef.current || !formDraft?.autoFreightPrice) return;
+        if (formDraft.supplierFactoryId == null
+            || (formDraft.customerDeliveryAddressId == null && (!formDraft.deliveryAddressCountryCode || formDraft.deliveryAddressPostalNr == null))) return;
         pendingAutoFreightRefreshRef.current = false;
-        void handleRefreshFreightPrices();
+        void handleRefreshFreightPrices({ silent: true });
     }, [
         formDraft?.autoFreightPrice,
         formDraft?.customerDeliveryAddressId,
         formDraft?.supplierFactoryId,
+        formDraft?.deliveryAddressCountryCode,
+        formDraft?.deliveryAddressPostalNr,
         handleRefreshFreightPrices,
+        sectionAction,
+        isSaving,
+        isRefreshingFreight,
+        isLoadingFreightFactors,
+        freightFactorError,
+        formDraft?.deactivateFreightCalculation,
     ]);
 
     // handleRefreshFreightPrices changes on every draft edit, so this effect doubles as a debounce.
     useEffect(() => {
-        if (!pendingFreightRefreshKeys || isRefreshingFreight) return undefined;
+        if (!pendingFreightRefreshKeys || isRefreshingFreight || isLoadingFreightFactors || freightFactorError || sectionAction || isSaving) return undefined;
         const timer = window.setTimeout(() => {
             setPendingFreightRefreshKeys(null);
             void handleRefreshFreightPrices({ rowKeys: pendingFreightRefreshKeys, silent: true });
         }, 400);
         return () => window.clearTimeout(timer);
-    }, [handleRefreshFreightPrices, isRefreshingFreight, pendingFreightRefreshKeys]);
+    }, [handleRefreshFreightPrices, isRefreshingFreight, isLoadingFreightFactors, freightFactorError, pendingFreightRefreshKeys, sectionAction, isSaving]);
 
     const headerField = (label, field, numeric = false, integerOnly = false, maxLength) => (
         <SavedField
@@ -2414,7 +2648,7 @@ const CalculationPage = ({ id }) => {
     );
 
     const handleSave = async () => {
-        if (!formDraft || hasPendingPartySelection || isSavingRef.current) return;
+        if (!formDraft || hasPendingPartySelection || isSavingRef.current || sectionActionRef.current || isRefreshingFreight || isLoadingFreightFactors) return;
 
         isSavingRef.current = true;
         setIsSaving(true);
@@ -2535,7 +2769,7 @@ const CalculationPage = ({ id }) => {
                                 )}
                             </section>
                             <div className="border-b border-gray-300" />
-                            {data ? (
+                            {/* {data ? (
                                 <section className="space-y-3" aria-labelledby="calculation-approvals-heading">
                                     <h2 id="calculation-approvals-heading" className="text-center text-sm text-gray-500">
                                         Godkännanden
@@ -2554,7 +2788,7 @@ const CalculationPage = ({ id }) => {
                                         </div>
                                     ))}
                                 </section>
-                            ) : null}
+                            ) : null} */}
                         </div>
                     </aside>
                 </div>
@@ -2588,8 +2822,32 @@ const CalculationPage = ({ id }) => {
                             label="Spara"
                             icon={Save}
                             onClick={handleSave}
-                            disabled={!data || isSaving || hasPendingPartySelection}
+                            disabled={!data || isSaving || Boolean(sectionAction) || isRefreshingFreight || isLoadingFreightFactors || hasPendingPartySelection}
                             accent="lime"
+                        />
+                        <ActionButton
+                            label={sectionAction === 'all' ? 'Uppdaterar och godkänner alla…' : 'Uppdatera och godkänn alla'}
+                            icon={RefreshCw}
+                            onClick={() => handleSectionApproval('all')}
+                            disabled={!data || loading || isSaving || Boolean(sectionAction) || isRefreshingFreight || isLoadingFreightFactors || hasPendingPartySelection}
+                        />
+                        <ActionButton
+                            label="Ny förfrågan"
+                            icon={Send}
+                            onClick={() => openCalculationDocument('/order/inquiries/new')}
+                            disabled={!data || loading || isSaving || Boolean(sectionAction) || hasPendingPartySelection}
+                        />
+                        <ActionButton
+                            label="Nytt affärsförslag"
+                            icon={FilePlus2}
+                            onClick={() => openCalculationDocument('/order/quotations/new')}
+                            disabled={!data || loading || isSaving || Boolean(sectionAction) || hasPendingPartySelection}
+                        />
+                        <ActionButton
+                            label="Ny beställning"
+                            icon={ShoppingCart}
+                            onClick={() => openCalculationDocument('/order/supplierorders/new')}
+                            disabled={!data || loading || isSaving || Boolean(sectionAction) || hasPendingPartySelection}
                         />
                     </div>
                     {loading ? (
@@ -2700,7 +2958,7 @@ const CalculationPage = ({ id }) => {
                                                 onChange={(value) => updateDraft('unitId', value ? Number(value) : null)}
                                                 className="col-start-2 col-span-2 row-start-1"
                                             />
-                                            <span className="hidden text-center text-gray-500 @xl:col-start-4 @xl:row-start-1 @xl:block">Decimaler</span>
+                                            <div className="hidden text-center text-gray-500 @xl:col-start-4 @xl:row-start-1 @xl:block text-center">Decimaler</div>
                                             <label htmlFor="purchase-currency" className="text-gray-500 @xl:col-start-1 @xl:row-start-2">Inköpsvaluta</label>
                                             <CompactSelect
                                                 ariaLabel="Inköpsvaluta"
@@ -2714,6 +2972,7 @@ const CalculationPage = ({ id }) => {
                                                 value={formDraft?.purchaseCurrencyRate}
                                                 onChange={updateField('purchaseCurrencyRate')}
                                                 className="col-start-3 row-start-2"
+                                                inputWidth="w-full"
                                             />
                                             <CompactNumberInput
                                                 ariaLabel="Decimaler inköp"
@@ -2722,6 +2981,7 @@ const CalculationPage = ({ id }) => {
                                                 integerOnly
                                                 centerText
                                                 className="col-start-4 row-start-2 px-2"
+                                                inputWidth="w-full"
                                             />
                                             <button
                                                 type="button"
@@ -2748,6 +3008,7 @@ const CalculationPage = ({ id }) => {
                                                 value={formDraft?.salesCurrencyRate}
                                                 onChange={updateField('salesCurrencyRate')}
                                                 className="col-start-3 row-start-3"
+                                                inputWidth="w-full"
                                             />
                                             <CompactNumberInput
                                                 ariaLabel="Decimaler försäljning"
@@ -2756,6 +3017,7 @@ const CalculationPage = ({ id }) => {
                                                 integerOnly
                                                 centerText
                                                 className="col-start-4 row-start-3 px-2"
+                                                inputWidth="w-full"
                                             />
                                             <button
                                                 type="button"
@@ -2775,6 +3037,7 @@ const CalculationPage = ({ id }) => {
                                                 value={formDraft?.currencyRate}
                                                 onChange={updateField('currencyRate')}
                                                 className="@xl:col-start-3 @xl:row-start-4"
+                                                inputWidth="w-full"
                                             />
                                         </div>
 
@@ -2798,14 +3061,14 @@ const CalculationPage = ({ id }) => {
                                             margintop="0"
                                             maxLength={1000}
                                         /> */}
-                                        <div className='mt-5'>
+                                        {/* <div className='mt-5'>
                                             <SegmentedFilter
                                                 value={rowView}
                                                 onChange={setRowView}
                                                 options={VIEW_OPTIONS}
                                                 theme="sky"
                                             />
-                                        </div>
+                                        </div> */}
                                     </div>
                                 </div>
 
@@ -2823,7 +3086,7 @@ const CalculationPage = ({ id }) => {
                                 </div>
                             </CalculationSection>
 
-                            <CalculationSection title="Packning">
+                            <CalculationSection title="Packning" {...sectionApprovalProps('packaging', 'approvePackaging')}>
                                 <div className="min-w-0 space-y-4 pb-2">
 
                                     <div className="grid min-w-0 gap-12 @4xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(260px,0.75fr)]">
@@ -2838,12 +3101,6 @@ const CalculationPage = ({ id }) => {
                                                 onChange={handlePalletFormatChange}
                                                 name="palletFormatId"
                                             />
-                                            {/* <p className="text-xs text-gray-600 @4xl:justify-self-end">
-                                            {packagingApproval?.approvedAt
-                                                ? `Godkänd ${formatDateTime(packagingApproval.approvedAt)}${packagingApproval.approvedBy ? ` av ${packagingApproval.approvedBy}` : ''}`
-                                                : 'Ännu ej godkänd'}
-                                            </p> */}
-
                                             <div className="min-w-0 w-120 grid grid-cols-[auto_minmax(0,1fr)] items-center mt-2">
                                                 <div className="w-35 text-xs text-gray-700">Yttermått pall LxBxH mm</div>
                                                 <div className="grid min-w-0 grid-cols-3 gap-1">
@@ -2916,8 +3173,9 @@ const CalculationPage = ({ id }) => {
                                                         suffix="ant/bunt"
                                                         inputWidth="w-30"
                                                         suffixPaddingWidth={64}
+                                                        disabled={!Boolean(formDraft?.doBuntas)}
                                                     />
-                                                    <span className="col-span-2 text-xs text-red-600">{bundlesPerPallet.count}</span>
+                                                    <span className="col-span-2 text-xs text-red-600">{bundlesPerPallet.count ? bundlesPerPallet.count + ' bunt/pall' : ''}</span>
                                                 </div>
                                             </div>
                                             {/* <div className="min-w-0 w-120 grid grid-cols-[auto_minmax(0,1fr)] items-center">
@@ -2951,8 +3209,9 @@ const CalculationPage = ({ id }) => {
                                                         suffix="ant/förp."
                                                         inputWidth="w-30"
                                                         suffixPaddingWidth={64}
+                                                        disabled={!Boolean(formDraft?.isYtterforpackning)}
                                                     />
-                                                    <span className="col-span-2 text-xs text-red-600">{outerPackagesPerPallet.count}</span>
+                                                    <span className="col-span-2 text-xs text-red-600">{outerPackagesPerPallet.count ? outerPackagesPerPallet.count + ' ytterförp/pall' : ''}</span>
                                                 </div>
                                             </div>
                                             {/* <div className="min-w-0 w-120 grid grid-cols-[auto_minmax(0,1fr)] items-center">
@@ -2984,16 +3243,17 @@ const CalculationPage = ({ id }) => {
                                                 label=""
                                                 value={formDraft?.loadingInstruction ?? ''}
                                                 onChange={updateField('loadingInstruction')}
-                                                height="h-12"
+                                                height="h-16"
                                                 margintop="1"
                                                 maxLength={255}
+                                                disabled={Boolean(formDraft?.automaticLoadingInstruction)}
                                             />
                                             <LabeledTextArea
                                                 label=""
                                                 labelWidth="w-0"
                                                 value={formDraft?.freightNote ?? ''}
                                                 onChange={updateField('freightNote')}
-                                                height="h-12"
+                                                height="h-10"
                                                 margintop="1"
                                                 maxLength={255}
                                             />
@@ -3052,32 +3312,38 @@ const CalculationPage = ({ id }) => {
                                 </div>
                             </CalculationSection>
 
-                            <CalculationSection title="Fraktberäkning">
+                            <CalculationSection title="Fraktberäkning" {...sectionApprovalProps('freight', 'approveFreight')}>
                                 <div className="min-w-0 space-y-4 pb-2">
-                                <div className="mb-4 flex flex-wrap gap-5">
-                                    {headerFlag('Deaktivera frakt', 'deactivateFreightCalculation')}
-                                    {headerFlag('Automatisk fraktberäkning', 'autoFreightCalc')}
-                                    <SavedFlag
-                                        label="Automatiskt fraktpris"
-                                        checked={formDraft?.autoFreightPrice}
-                                        editing
-                                        onChange={handleAutoFreightPriceChange}
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => handleRefreshFreightPrices()}
-                                        disabled={!formDraft?.autoFreightPrice || formDraft?.deactivateFreightCalculation || isRefreshingFreight}
-                                        className="inline-flex items-center gap-1 text-xs font-medium text-sky-700 hover:underline disabled:cursor-not-allowed disabled:text-gray-400"
-                                    >
-                                        <RefreshCw size={14} aria-hidden="true" className={isRefreshingFreight ? 'animate-spin' : ''} />
-                                        Uppdatera frakt
-                                    </button>
-                                </div>
+                                    <div className="mb-4 flex flex-wrap gap-5">
+                                        <LabeledCheckbox
+                                            label="Deaktivera frakt"
+                                            checked={Boolean(formDraft?.deactivateFreightCalculation)}
+                                            onChange={handleFreightModeChange('deactivateFreightCalculation')}
+                                            disabled={Boolean(sectionAction) || isSaving}
+                                            color="red"
+                                        />
+                                        <LabeledCheckbox
+                                            label="Automatisk fraktberäkning"
+                                            checked={Boolean(formDraft?.autoFreightCalc)}
+                                            onChange={handleFreightModeChange('autoFreightCalc')}
+                                            disabled={Boolean(formDraft?.deactivateFreightCalculation || sectionAction || isSaving)}
+                                            color="red"
+                                        />
+                                        <LabeledCheckbox
+                                            label="Automatiskt fraktpris"
+                                            checked={Boolean(formDraft?.autoFreightPrice)}
+                                            disabled={Boolean(formDraft?.deactivateFreightCalculation || sectionAction || isSaving)}
+                                            onChange={handleFreightModeChange('autoFreightPrice')}
+                                            color="red"
+                                        />
+                                    </div>
+                                    {isLoadingFreightFactors ? <p role="status" className="text-xs text-gray-600">Beräknar pallfaktorer…</p> : null}
+                                    {freightFactorError ? <p role="alert" className="text-xs text-red-600">{freightFactorError}</p> : null}
 
-                                <div className="mb-5 min-w-0 overflow-x-auto pb-1">
-                                    <div className="flex flex-wrap gap-20">
-                                        <div className="w-80">
-                                            <label className="mb-1 block text-xs text-gray-700">Leveransinformation</label>
+                                    <div className="mb-5 min-w-0 pb-1">
+                                        <div className="flex flex-wrap gap-20">
+                                            <div className="w-80">
+                                                <label className="mb-1 block text-xs text-gray-700">Leveransinformation</label>
                                                 <CompactSelect
                                                     ariaLabel="Fabrik för fraktberäkning"
                                                     value={formDraft?.supplierFactoryId ?? ''}
@@ -3114,88 +3380,69 @@ const CalculationPage = ({ id }) => {
                                                         disabled={!formDraft?.autoFreightPrice || formDraft?.deactivateFreightCalculation}
                                                     />
                                                 </div>
-                                        </div>
-                                        <div className="max-w-120 flex flex-wrap gap-2">
-                                            <FreightHeaderField
-                                                label="Kr/ppl"
-                                                value={formDraft?.freightPerPallet}
-                                                onChange={handleFreightDefaultChange('freightPerPallet', 'freightInternationalPerPallet')}
-                                                disabled={Boolean(formDraft?.autoFreightPrice || formDraft?.deactivateFreightCalculation)}
-                                            />
-                                            <FreightHeaderField
-                                                label="Lossn/lev"
-                                                value={formDraft?.loadingPerDelivery}
-                                                onChange={handleFreightDefaultChange('loadingPerDelivery', 'freightUnloading')}
-                                                disabled={Boolean(formDraft?.deactivateFreightCalculation)}
-                                            />
-                                            <FreightHeaderField
-                                                label="Kr/bil"
-                                                value={formDraft?.freightPerVehicle}
-                                                onChange={handleFreightDefaultChange('freightPerVehicle', 'freightPerVehicle')}
-                                                disabled={Boolean(formDraft?.autoFreightPrice || formDraft?.deactivateFreightCalculation)}
-                                            />
-                                            <FreightHeaderField
-                                                label="Pall/bil"
-                                                value={formDraft?.palletsPerTruck}
-                                                integerOnly
-                                                disabled
-                                            />
-                                            <FreightHeaderField
-                                                label="Pallfaktor"
-                                                value={formDraft?.palletCalcFactor}
-                                                onChange={updateField('palletCalcFactor')}
-                                                disabled={Boolean(formDraft?.autoFreightPrice || formDraft?.deactivateFreightCalculation)}
-                                            />
+                                            </div>
+                                            <div className="max-w-120 flex flex-wrap gap-2">
+                                                <FreightHeaderField
+                                                    label="Kr/ppl"
+                                                    value={formDraft?.freightPerPallet}
+                                                    onChange={handleFreightDefaultChange('freightPerPallet', 'freightInternationalPerPallet')}
+                                                    disabled={Boolean(formDraft?.autoFreightPrice || formDraft?.deactivateFreightCalculation)}
+                                                />
+                                                <FreightHeaderField
+                                                    label="Lossn/lev"
+                                                    value={formDraft?.loadingPerDelivery}
+                                                    onChange={handleFreightDefaultChange('loadingPerDelivery', 'freightUnloading')}
+                                                    disabled={Boolean(formDraft?.deactivateFreightCalculation)}
+                                                />
+                                                <FreightHeaderField
+                                                    label="Kr/bil"
+                                                    value={formDraft?.freightPerVehicle}
+                                                    onChange={handleFreightDefaultChange('freightPerVehicle', 'freightPerVehicle')}
+                                                    disabled={Boolean(formDraft?.autoFreightPrice || formDraft?.deactivateFreightCalculation)}
+                                                />
+                                                <FreightHeaderField
+                                                    label="Pall/bil"
+                                                    value={formDraft?.palletsPerTruck}
+                                                    integerOnly
+                                                    disabled
+                                                />
+                                                <FreightHeaderField
+                                                    label="Pallfaktor"
+                                                    value={formDraft?.palletCalcFactor}
+                                                    onChange={handleFreightDefaultChange('palletCalcFactor', 'palletCalcFactor')}
+                                                    disabled={Boolean(formDraft?.autoFreightPrice || formDraft?.deactivateFreightCalculation)}
+                                                />
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                <FreightRowsTable
-                                    rows={rows}
-                                    calculation={formDraft}
-                                    addressItems={rowAddressItems}
-                                    onRowChange={handleFreightRowChange}
-                                    onAdjustEdition={handleAdjustFreightEdition}
-                                />
-                                {rows
-                                    .filter((row) => row.priceListSummary)
-                                    .map((row) => (
-                                        <details key={row.id} className="mt-3 text-xs text-gray-600">
-                                            <summary className="cursor-pointer">
-                                                Prisunderlag · {numberText(row.edition, 0)}
-                                            </summary>
-                                            <pre className="mt-2 whitespace-pre-wrap break-words font-sans">
-                                                {row.priceListSummary}
-                                            </pre>
-                                        </details>
-                                    ))}
+                                    <FreightRowsTable
+                                        rows={rows}
+                                        calculation={formDraft}
+                                        addressItems={rowAddressItems}
+                                        onRowChange={handleFreightRowChange}
+                                        onAdjustEdition={handleAdjustFreightEdition}
+                                    />
+                                    {rows
+                                        .filter((row) => row.priceListSummary)
+                                        .map((row) => (
+                                            <details key={row.id} className="mt-3 text-xs text-gray-600">
+                                                <summary className="cursor-pointer">
+                                                    Prisunderlag · {numberText(row.edition, 0)}
+                                                </summary>
+                                                <pre className="mt-2 whitespace-pre-wrap break-words font-sans">
+                                                    {row.priceListSummary}
+                                                </pre>
+                                            </details>
+                                        ))}
                                 </div>
                             </CalculationSection>
 
-                            <CalculationSection title="Övriga kostnader" className="max-w-300">
+                            <CalculationSection title="Övriga kostnader" className="max-w-300" {...sectionApprovalProps('other', 'approveOtherCosts')}>
                                 <div className="min-w-0 pb-2">
-                                    <div className="mb-4 flex flex-wrap items-center gap-5">
-                                        <button
-                                            type="button"
-                                            onClick={handleUpdateOtherCosts}
-                                            className="inline-flex items-center gap-1 text-xs font-medium text-sky-700 hover:underline"
-                                        >
-                                            <RefreshCw size={14} aria-hidden="true" />
-                                            Uppdatera
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={handleApproveOtherCosts}
-                                            className="inline-flex items-center gap-1 text-xs font-medium text-sky-700 hover:underline"
-                                        >
-                                            <Check size={14} aria-hidden="true" />
-                                            Godkänn
-                                        </button>
-                                        <span className="text-xs text-gray-600">{otherCostApprovalText}</span>
-                                        {otherCostWarning ? (
-                                            <span role="status" className="text-xs text-red-600">{otherCostWarning}</span>
-                                        ) : null}
-                                    </div>
+                                    {otherCostWarning ? (
+                                        <p role="status" className="mb-4 text-xs text-red-600">{otherCostWarning}</p>
+                                    ) : null}
                                     <CalculationCostsTable
                                         rows={rows}
                                         calculation={formDraft}
@@ -3209,49 +3456,38 @@ const CalculationPage = ({ id }) => {
                                 </div>
                             </CalculationSection>
 
-                            <CalculationSection title="Lagringskostnader" className="max-w-300">
+                            <CalculationSection title="Lagringskostnader" className="max-w-300" {...sectionApprovalProps('storage', 'approveStorage')}>
                                 <div className="min-w-0 pb-2">
-                                <div className="mb-4 flex flex-wrap items-center gap-5">
-                                    <button
-                                        type="button"
-                                        onClick={handleApproveStorage}
-                                        className="inline-flex items-center gap-1 text-xs font-medium text-sky-700 hover:underline"
-                                    >
-                                        <Check size={14} aria-hidden="true" />
-                                        Godkänn
-                                    </button>
-                                    <span className="text-xs text-gray-600">{storageApprovalText}</span>
-                                </div>
-                                <div className="mb-5 flex flex-wrap gap-15">
-                                    <div className="min-w-0 w-60">
-                                        {headerField('Lossning/pall', 'loadingPerPallet', true)}
-                                        {headerField('Lagring/pall/mån', 'storagePerM2', true)}
+                                    <div className="mb-5 flex flex-wrap gap-15">
+                                        <div className="min-w-0 w-60">
+                                            {headerField('Lossning/pall', 'loadingPerPallet', true)}
+                                            {headerField('Lagring/pall/mån', 'storagePerM2', true)}
+                                        </div>
+                                        <div className="min-w-0">
+                                            <SavedField label="Årskalkylränta" value={formDraft?.interest} numeric />
+                                            {headerField('Frakt till kund', 'freightFromStockPerPallet', true)}
+                                        </div>
+                                        {/* {headerFlag('Beräkna lagring', 'calcStorage')} */}
                                     </div>
-                                    <div className="min-w-0">
-                                        <SavedField label="Årskalkylränta" value={formDraft?.interest} numeric />
-                                        {headerField('Frakt till kund', 'freightFromStockPerPallet', true)}
-                                    </div>
-                                    {/* {headerFlag('Beräkna lagring', 'calcStorage')} */}
-                                </div>
-                                <StorageRowsTable
-                                    rows={rows}
-                                    calculation={formDraft}
-                                    unitMultiplier={storageUnitMultiplier}
-                                    decimals={storageUnitDecimals}
-                                    onRowChange={handleStorageRowChange}
-                                />
+                                    <StorageRowsTable
+                                        rows={rows}
+                                        calculation={formDraft}
+                                        unitMultiplier={storageUnitMultiplier}
+                                        decimals={storageUnitDecimals}
+                                        onRowChange={handleStorageRowChange}
+                                    />
                                 </div>
                             </CalculationSection>
 
                             <CalculationSection title="Historik" initiallyOpen={true}>
                                 <div className="pb-3">
-                                <CalculationHistoryTable
-                                    rows={historyRows}
-                                    purchaseDecimals={formDraft.purchaseDecimals}
-                                    salesDecimals={formDraft.salesDecimals}
-                                    isLoading={historyLoading}
-                                    error={historyError}
-                                />
+                                    <CalculationHistoryTable
+                                        rows={historyRows}
+                                        purchaseDecimals={formDraft.purchaseDecimals}
+                                        salesDecimals={formDraft.salesDecimals}
+                                        isLoading={historyLoading}
+                                        error={historyError}
+                                    />
                                 </div>
                             </CalculationSection>
                         </>

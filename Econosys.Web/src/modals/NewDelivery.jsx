@@ -781,7 +781,7 @@ const NewDelivery = () => {
               value={orderSearch}
               placeholder="Sök ordernummer"
               autoComplete="off"
-              className="h-7 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
+              className="h-6 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
               id="new-delivery-order-search"
               onChange={(event) => {
                 setOrderSearch(event.target.value)

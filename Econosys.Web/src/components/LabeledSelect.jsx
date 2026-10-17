@@ -19,7 +19,7 @@ const LabeledSelect = ({
           name={name}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="h-6.25 w-full appearance-none rounded-sm border border-gray-300 bg-white px-1 py-1 pr-6 text-xs focus:outline-none disabled:bg-transparent disabled:text-gray-500"
+          className="h-6 w-full appearance-none rounded-sm border border-gray-300 bg-white px-1 py-1 pr-6 text-xs focus:outline-none disabled:bg-transparent disabled:text-gray-500"
           disabled={disabled}
           {...props}
         >

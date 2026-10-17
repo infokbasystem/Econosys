@@ -139,21 +139,23 @@ public sealed class CalculationFreightPriceService(ApplicationDbContext dbContex
             return null;
         }
 
-        var length = request.PalletLength;
-        var width = request.PalletWidth;
-        if (length is not > 0 || width is not > 0)
+        if (request.PalletLength is not > 0 || request.PalletWidth is not > 0)
         {
             return null;
         }
+        var length = Math.Max(request.PalletLength.Value, request.PalletWidth.Value);
+        var width = Math.Min(request.PalletLength.Value, request.PalletWidth.Value);
 
-        var factor = await dbContext.PalletFactors
+        var factors = await dbContext.PalletFactors
             .AsNoTracking()
-            .Where(item => item.LengthFrom <= length && item.LengthTo >= length)
-            .Where(item => item.WidthFrom <= width && item.WidthTo >= width)
+            .Where(item => item.LengthFrom < length && item.LengthTo >= length)
+            .Where(item => item.WidthFrom < width && item.WidthTo >= width)
             .OrderBy(item => item.Id)
             .Select(item => item.PalletFactors)
-            .FirstOrDefaultAsync(cancellationToken);
-        return factor?.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            .Take(2)
+            .ToListAsync(cancellationToken);
+
+        return factors.Count == 1 ? factors[0]?.Split(';', StringSplitOptions.TrimEntries) : null;
     }
 
     private static Task<List<TransportCostPriceList>> LoadPriceLists(

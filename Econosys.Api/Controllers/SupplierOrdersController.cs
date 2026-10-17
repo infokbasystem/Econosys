@@ -1120,11 +1120,20 @@ namespace Econosys.Api.Controllers
         {
             entity.SupplierOrderNr = request.SupplierOrderNr;
             entity.BasedOnSupplierOrderId = request.BasedOnSupplierOrderId;
+            entity.InquiryId = request.InquiryId;
+            entity.QuotationId = request.QuotationId;
+            entity.CalculationId = request.CalculationId;
             entity.SupplierId = request.SupplierId;
             entity.SupplierFactoryId = request.SupplierFactoryId;
             entity.InventoryId = request.InventoryId;
             entity.SupplierName = request.SupplierName;
+            entity.Address = request.Address;
+            entity.Address2 = request.Address2;
+            entity.PostalNr = request.PostalNr;
+            entity.PostalAddress = request.PostalAddress;
+            entity.Country = request.Country;
             entity.CustomerId = request.CustomerId;
+            entity.CustomerDeliveryAddressId = request.CustomerDeliveryAddressId;
             entity.Date = request.Date;
             entity.TimeOfDelivery = request.TimeOfDelivery;
             entity.CustomerOrderNr = request.CustomerOrderNr;
@@ -1139,11 +1148,20 @@ namespace Econosys.Api.Controllers
             entity.TermsOfPayment = request.TermsOfPayment;
             entity.Message = request.Message;
             entity.Product = request.Product;
+            entity.ProductCode = request.ProductCode;
             entity.Material = request.Material;
             entity.Format = request.Format;
             entity.Color = request.Color;
             entity.Construction = request.Construction;
             entity.GoodsMarking = request.GoodsMarking;
+            entity.Preparation = request.Preparation;
+            entity.LoadingInstruction = request.LoadingInstruction;
+            entity.UnitId = request.UnitId;
+            entity.SelectedCalculationRowId = request.SelectedCalculationRowId;
+            entity.Edition = request.Edition;
+            entity.PurchasePrice = request.PurchasePrice;
+            entity.PurchaseCurrencyId = request.PurchaseCurrencyId;
+            entity.PurchaseCurrencyRate = request.PurchaseCurrencyRate;
             entity.HideCustomerInfoOnPrint = request.HideCustomerInfoOnPrint;
             entity.HideCustomerNameOnPrint = request.HideCustomerNameOnPrint;
             entity.HideProductNameOnPrint = request.HideProductNameOnPrint;
@@ -1157,6 +1175,7 @@ namespace Econosys.Api.Controllers
             entity.PackagingType = request.PackagingType;
             entity.PalletFormatId = request.PalletFormatId;
             entity.EurPallet = request.EurPallet;
+            entity.OneWayPallet = request.OneWayPallet;
             entity.OverrideHandlingTimeDays = request.OverrideHandlingTimeDays;
             entity.ForceHandlingTimeCountAs = request.ForceHandlingTimeCountAs;
         }

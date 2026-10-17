@@ -349,7 +349,7 @@ export default function DateRangePicker({
         ].join(" ")}
       >
         <span className="text-gray-500 shrink-0"><CalIcon /></span>
-        <span className={["mt-[2px]", hasCommitted ? "text-gray-800" : "text-gray-700"].join(" ")}>
+        <span className={["mt-[1px]", hasCommitted ? "text-gray-800" : "text-gray-700"].join(" ")}>
           {hasCommitted
             ? `${fmtShort(committed.start)} – ${fmtShort(committed.end)}`
             : placeholder}

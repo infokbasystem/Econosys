@@ -154,12 +154,12 @@ const LabeledDatePicker = ({
                         'flex w-full items-center gap-2 border text-left text-xs focus:outline-none',
                         isFilterTheme
                             ? 'h-7 rounded-full border-lime-600 px-3 text-gray-700 hover:border-lime-700 focus:border-lime-700'
-                            : 'h-6.25 rounded-sm border-gray-300 px-2 pt-0.5 text-gray-700',
+                            : 'h-6 rounded-sm border-gray-300 px-2 pt-0.5 text-gray-700',
                         disabled ? 'bg-transparent text-gray-500' : 'bg-white',
                     ].join(' ')}
                     aria-expanded={isOpen}
                 >
-                    <CalendarDays size={14} className={`shrink-0 text-gray-500 ${isFilterTheme ? '' : 'pb-0.25'}`} />
+                    <CalendarDays size={14} className={`shrink-0 text-gray-500 ${isFilterTheme ? '' : 'pb-0.5'}`} />
                     <span className={`flex-1 truncate ${selectedDate ? 'text-gray-800' : 'text-gray-400'}`}>
                         {selectedDate ? selectedLabel : placeholder}
                     </span>

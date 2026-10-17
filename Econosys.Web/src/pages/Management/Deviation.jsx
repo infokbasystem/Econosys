@@ -23,7 +23,7 @@ import OrderSearchModal from '../../components/OrderSearchModal';
 
 const statusOptions = [
     {
-        label: <span className='text-tiny'>Öppen</span>,
+        label: <span className='text-tiny py-[1px]'>Öppen</span>,
         value: 'OPEN',
         id: 'OPEN',
         index: 0,
@@ -31,7 +31,7 @@ const statusOptions = [
         fontColor: '#374151',
     },
     {
-        label: <span className='text-tiny'>Stängd</span>,
+        label: <span className='text-tiny py-[1px]'>Stängd</span>,
         value: 'CLOSED',
         id: 'CLOSED',
         index: 1,
@@ -760,7 +760,8 @@ const Deviation = () => {
                                             forcedSelectedIndex={deviation.status === 'OPEN' ? 0 : deviation.status === 'CLOSED' ? 1 : null}
                                             onChange={(value) => handleChange('status', value)}
                                             options={statusOptions}
-                                            backgroundColor={"#353b48"} />
+                                            backgroundColor={"#353b48"}
+                                             />
                                     </div>
                                     <LabeledSwitch
                                         field='isInternal'

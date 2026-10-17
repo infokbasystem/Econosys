@@ -155,11 +155,20 @@ namespace Econosys.Api.DTOs
     {
         public string? SupplierOrderNr { get; set; }
         public int? BasedOnSupplierOrderId { get; set; }
+        public int? InquiryId { get; set; }
+        public int? QuotationId { get; set; }
+        public int? CalculationId { get; set; }
         public int? SupplierId { get; set; }
         public int? SupplierFactoryId { get; set; }
         public int? InventoryId { get; set; }
         public string? SupplierName { get; set; }
+        public string? Address { get; set; }
+        public string? Address2 { get; set; }
+        public string? PostalNr { get; set; }
+        public string? PostalAddress { get; set; }
+        public string? Country { get; set; }
         public int? CustomerId { get; set; }
+        public int? CustomerDeliveryAddressId { get; set; }
         public string? CustomerOrderNr { get; set; }
         public string? DeliveryAddressName { get; set; }
         public string? DeliveryAddress { get; set; }
@@ -174,11 +183,20 @@ namespace Econosys.Api.DTOs
         public string? TermsOfPayment { get; set; }
         public string? Message { get; set; }
         public string? Product { get; set; }
+        public string? ProductCode { get; set; }
         public string? Material { get; set; }
         public string? Format { get; set; }
         public string? Color { get; set; }
         public string? Construction { get; set; }
         public string? GoodsMarking { get; set; }
+        public string? Preparation { get; set; }
+        public string? LoadingInstruction { get; set; }
+        public int? UnitId { get; set; }
+        public int? SelectedCalculationRowId { get; set; }
+        public int? Edition { get; set; }
+        public double? PurchasePrice { get; set; }
+        public int? PurchaseCurrencyId { get; set; }
+        public double? PurchaseCurrencyRate { get; set; }
         public bool HideCustomerInfoOnPrint { get; set; }
         public bool HideCustomerNameOnPrint { get; set; }
         public bool HideProductNameOnPrint { get; set; }
@@ -192,6 +210,7 @@ namespace Econosys.Api.DTOs
         public string? PackagingType { get; set; }
         public int? PalletFormatId { get; set; }
         public bool EurPallet { get; set; }
+        public bool OneWayPallet { get; set; }
         public int? ProducedEdition { get; set; }
         public decimal? OverrideHandlingTimeDays { get; set; }
         public string? ForceHandlingTimeCountAs { get; set; }

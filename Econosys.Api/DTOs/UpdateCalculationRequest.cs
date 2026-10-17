@@ -123,6 +123,9 @@ public sealed class UpdateCalculationRequest
     public IReadOnlyList<UpdateCalculationRowRequest>? Rows { get; init; }
     public IReadOnlyList<int>? DeletedRowIds { get; init; }
 
+    public bool ApprovePackaging { get; init; }
+    public bool ApproveFreight { get; init; }
+
     /// <summary>Stamps the other-cost approval with the current user and time.</summary>
     public bool ApproveOtherCosts { get; init; }
 
