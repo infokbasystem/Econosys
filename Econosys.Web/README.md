@@ -10,6 +10,26 @@ A modern React application built with Vite and Tailwind CSS for the Econosys pla
 - 🔐 **Authentication** - Login page with Econopack.Api integration
 - 🔄 **API Client** - Configured axios client with interceptors
 - **Calculation product overview** - Read-only product information, including dimensions, weight, codes and notes, with a link to open the product in a new tab. Format shows available length, width and height separated by ` x `, falling back to the saved format text when no dimensions are present.
+- **Collapsible order navigation** - Every order-tree node with children can be expanded or collapsed independently of its navigation link. Opening a record expands its ancestor path and its own children; other branches start collapsed. Customer orders without children remain leaf links.
+
+## Order history
+
+Saved supplier and customer orders share the `OrderHistory` component below the
+order form. It displays the legacy date/type/status/destination, transport or
+call-off, invoice, quantity, remaining production and stock columns. New drafts
+do not request history. Saving an order reloads history; **Uppdatera historik**
+refreshes it on demand and retries failed requests.
+
+**Visa** opens read-only delivery or stocktaking details. Transport, call-off and
+invoice references navigate to the corresponding records. Stocktaking details
+also link to the full inventory count. Production has no detail action.
+Customer orders without a stock warehouse omit the stock column, as in legacy.
+
+History formatting/navigation checks can be run with:
+
+```bash
+node --test src/helpers/orderHistory.test.js
+```
 
 ## Prerequisites
 

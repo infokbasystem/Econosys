@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { Link, useBlocker, useNavigate, useParams } from 'react-router-dom';
+import { Link, useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ChevronDown, ExternalLink, FilePlus2, Info as InfoIcon, Minus, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Save, Send, ShoppingCart, Trash2 } from 'lucide-react';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
@@ -21,7 +21,7 @@ import { formatDateTime } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import { calculatePackagesPerPallet, updateAutomaticLoadingInstruction } from './calculationPackaging';
 import { applyApprovalRows, calculatePackagingCost, getApprovalText, getFreightForApproval, updateAndApproveAllSections } from './calculationApprovals';
-import { changeFreightMode, getAutomaticFreightGeometry, getFreightMode, parseFreightFactors } from './calculationFreight';
+import { changeFreightMode, getAutomaticFreightGeometry, getFreightEditState, getFreightMode, parseFreightFactors } from './calculationFreight';
 
 const EMPTY_ROWS = [];
 const INFO_PANEL_WIDE_QUERY = '(min-width: 96rem)';
@@ -1474,7 +1474,7 @@ const CalculationHistoryTable = ({ rows, purchaseDecimals, salesDecimals, isLoad
     );
 };
 
-const CalculationPage = ({ id }) => {
+const CalculationPage = ({ id, productId }) => {
     const navigate = useNavigate();
     const [result, setResult] = useState(null);
     const [historyResult, setHistoryResult] = useState(null);
@@ -1512,24 +1512,32 @@ const CalculationPage = ({ id }) => {
     const messagesRef = useRef([]);
     const infoPanelAutoCloseRef = useRef(null);
     const isInfoPanelExpandedRef = useRef(expanded);
+    const skipUnsavedCheckRef = useRef(false);
+    const isNew = id === 'new';
+    const validProductId = /^\d+$/.test(productId ?? '') && Number(productId) > 0 && Number(productId) <= 2147483647;
     const validId = /^\d+$/.test(id ?? '') && Number(id) > 0 && Number(id) <= 2147483647;
-    const requestKey = `calculation:${id}:detail`;
+    const validRequest = validId || (isNew && validProductId);
+    const requestKey = isNew ? `calculation:new:${productId}:detail` : `calculation:${id}:detail`;
     const historyKey = `calculation:${id}:history`;
-    const loading = validId && result?.key !== requestKey;
+    const loading = validRequest && result?.key !== requestKey;
     const data = result?.key === requestKey ? result.data : null;
-    const error = !validId ? 'Ogiltigt kalkylnummer.' : result?.key === requestKey ? result.error : '';
+    const error = !validRequest ? 'Ogiltigt kalkyl- eller produktnummer.' : result?.key === requestKey ? result.error : '';
     const historyLoading = validId && historyResult?.key !== historyKey;
     const historyRows = historyResult?.key === historyKey ? historyResult.rows : EMPTY_ROWS;
     const historyError = historyResult?.key === historyKey ? historyResult.error : '';
     const baselineDraft = data ? createCalculationDraft(data) : null;
     const formDraft = draft ?? baselineDraft;
+    const freightEditState = getFreightEditState(formDraft, data);
     currentDraftRef.current = formDraft;
     const bundlesPerPallet = calculatePackagesPerPallet(formDraft?.editionPerPallet, formDraft?.nrOfPerBundle);
     const outerPackagesPerPallet = calculatePackagesPerPallet(formDraft?.editionPerPallet, formDraft?.nrOfPerOuterPackaging);
     const selectedSupplierId = formDraft?.supplier?.id ?? null;
     const selectedCustomerId = formDraft?.customer?.id ?? null;
     const isDirty = Boolean(draft && baselineDraft && JSON.stringify(draft) !== JSON.stringify(baselineDraft));
-    const hasUnsavedChanges = useCallback(() => isDirty, [isDirty]);
+    const hasUnsavedChanges = useCallback(
+        () => !skipUnsavedCheckRef.current && (isDirty || Boolean(isNew && data)),
+        [isDirty, isNew, data],
+    );
     const blocker = useBlocker(hasUnsavedChanges);
     const allRows = formDraft?.rows ?? EMPTY_ROWS;
     const rows = allRows.filter((row) => rowView === 'all' || row.archived === (rowView === 'archived'));
@@ -1634,9 +1642,11 @@ const CalculationPage = ({ id }) => {
     }, []);
 
     useEffect(() => {
-        if (!validId) return;
+        if (!validRequest) return;
         let active = true;
-        getSharedRequest(requestKey, () => apiClient.get(`/calculations/${id}/aggregate`))
+        getSharedRequest(requestKey, () => apiClient.get(isNew
+            ? `/calculations/from-product/${productId}/draft`
+            : `/calculations/${id}/aggregate`))
             .then((response) => {
                 if (active) {
                     setResult({ key: requestKey, data: response.data, error: '' });
@@ -1660,7 +1670,7 @@ const CalculationPage = ({ id }) => {
         return () => {
             active = false;
         };
-    }, [id, replaceMessages, requestKey, validId]);
+    }, [id, isNew, productId, replaceMessages, requestKey, validRequest]);
 
     useEffect(() => {
         if (!validId) return;
@@ -1834,15 +1844,17 @@ const CalculationPage = ({ id }) => {
     }, [selectedCustomerId]);
 
     useEffect(() => {
+        if (!freightEditState.selectDefaultFactory && !pendingAutoFreightRefreshRef.current) return;
         if (formDraft?.deactivateFreightCalculation || !formDraft?.autoFreightPrice || formDraft.supplierFactoryId != null) return;
         const defaultFactory = supplierFactoryOptions.find((factory) => factory.isDefault);
         if (!defaultFactory) return;
         setDraft((previous) => previous?.autoFreightPrice && previous.supplierFactoryId == null
             ? { ...previous, supplierFactoryId: defaultFactory.id }
             : previous);
-    }, [formDraft?.autoFreightPrice, formDraft?.deactivateFreightCalculation, formDraft?.supplierFactoryId, supplierFactoryOptions]);
+    }, [freightEditState.selectDefaultFactory, formDraft?.autoFreightPrice, formDraft?.deactivateFreightCalculation, formDraft?.supplierFactoryId, supplierFactoryOptions]);
 
     useEffect(() => {
+        if (!freightEditState.selectDefaultAddress && !pendingAutoFreightRefreshRef.current) return;
         if (manualFreightDestinationRef.current || formDraft?.deactivateFreightCalculation || !formDraft?.autoFreightPrice || formDraft.customerDeliveryAddressId != null) return;
         const defaultAddress = customerDeliveryAddressOptions.find((address) => address.isDefault);
         if (!defaultAddress) return;
@@ -1858,7 +1870,7 @@ const CalculationPage = ({ id }) => {
                 deliveryAddressPostalNr: Number.isFinite(parsedPostalValue) ? parsedPostalValue : null,
             }
             : previous);
-    }, [customerDeliveryAddressOptions, formDraft?.autoFreightPrice, formDraft?.deactivateFreightCalculation, formDraft?.customerDeliveryAddressId]);
+    }, [customerDeliveryAddressOptions, freightEditState.selectDefaultAddress, formDraft?.autoFreightPrice, formDraft?.deactivateFreightCalculation, formDraft?.customerDeliveryAddressId]);
 
     const handlePalletFormatChange = (value) => {
         const palletFormatId = value === '' ? null : Number(value);
@@ -2044,6 +2056,7 @@ const CalculationPage = ({ id }) => {
                 const values = parseFreightFactors(response.data.items, length, width);
                 if (!active) return;
                 freightFactorsRef.current = { key, values };
+                if (!freightEditState.recalculateGeometry) return;
                 setDraft((previous) => {
                     if (!previous || !previous.autoFreightCalc || previous.deactivateFreightCalculation) return previous;
                     const capacity = values[34] * (previous.palletIsStackable ? 2 : 1);
@@ -2061,6 +2074,7 @@ const CalculationPage = ({ id }) => {
                 console.error('Failed to calculate freight pallet factors:', factorError);
                 freightFactorsRef.current = null;
                 setFreightFactorError(factorError.message);
+                if (!freightEditState.recalculateGeometry) return;
                 setDraft((previous) => previous ? {
                     ...previous, palletsPerTruck: null,
                     rows: previous.rows.map((row) => row.archived || row.isDraft ? row : { ...row, palletCalcFactor: null }),
@@ -2072,7 +2086,8 @@ const CalculationPage = ({ id }) => {
         void load();
         return () => { active = false; };
     }, [formDraft?.autoFreightCalc, formDraft?.deactivateFreightCalculation, formDraft?.palletLength,
-        formDraft?.palletWidth, formDraft?.palletIsStackable, formDraft?.autoFreightPrice, unitOptions, data?.unitMultiplier]);
+        formDraft?.palletWidth, formDraft?.palletIsStackable, formDraft?.autoFreightPrice, unitOptions, data?.unitMultiplier,
+        freightEditState.recalculateGeometry]);
 
     const handleCalculationCustomerSelect = (customer) => {
         manualFreightDestinationRef.current = false;
@@ -2366,7 +2381,7 @@ const CalculationPage = ({ id }) => {
         clearMessages();
 
         try {
-            const response = await apiClient.post(`/calculations/${id}/freight-refresh`, {
+            const response = await apiClient.post(isNew ? '/calculations/draft/freight-refresh' : `/calculations/${id}/freight-refresh`, {
                 customerId: formDraft.customer?.id ?? null,
                 supplierId: formDraft.supplier?.id ?? null,
                 supplierFactoryId: formDraft.supplierFactoryId ?? null,
@@ -2455,7 +2470,7 @@ const CalculationPage = ({ id }) => {
         } finally {
             if (sequence === freightRefreshSequenceRef.current) setIsRefreshingFreight(false);
         }
-    }, [appendMessage, clearMessages, data?.unitMultiplier, formDraft, id, isRefreshingFreight, isLoadingFreightFactors, unitOptions]);
+    }, [appendMessage, clearMessages, data?.unitMultiplier, formDraft, id, isNew, isRefreshingFreight, isLoadingFreightFactors, unitOptions]);
 
     const handleSectionApproval = async (component) => {
         if (!formDraft || sectionActionRef.current || isSavingRef.current || isRefreshingFreight || isLoadingFreightFactors || hasPendingPartySelection) return;
@@ -2654,11 +2669,19 @@ const CalculationPage = ({ id }) => {
         setIsSaving(true);
         clearMessages();
         try {
-            const response = await apiClient.put(
-                `/calculations/${id}/aggregate`,
-                toCalculationUpdateRequest(formDraft),
-            );
+            const payload = toCalculationUpdateRequest(formDraft);
+            const response = isNew
+                ? await apiClient.post(`/calculations/from-product/${productId}`, payload)
+                : await apiClient.put(`/calculations/${id}/aggregate`, payload);
             const savedData = response?.data;
+            if (!(savedData?.id > 0)) {
+                throw new Error('The calculation save response did not include a valid calculation ID.');
+            }
+            if (isNew) {
+                skipUnsavedCheckRef.current = true;
+                navigate(`/order/calculations/${savedData.id}`, { replace: true });
+                return;
+            }
             setResult({ key: requestKey, data: savedData, error: '' });
             setDraft(createCalculationDraft(savedData));
             setIsCustomerSelectionPending(false);
@@ -2807,7 +2830,7 @@ const CalculationPage = ({ id }) => {
                             {expanded ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
                         </button>
                         <h1 className="text-sm font-semibold uppercase text-gray-500">
-                            Kalkyl {validId ? id : ''}
+                            {isNew ? 'Ny kalkyl' : `Kalkyl ${validId ? id : ''}`}
                         </h1>
                     </div>
                     <div className="mb-3 flex flex-wrap items-center gap-6">
@@ -2835,19 +2858,22 @@ const CalculationPage = ({ id }) => {
                             label="Ny förfrågan"
                             icon={Send}
                             onClick={() => openCalculationDocument('/order/inquiries/new')}
-                            disabled={!data || loading || isSaving || Boolean(sectionAction) || hasPendingPartySelection}
+                            disabled={isNew || !data || loading || isSaving || Boolean(sectionAction) || hasPendingPartySelection}
+                            accent="teal"
                         />
                         <ActionButton
                             label="Nytt affärsförslag"
                             icon={FilePlus2}
                             onClick={() => openCalculationDocument('/order/quotations/new')}
-                            disabled={!data || loading || isSaving || Boolean(sectionAction) || hasPendingPartySelection}
+                            disabled={isNew || !data || loading || isSaving || Boolean(sectionAction) || hasPendingPartySelection}
+                            accent="teal"
                         />
                         <ActionButton
                             label="Ny beställning"
                             icon={ShoppingCart}
                             onClick={() => openCalculationDocument('/order/supplierorders/new')}
-                            disabled={!data || loading || isSaving || Boolean(sectionAction) || hasPendingPartySelection}
+                            disabled={isNew || !data || loading || isSaving || Boolean(sectionAction) || hasPendingPartySelection}
+                            accent="teal"
                         />
                     </div>
                     {loading ? (
@@ -3500,7 +3526,9 @@ const CalculationPage = ({ id }) => {
 
 const Calculation = () => {
     const { id } = useParams();
-    return <CalculationPage key={id} id={id} />;
+    const [searchParams] = useSearchParams();
+    const productId = searchParams.get('productId');
+    return <CalculationPage key={`${id}:${productId ?? ''}`} id={id} productId={productId} />;
 };
 
 export default Calculation;

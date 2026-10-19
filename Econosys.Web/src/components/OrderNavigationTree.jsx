@@ -1,25 +1,20 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import { NavLink } from 'react-router-dom';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 
 import apiClient from '../config/apiClient';
 
-// Prevent duplicate fetches in React StrictMode development double-mount.
-const navigationSingleFlight = new Map();
-const fetchNavigationOnce = (key, fn) => {
-    if (navigationSingleFlight.has(key)) return navigationSingleFlight.get(key);
+// Last known tree per entity, shown immediately while a fresh copy loads in the background.
+const navigationCache = new Map();
+const getNavigationKey = (entityType, entityId) => `ordernavigation-${entityType.toLowerCase()}-${entityId}`;
 
-    const promise = (async () => {
-        try {
-            const result = await fn();
-            navigationSingleFlight.set(key, Promise.resolve(result));
-            return result;
-        } catch (error) {
-            navigationSingleFlight.delete(key);
-            throw error;
-        }
-    })();
+// Share in-flight requests (StrictMode double-mount, focus + visibilitychange firing together).
+const navigationInFlight = new Map();
+const fetchNavigation = (key, fn) => {
+    if (navigationInFlight.has(key)) return navigationInFlight.get(key);
 
-    navigationSingleFlight.set(key, promise);
+    const promise = fn().finally(() => navigationInFlight.delete(key));
+    navigationInFlight.set(key, promise);
     return promise;
 };
 
@@ -47,19 +42,91 @@ const getNodeLink = (type, id) => {
 
 const getNodeClassName = (isActive) => `${nodeBaseClass} ${isActive ? 'bg-lime-50 text-stone-900 font-semibold shadow-sm shadow-lime-900/10' : 'text-gray-700 hover:bg-gray-100'}`;
 
-const OrderNode = ({ label, type, id, isActive = false, depth = 0 }) => {
+const OrderNode = ({ label, type, id, isActive = false, depth = 0, disclosure }) => {
     const link = getNodeLink(type, id);
     const text = `${label}${id ? ` ${id}` : ''}`;
 
     return (
         <div className="relative" style={{ marginLeft: `${depth * 14}px` }}>
-            {depth > 0 && <span className="absolute -left-2 top-1/2 h-px w-2 -translate-y-1/2 bg-gray-300" aria-hidden="true" />}
+            {disclosure ? (
+                <button
+                    type="button"
+                    className="absolute -left-4 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-gray-600 hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-lime-700"
+                    aria-label={`${disclosure.isExpanded ? 'Fäll ihop' : 'Expandera'} ${text}`}
+                    aria-expanded={disclosure.isExpanded}
+                    aria-controls={disclosure.contentId}
+                    onClick={disclosure.onToggle}
+                >
+                    {disclosure.isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </button>
+            ) : depth > 0 && <span className="absolute -left-2 top-1/2 h-px w-2 -translate-y-1/2 bg-gray-300" aria-hidden="true" />}
             {link ? (
                 <NavLink to={link} className={getNodeClassName(isActive)}>
                     {text}
                 </NavLink>
             ) : (
                 <span className={getNodeClassName(isActive)}>{text}</span>
+            )}
+        </div>
+    );
+};
+
+const childNodeTypes = [
+    ['inquiries', 'inquiry'],
+    ['quotations', 'quotation'],
+    ['supplierOrders', 'supplierOrder'],
+    ['customerOrders', 'customerOrder'],
+];
+
+const containsCurrentNode = (node, type, isCurrent) => (
+    isCurrent(type, node.id, node.isCurrent)
+    || childNodeTypes.some(([collection, childType]) => (
+        (node[collection] ?? []).some((child) => containsCurrentNode(child, childType, isCurrent))
+    ))
+);
+
+const nodeLabels = {
+    calculation: 'Kalkyl',
+    inquiry: 'Förfrågan',
+    quotation: 'Offert',
+    supplierOrder: 'Beställning',
+    customerOrder: 'Kundorder',
+};
+
+const OrderBranch = ({ node, type, depth, isCurrent }) => {
+    const [isExpanded, setIsExpanded] = useState(() => containsCurrentNode(node, type, isCurrent));
+    const contentId = useId();
+    const children = childNodeTypes.flatMap(([collection, childType]) => (
+        (node[collection] ?? []).map((child) => ({ node: child, type: childType }))
+    ));
+    const hasChildren = children.length > 0;
+
+    return (
+        <div className="space-y-1">
+            <OrderNode
+                label={nodeLabels[type]}
+                type={type}
+                id={node.id}
+                isActive={isCurrent(type, node.id, node.isCurrent)}
+                depth={depth}
+                disclosure={hasChildren ? {
+                    isExpanded,
+                    contentId,
+                    onToggle: () => setIsExpanded((expanded) => !expanded),
+                } : undefined}
+            />
+            {hasChildren && (
+                <div id={contentId} hidden={!isExpanded} className="space-y-1">
+                    {children.map((child) => (
+                        <OrderBranch
+                            key={`${child.type}-${child.node.id}`}
+                            node={child.node}
+                            type={child.type}
+                            depth={depth + 1}
+                            isCurrent={isCurrent}
+                        />
+                    ))}
+                </div>
             )}
         </div>
     );
@@ -88,40 +155,65 @@ const OrderNavigationTree = ({ entityType, entityId }) => {
     useEffect(() => {
         if (!normalizedEntityType || !entityId || entityId <= 0) {
             setTree(null);
+            setHasError(false);
+            setIsLoading(false);
             return;
         }
 
         let disposed = false;
+        const requestKey = getNavigationKey(normalizedEntityType, entityId);
+        let hasLoadedTree = navigationCache.has(requestKey);
 
-        const loadTree = async () => {
-            setIsLoading(true);
+        if (hasLoadedTree) {
+            setTree(navigationCache.get(requestKey));
             setHasError(false);
+            setIsLoading(false);
+        }
+
+        const loadTree = async ({ background = false } = {}) => {
+            if (!background) {
+                setIsLoading(true);
+                setHasError(false);
+            }
 
             try {
                 const apiEntityType = normalizedEntityType.toLowerCase();
-                const requestKey = `ordernavigation-${apiEntityType}-${entityId}`;
-                const response = await fetchNavigationOnce(requestKey, () => apiClient.get(`/ordernavigation/${apiEntityType}/${entityId}`));
+                const response = await fetchNavigation(requestKey, () => apiClient.get(`/ordernavigation/${apiEntityType}/${entityId}`));
+                const data = response.data ?? null;
+                navigationCache.set(requestKey, data);
 
                 if (!disposed) {
-                    setTree(response.data ?? null);
+                    hasLoadedTree = true;
+                    setTree(data);
+                    setHasError(false);
                 }
             } catch (error) {
                 console.error('Failed to load order navigation tree:', error);
-                if (!disposed) {
+                // Keep the current tree visible if a background refresh fails.
+                if (!disposed && !(background && hasLoadedTree)) {
                     setHasError(true);
                     setTree(null);
                 }
             } finally {
-                if (!disposed) {
+                if (!disposed && !background) {
                     setIsLoading(false);
                 }
             }
         };
 
-        loadTree();
+        const refreshInBackground = () => {
+            if (document.visibilityState !== 'visible') return;
+            loadTree({ background: hasLoadedTree });
+        };
+
+        loadTree({ background: hasLoadedTree });
+        window.addEventListener('focus', refreshInBackground);
+        document.addEventListener('visibilitychange', refreshInBackground);
 
         return () => {
             disposed = true;
+            window.removeEventListener('focus', refreshInBackground);
+            document.removeEventListener('visibilitychange', refreshInBackground);
         };
     }, [entityId, normalizedEntityType]);
 
@@ -155,161 +247,13 @@ const OrderNavigationTree = ({ entityType, entityId }) => {
                     />
 
                     {(tree?.calculations ?? []).map((calculationNode) => (
-                        <div key={`calculation-${calculationNode.id}`} className="space-y-1">
-                            <OrderNode
-                                label="Kalkyl"
-                                type="calculation"
-                                id={calculationNode.id}
-                                isActive={isCurrent('calculation', calculationNode.id, calculationNode.isCurrent)}
-                                depth={1}
-                            />
-
-                            {(calculationNode.inquiries ?? []).map((inquiryNode) => (
-                                <div key={`inquiry-${inquiryNode.id}`} className="space-y-1">
-                                    <OrderNode
-                                        label="Förfrågan"
-                                        type="inquiry"
-                                        id={inquiryNode.id}
-                                        isActive={isCurrent('inquiry', inquiryNode.id, inquiryNode.isCurrent)}
-                                        depth={2}
-                                    />
-
-                                    {(inquiryNode.quotations ?? []).map((quotationNode) => (
-                                        <div key={`inquiry-quotation-${quotationNode.id}`} className="space-y-1">
-                                            <OrderNode
-                                                label="Offert"
-                                                type="quotation"
-                                                id={quotationNode.id}
-                                                isActive={isCurrent('quotation', quotationNode.id, quotationNode.isCurrent)}
-                                                depth={3}
-                                            />
-
-                                            {(quotationNode.supplierOrders ?? []).map((supplierOrderNode) => (
-                                                <div key={`inquiry-quotation-supplier-order-${supplierOrderNode.id}`} className="space-y-1">
-                                                    <OrderNode
-                                                        label="Leverantörsorder"
-                                                        type="supplierOrder"
-                                                        id={supplierOrderNode.id}
-                                                        isActive={isCurrent('supplierOrder', supplierOrderNode.id, supplierOrderNode.isCurrent)}
-                                                        depth={4}
-                                                    />
-                                                    {(supplierOrderNode.customerOrders ?? []).map((customerOrderNode) => (
-                                                        <OrderNode
-                                                            key={`inquiry-quotation-customer-order-${customerOrderNode.id}`}
-                                                            label="Kundorder"
-                                                            type="customerOrder"
-                                                            id={customerOrderNode.id}
-                                                            isActive={isCurrent('customerOrder', customerOrderNode.id, customerOrderNode.isCurrent)}
-                                                            depth={5}
-                                                        />
-                                                    ))}
-                                                </div>
-                                            ))}
-
-                                            {(quotationNode.customerOrders ?? []).map((customerOrderNode) => (
-                                                <OrderNode
-                                                    key={`inquiry-quotation-direct-customer-order-${customerOrderNode.id}`}
-                                                    label="Kundorder"
-                                                    type="customerOrder"
-                                                    id={customerOrderNode.id}
-                                                    isActive={isCurrent('customerOrder', customerOrderNode.id, customerOrderNode.isCurrent)}
-                                                    depth={4}
-                                                />
-                                            ))}
-                                        </div>
-                                    ))}
-
-                                    {(inquiryNode.supplierOrders ?? []).map((supplierOrderNode) => (
-                                        <div key={`inquiry-supplier-order-${supplierOrderNode.id}`} className="space-y-1">
-                                            <OrderNode
-                                                label="Leverantörsorder"
-                                                type="supplierOrder"
-                                                id={supplierOrderNode.id}
-                                                isActive={isCurrent('supplierOrder', supplierOrderNode.id, supplierOrderNode.isCurrent)}
-                                                depth={3}
-                                            />
-                                            {(supplierOrderNode.customerOrders ?? []).map((customerOrderNode) => (
-                                                <OrderNode
-                                                    key={`inquiry-supplier-customer-order-${customerOrderNode.id}`}
-                                                    label="Kundorder"
-                                                    type="customerOrder"
-                                                    id={customerOrderNode.id}
-                                                    isActive={isCurrent('customerOrder', customerOrderNode.id, customerOrderNode.isCurrent)}
-                                                    depth={4}
-                                                />
-                                            ))}
-                                        </div>
-                                    ))}
-                                </div>
-                            ))}
-
-                            {(calculationNode.quotations ?? []).map((quotationNode) => (
-                                <div key={`calculation-quotation-${quotationNode.id}`} className="space-y-1">
-                                    <OrderNode
-                                        label="Offert"
-                                        type="quotation"
-                                        id={quotationNode.id}
-                                        isActive={isCurrent('quotation', quotationNode.id, quotationNode.isCurrent)}
-                                        depth={2}
-                                    />
-
-                                    {(quotationNode.supplierOrders ?? []).map((supplierOrderNode) => (
-                                        <div key={`calculation-quotation-supplier-order-${supplierOrderNode.id}`} className="space-y-1">
-                                            <OrderNode
-                                                label="Leverantörsorder"
-                                                type="supplierOrder"
-                                                id={supplierOrderNode.id}
-                                                isActive={isCurrent('supplierOrder', supplierOrderNode.id, supplierOrderNode.isCurrent)}
-                                                depth={3}
-                                            />
-                                            {(supplierOrderNode.customerOrders ?? []).map((customerOrderNode) => (
-                                                <OrderNode
-                                                    key={`calculation-quotation-customer-order-${customerOrderNode.id}`}
-                                                    label="Kundorder"
-                                                    type="customerOrder"
-                                                    id={customerOrderNode.id}
-                                                    isActive={isCurrent('customerOrder', customerOrderNode.id, customerOrderNode.isCurrent)}
-                                                    depth={4}
-                                                />
-                                            ))}
-                                        </div>
-                                    ))}
-
-                                    {(quotationNode.customerOrders ?? []).map((customerOrderNode) => (
-                                        <OrderNode
-                                            key={`calculation-quotation-direct-customer-order-${customerOrderNode.id}`}
-                                            label="Kundorder"
-                                            type="customerOrder"
-                                            id={customerOrderNode.id}
-                                            isActive={isCurrent('customerOrder', customerOrderNode.id, customerOrderNode.isCurrent)}
-                                            depth={3}
-                                        />
-                                    ))}
-                                </div>
-                            ))}
-
-                            {(calculationNode.supplierOrders ?? []).map((supplierOrderNode) => (
-                                <div key={`calculation-supplier-order-${supplierOrderNode.id}`} className="space-y-1">
-                                    <OrderNode
-                                        label="Leverantörsorder"
-                                        type="supplierOrder"
-                                        id={supplierOrderNode.id}
-                                        isActive={isCurrent('supplierOrder', supplierOrderNode.id, supplierOrderNode.isCurrent)}
-                                        depth={2}
-                                    />
-                                    {(supplierOrderNode.customerOrders ?? []).map((customerOrderNode) => (
-                                        <OrderNode
-                                            key={`calculation-supplier-customer-order-${customerOrderNode.id}`}
-                                            label="Kundorder"
-                                            type="customerOrder"
-                                            id={customerOrderNode.id}
-                                            isActive={isCurrent('customerOrder', customerOrderNode.id, customerOrderNode.isCurrent)}
-                                            depth={3}
-                                        />
-                                    ))}
-                                </div>
-                            ))}
-                        </div>
+                        <OrderBranch
+                            key={`${normalizedEntityType}-${entityId}-calculation-${calculationNode.id}`}
+                            node={calculationNode}
+                            type="calculation"
+                            depth={1}
+                            isCurrent={isCurrent}
+                        />
                     ))}
                 </div>
             )}

@@ -7,6 +7,22 @@ export const getFreightMode = (calculation) => {
     };
 };
 
+export const getFreightEditState = (calculation, saved) => {
+    const enabledAutomaticPrices = Boolean(calculation?.autoFreightPrice && !saved?.autoFreightPrice);
+    return {
+        selectDefaultFactory: enabledAutomaticPrices || calculation?.supplier?.id !== saved?.supplier?.id,
+        selectDefaultAddress: enabledAutomaticPrices || calculation?.customer?.id !== saved?.customer?.id,
+        recalculateGeometry: Boolean(calculation && saved && [
+            'autoFreightCalc',
+            'deactivateFreightCalculation',
+            'palletLength',
+            'palletWidth',
+            'palletIsStackable',
+            'unitId',
+        ].some((field) => calculation[field] !== saved[field])),
+    };
+};
+
 export const changeFreightMode = (calculation, field, enabled) => {
     if (field !== 'deactivateFreightCalculation' && calculation.deactivateFreightCalculation) return calculation;
     const next = { ...calculation, [field]: enabled };

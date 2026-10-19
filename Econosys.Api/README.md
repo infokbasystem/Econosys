@@ -51,7 +51,62 @@ The API will start at `https://localhost:5001` (or the configured port).
 
 Open your browser and navigate to: `https://localhost:5001`
 
+## Customer and supplier order creation
+
+`POST /api/customerorders` and `POST /api/supplierorders` set the required legacy
+`CompanyId` on their respective orders from the authenticated user's resolved
+legacy account, including repeat supplier orders. The company is assigned
+server-side, not supplied by the client. These map existing database columns;
+no database migration is needed.
+
+## Order history
+
+The authenticated `GET /api/orderhistory/supplierorders/{id}` and
+`GET /api/orderhistory/customerorders/{id}` endpoints return the legacy order
+history with production, deliveries, stocktakes, transport/call-off references
+and delivery-linked invoice numbers. Missing orders return `404`; existing
+orders with no events return an empty `rows` array.
+
+Supplier orders include all their deliveries. Customer orders include their own
+outbound/direct deliveries plus the linked supplier order's inbound deliveries
+and stocktakes. Customer credit invoices are separate events and do not affect
+balances. Header and invoice-row delivery references are both supported, without
+confusing identical IDs from different delivery tables.
+
+Invoice loading first selects only rows referencing the visible deliveries,
+then fetches lightweight invoice headers. Keep these lookups separate: a
+correlated invoice-row search combined with a split collection include repeats
+the expensive invoice selection. No history cache is used, so refreshes reflect
+current delivery and invoice data.
+
+As in the legacy application, planned deliveries affect running balances:
+inbound deliveries increase stock and reduce remaining production, outbound
+deliveries reduce stock, direct deliveries reduce remaining production, and
+stocktakes replace the stock balance. Dates include the Swedish UTC offset.
+Customer history hides the stock column for non-stock warehouses.
+See [OrderHistory.http](./OrderHistory.http) for sample requests.
+
 ## Calculation Implementation
+
+### New calculations from products
+
+The product page's **Ny kalkyl** action opens
+`/order/calculations/new?productId={productId}`. The authenticated
+`GET /api/calculations/from-product/{productId}/draft` endpoint returns product
+information and legacy calculation defaults without inserting a calculation.
+Drafts have ID `0` and no creation or edit timestamps.
+
+Only clicking **Spara** sends
+`POST /api/calculations/from-product/{productId}` with the calculation update
+payload. The header and new rows are saved together, using the authenticated
+legacy user's company. The response is `201 Created`, and the web page replaces
+the draft URL with the saved calculation's URL. Discarding a draft creates no
+calculation. Document creation remains disabled until the first save.
+
+Draft freight previews use `POST /api/calculations/draft/freight-refresh`;
+this does not persist the draft.
+
+### Existing calculation details
 
 The initial calculation milestone adds `GET /api/calculations/{id}/aggregate`
 and the web detail route `/order/calculations/:id`. Both calculation-number

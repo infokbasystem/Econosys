@@ -36,6 +36,76 @@ public class CalculationsController(
         return Ok(await MapAggregateAsync(calculation, cancellationToken));
     }
 
+    [HttpGet("from-product/{productId:int}/draft")]
+    [ProducesResponseType(typeof(CalculationDetailDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CalculationDetailDto>> GetDraftFromProduct(
+        int productId,
+        CancellationToken cancellationToken)
+    {
+        var legacyUser = await legacyUserResolutionService.ResolveCurrentUserAsync(User);
+        if (legacyUser is null)
+        {
+            return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+        }
+
+        var product = await dbContext.Products.AsNoTracking()
+            .Include(item => item.Material)
+            .Include(item => item.Construction)
+            .Include(item => item.Varnish)
+            .SingleOrDefaultAsync(item => item.Id == productId, cancellationToken);
+        if (product is null)
+        {
+            return NotFound();
+        }
+
+        var variables = await dbContext.CalculationVariables
+            .AsNoTracking()
+            .FirstOrDefaultAsync(cancellationToken);
+        if (variables is null)
+        {
+            return BadRequest(new { message = "Calculation variables have not been configured." });
+        }
+
+        var currency = await dbContext.Currencies
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.IsDefault, cancellationToken);
+        var unit = await dbContext.Units
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.IsDefault, cancellationToken);
+        var currencyRate = currency is null
+            ? 1d
+            : currency.RateToSek.GetValueOrDefault() == 0
+                ? 0d
+                : 1d;
+        var calculation = new Calculation
+        {
+            CompanyId = legacyUser.CompanyId,
+            ProductId = productId,
+            Product = product,
+            UnitId = unit?.Id,
+            Unit = unit,
+            PurchaseCurrencyId = currency?.Id,
+            PurchaseCurrency = currency,
+            PurchaseCurrencyRate = currency?.RateToSek,
+            SalesCurrencyId = currency?.Id,
+            SalesCurrency = currency,
+            SalesCurrencyRate = currency?.RateToSek,
+            CurrencyRate = currencyRate,
+            FreightPerPallet = variables.FreightPerPallet,
+            FreightPerVehicle = variables.FreightPerVehicle,
+            Interest = variables.Interest,
+            LoadingPerDelivery = variables.LoadingPerDelivery,
+            StoragePerM2 = variables.StoragePerM2,
+            AutomaticLoadingInstruction = true,
+            LockOutPrice = true,
+        };
+
+        return Ok(CalculationDetailMapper.Map(calculation, new Dictionary<int, string?>()));
+    }
+
     [HttpGet("{id:int}/history")]
     [ProducesResponseType(typeof(IReadOnlyList<CalculationHistoryRowDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -212,6 +282,24 @@ public class CalculationsController(
         int id,
         [FromBody] UpdateCalculationRequest request,
         CancellationToken cancellationToken)
+        => await SaveAggregateAsync(id, null, request, cancellationToken);
+
+    [HttpPost("from-product/{productId:int}")]
+    [ProducesResponseType(typeof(CalculationDetailDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CalculationDetailDto>> CreateFromProduct(
+        int productId,
+        [FromBody] UpdateCalculationRequest request,
+        CancellationToken cancellationToken)
+        => await SaveAggregateAsync(0, productId, request, cancellationToken);
+
+    private async Task<ActionResult<CalculationDetailDto>> SaveAggregateAsync(
+        int id,
+        int? productId,
+        UpdateCalculationRequest request,
+        CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
         {
@@ -224,8 +312,26 @@ public class CalculationsController(
             return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
         }
 
-        var calculation = await dbContext.Calculations
-            .SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
+        var isNew = productId.HasValue;
+        if (isNew && !await dbContext.Products.AnyAsync(item => item.Id == productId, cancellationToken))
+        {
+            return NotFound();
+        }
+        if (isNew && (request.Rows?.Any(row => row.Id.HasValue) == true
+            || request.DeletedRowIds?.Count > 0))
+        {
+            return BadRequest(new { message = "A new calculation cannot reference saved rows." });
+        }
+
+        var calculation = isNew
+            ? new Calculation
+            {
+                ProductId = productId,
+                CompanyId = legacyUser.CompanyId,
+                CreatedAt = SwedishTime.Now,
+                CreatedBy = legacyUser.Id,
+            }
+            : await dbContext.Calculations.SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
         if (calculation is null)
         {
             return NotFound();
@@ -288,16 +394,23 @@ public class CalculationsController(
             }
         }
 
+        if (isNew)
+        {
+            dbContext.Calculations.Add(calculation);
+        }
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var updatedCalculation = await BuildAggregateQuery()
-            .SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
+            .SingleOrDefaultAsync(item => item.Id == calculation.Id, cancellationToken);
         if (updatedCalculation is null)
         {
             return NotFound();
         }
 
-        return Ok(await MapAggregateAsync(updatedCalculation, cancellationToken));
+        var details = await MapAggregateAsync(updatedCalculation, cancellationToken);
+        return isNew
+            ? CreatedAtAction(nameof(GetAggregate), new { id = calculation.Id }, details)
+            : Ok(details);
     }
 
     [HttpGet("cost-prices")]
@@ -324,6 +437,14 @@ public class CalculationsController(
         return Ok(prices);
     }
 
+    [HttpPost("draft/freight-refresh")]
+    [ProducesResponseType(typeof(RefreshCalculationFreightResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<RefreshCalculationFreightResponse>> RefreshDraftFreightPrices(
+        [FromBody] RefreshCalculationFreightRequest request,
+        CancellationToken cancellationToken)
+        => await RefreshFreightPrices(0, request, cancellationToken);
+
     [HttpPost("{id:int}/freight-refresh")]
     [ProducesResponseType(typeof(RefreshCalculationFreightResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
@@ -343,7 +464,7 @@ public class CalculationsController(
             .Where(item => item.Id == id)
             .Select(item => new { item.Id })
             .SingleOrDefaultAsync(cancellationToken);
-        if (calculation is null)
+        if (id != 0 && calculation is null)
         {
             return NotFound();
         }
@@ -479,7 +600,7 @@ public class CalculationsController(
             }
             else
             {
-                row = new CalculationRow { CalculationId = calculationId };
+                row = new CalculationRow { Calculation = calculation };
                 dbContext.CalculationRows.Add(row);
             }
 

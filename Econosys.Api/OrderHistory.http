@@ -1,0 +1,16 @@
+@baseUrl = https://localhost:5001
+@token = replace-with-access-token
+@supplierOrderId = 1
+@customerOrderId = 1
+
+### Supplier order history
+GET {{baseUrl}}/api/orderhistory/supplierorders/{{supplierOrderId}}
+Authorization: Bearer {{token}}
+
+### Customer order history
+GET {{baseUrl}}/api/orderhistory/customerorders/{{customerOrderId}}
+Authorization: Bearer {{token}}
+
+### Unknown order returns 404
+GET {{baseUrl}}/api/orderhistory/supplierorders/2147483647
+Authorization: Bearer {{token}}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useBlocker } from 'react-router-dom';
+import { useBlocker, useSearchParams } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 import { ClipboardCheck, Download, Plus, Save, Search, Warehouse } from 'lucide-react';
 import apiClient from '../../config/apiClient';
@@ -31,6 +31,8 @@ const getApiErrorMessage = (error, fallback) => {
 };
 
 const StockTakings = () => {
+  const [searchParams] = useSearchParams();
+  const requestedStockTakingId = Number(searchParams.get('stockTakingId')) || null;
   const [history, setHistory] = useState([]);
   const [inventories, setInventories] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -62,7 +64,7 @@ const StockTakings = () => {
         if (!isActive) return;
         const items = Array.isArray(response?.data) ? response.data : [];
         setHistory(items);
-        setSelectedId(items[0]?.id ?? null);
+        setSelectedId(requestedStockTakingId ?? items[0]?.id ?? null);
       })
       .catch((error) => {
         if (isActive) {
@@ -76,7 +78,7 @@ const StockTakings = () => {
     return () => {
       isActive = false;
     };
-  }, []);
+  }, [requestedStockTakingId]);
 
   useEffect(() => {
     let isActive = true;

@@ -156,6 +156,7 @@ builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<ILegacyUserResolutionService, LegacyUserResolutionService>();
 builder.Services.AddScoped<CalculationFreightPriceService>();
 builder.Services.AddScoped<IPalletFormatOptionsService, PalletFormatOptionsService>();
+builder.Services.AddScoped<IOrderHistoryService, OrderHistoryService>();
 builder.Services.AddScoped<ITransportOrderCostCalculationService, TransportOrderCostCalculationService>();
 builder.Services.AddSingleton<IProtectedSecretService, ProtectedSecretService>();
 builder.Services.AddScoped<IJeevesAccountingService, JeevesAccountingService>();

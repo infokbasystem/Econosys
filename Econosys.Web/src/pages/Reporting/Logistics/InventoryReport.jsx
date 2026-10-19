@@ -416,9 +416,9 @@ const InventoryReport = () => {
                                     onClick={(event) => event.stopPropagation()}
                                 >
                                     <p>Lagernivå och antal pall utgår från den senaste inventeringen före beräkningsdatumet och justeras med efterföljande leveranser till och från lager.</p>
-                                    <p className="mt-2">Ink.värde beräknas som lagernivå × leverantörsorderns inköpspris × inköpsvalutakurs, justerat för enhetens multiplikator.</p>
+                                    <p className="mt-2">Ink.värde beräknas som lagernivå × beställningns inköpspris × inköpsvalutakurs, justerat för enhetens multiplikator.</p>
                                     <p className="mt-2">Fsg.värde beräknas som lagernivå × försäljningspriset på den första kundordern × försäljningsvalutakurs, justerat för enhetens multiplikator.</p>
-                                    <p className="mt-2">Pall ink.värde beräknas som antal pall × leverantörens pris för leverantörsorderns pallformat × inköpsvalutakurs.</p>
+                                    <p className="mt-2">Pall ink.värde beräknas som antal pall × leverantörens pris för beställningns pallformat × inköpsvalutakurs.</p>
                                     <p className="mt-2">Pall fsg.värde beräknas som antal pall × pallens försäljningspris på den första kundordern × försäljningsvalutakurs.</p>
                                 </div>
                             </>

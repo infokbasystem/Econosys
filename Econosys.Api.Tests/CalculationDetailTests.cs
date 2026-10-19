@@ -1,12 +1,48 @@
 using Econosys.Api.DTOs;
+using Econosys.Api.Data;
 using Econosys.Api.Models;
 using Econosys.Api.Services;
+using Microsoft.EntityFrameworkCore;
 using Xunit;
 
 namespace Econosys.Api.Tests;
 
 public class CalculationDetailTests
 {
+    [Fact]
+    public void CalculationAndRowsMapTheExistingRequiredCompanyColumn()
+    {
+        using var context = new ApplicationDbContext(
+            new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseSqlServer("Server=localhost;Database=ModelMappingOnly;Integrated Security=true")
+                .Options);
+
+        foreach (var entityType in new[] { typeof(Calculation), typeof(CalculationRow) })
+        {
+            var entity = context.Model.FindEntityType(entityType)!;
+            var property = entity.FindProperty(nameof(Calculation.CompanyId));
+
+            Assert.NotNull(property);
+            Assert.False(property.IsNullable);
+            Assert.Equal("CompanyId", property.GetColumnName());
+        }
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(7)]
+    public void NewCalculationRowsInheritTheCalculationCompany(int companyId)
+    {
+        var calculation = new Calculation { CompanyId = companyId };
+        var row = new CalculationRow();
+
+        CalculationUpdateMapper.ApplyRow(
+            row, new UpdateCalculationRowRequest { Edition = 1000 },
+            calculation, unitMultiplier: 1000, salesDecimals: 2);
+
+        Assert.Equal(companyId, row.CompanyId);
+    }
+
     private static Calculation SavedCalculation => new()
     {
         Id = 5,

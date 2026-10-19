@@ -255,7 +255,7 @@ namespace Econosys.Api.Controllers
 
             if (!actualSupplierOrderId.HasValue || actualSupplierOrderId.Value != supplierOrderId)
             {
-                return BadRequest("Leveransen är inte kopplad till vald leverantörsorder.");
+                return BadRequest("Leveransen är inte kopplad till vald beställning.");
             }
 
             if (!await _dbContext.DocumentTypes.AnyAsync(x => x.Id == 3))
@@ -386,7 +386,7 @@ namespace Econosys.Api.Controllers
             if (!customerOrder.SupplierOrderId.HasValue
                 || !await _dbContext.SupplierOrders.AnyAsync(x => x.Id == customerOrder.SupplierOrderId.Value))
             {
-                return BadRequest("Leverantörsorder saknas eller kunde inte hittas.");
+                return BadRequest("Beställning saknas eller kunde inte hittas.");
             }
 
             if (request.InventoryId.HasValue

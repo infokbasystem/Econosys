@@ -63,7 +63,7 @@ namespace Econosys.Api.Controllers
                 return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
             }
 
-            var entity = new CustomerOrder();
+            var entity = new CustomerOrder { CompanyId = legacyUser.CompanyId };
             ApplyCreateRequestToEntity(entity, request);
 
             entity.Created ??= SwedishTime.Now;

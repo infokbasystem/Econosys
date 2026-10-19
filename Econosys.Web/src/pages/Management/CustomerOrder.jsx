@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Save } from 'lucide-react';
-import { useBlocker, useNavigate, useParams } from 'react-router-dom';
+import { useBlocker, useLocation, useNavigate, useParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
@@ -10,6 +10,7 @@ import OrderNavigationTree from '../../components/OrderNavigationTree';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 import OrderCost from '../../components/OrderCost';
+import OrderHistory from '../../components/OrderHistory';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import LabeledTextArea from '../../components/LabeledTextArea';
@@ -133,6 +134,7 @@ const renderReadOnlyInfoRow = (label, value) => (
 );
 
 const CustomerOrder = () => {
+    const location = useLocation();
     const navigate = useNavigate();
     const { id } = useParams();
     const isNewCustomerOrder = id === 'new' || id == null;
@@ -214,6 +216,7 @@ const CustomerOrder = () => {
 
     const buildPayload = (source) => ({
         id: parseNullableInt(source?.id) ?? 0,
+        quotationId: parseNullableInt(source?.quotationId),
         supplierOrderId: parseNullableInt(source?.supplierOrderId),
         customerOrderNr: source?.customerOrderNr || null,
         customerId: parseNullableInt(source?.customerId),
@@ -223,6 +226,8 @@ const CustomerOrder = () => {
         deliveryPostalNr: source?.deliveryPostalNr || null,
         deliveryPostalAddress: source?.deliveryPostalAddress || null,
         deliveryCountry: source?.deliveryCountry || null,
+        date: source?.date || null,
+        timeOfDelivery: source?.timeOfDelivery || null,
         yourReference: source?.yourReference || null,
         ourReference: source?.ourReference || null,
         termsOfDelivery: source?.termsOfDelivery || null,
@@ -233,6 +238,14 @@ const CustomerOrder = () => {
         format: source?.format || null,
         color: source?.color || null,
         construction: source?.construction || null,
+        isFSC: Boolean(source?.isFSC),
+        salesCurrencyId: parseNullableInt(source?.salesCurrencyId),
+        salesCurrencyRate: parseNullableDecimal(source?.salesCurrencyRate),
+        unitId: parseNullableInt(source?.unitId),
+        edition: parseNullableInt(source?.edition),
+        salesPrice: parseNullableDecimal(source?.salesPrice),
+        palletFormatId: parseNullableInt(source?.palletFormatId),
+        eurPallet: Boolean(source?.eurPallet),
         orderCosts: toArray(source?.orderCosts)
             .filter((row) => row.costId != null)
             .map(buildOrderCostPayload),
@@ -305,9 +318,13 @@ const CustomerOrder = () => {
             try {
                 if (isNewCustomerOrder) {
                     const empty = createNewCustomerOrderModel();
+                    const draft = location.state?.customerOrderDraft;
                     if (!isActive) return;
-                    setCustomerOrder(empty);
-                    setOriginalCustomerOrder(structuredClone(empty));
+                    const initialOrder = draft
+                        ? { ...empty, ...draft, id: 0, orderCosts: toArray(draft.orderCosts) }
+                        : empty;
+                    setCustomerOrder(initialOrder);
+                    setOriginalCustomerOrder(structuredClone(initialOrder));
                 } else {
                     const requestKey = `customerorders:${id}`;
                     const response = await getSharedRequest(requestKey, () => apiClient.get(`/customerorders/${id}`));
@@ -336,7 +353,7 @@ const CustomerOrder = () => {
         return () => {
             isActive = false;
         };
-    }, [id, isNewCustomerOrder]);
+    }, [id, isNewCustomerOrder, location.state]);
 
     useEffect(() => {
         let isActive = true;
@@ -506,184 +523,192 @@ const CustomerOrder = () => {
                     />
                 )}
             >
-                    <div className="flex justify-between w-full mb-5">
-                        <div className="flex items-center gap-6">
-                            <ActionButton
-                                label="Tillbaka"
-                                icon={ArrowLeft}
-                                onClick={handleBackClick}
-                                accent="slate"
-                            />
-                            <ActionButton
-                                label="Spara"
-                                icon={Save}
-                                onClick={handleSave}
-                                accent="lime"
-                            />
+                <div className="flex justify-between w-full mb-5">
+                    <div className="flex items-center gap-6">
+                        <ActionButton
+                            label="Tillbaka"
+                            icon={ArrowLeft}
+                            onClick={handleBackClick}
+                            accent="slate"
+                        />
+                        <ActionButton
+                            label="Spara"
+                            icon={Save}
+                            onClick={handleSave}
+                            accent="lime"
+                        />
+                    </div>
+                </div>
+
+                <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-gradient-to-br from-slate-50 via-white to-slate-100 px-5 py-4 shadow-sm">
+                    <div className="grid grid-cols-[3fr_1fr]">
+                        <div className="mt-0 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                            {renderReadOnlyInfoRow('Produkt', customerOrder?.product)}
+                            {renderReadOnlyInfoRow('Material', customerOrder?.material)}
+                            {renderReadOnlyInfoRow('Format', customerOrder?.format)}
+                            {renderReadOnlyInfoRow('Färg', customerOrder?.color)}
+                            {renderReadOnlyInfoRow('Konstruktion', customerOrder?.construction)}
+                            {renderReadOnlyInfoRow('FSC', customerOrder?.isFSC ? 'Ja' : 'Nej')}
+                        </div>
+                        <div>
+                            {renderReadOnlyInfoRow('Beställning', customerOrder?.supplierOrderNr || 'Saknas')}
                         </div>
                     </div>
+                </div>
 
-                    <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-gradient-to-br from-slate-50 via-white to-slate-100 px-5 py-4 shadow-sm">
-                        <div className="grid grid-cols-[3fr_1fr]">
-                            <div className="mt-0 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                {renderReadOnlyInfoRow('Produkt', customerOrder?.product)}
-                                {renderReadOnlyInfoRow('Material', customerOrder?.material)}
-                                {renderReadOnlyInfoRow('Format', customerOrder?.format)}
-                                {renderReadOnlyInfoRow('Färg', customerOrder?.color)}
-                                {renderReadOnlyInfoRow('Konstruktion', customerOrder?.construction)}
-                                {renderReadOnlyInfoRow('FSC', customerOrder?.isFSC ? 'Ja' : 'Nej')}
-                            </div>
-                            <div>
-                                {renderReadOnlyInfoRow('Leverantörsorder', customerOrder?.supplierOrderNr || 'Saknas')}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
-                        <span>
-                            <div className="grid grid-cols-[380px_380px_300px] gap-x-20 gap-y-8">
-                                <span>
-                                    <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">{customerOrder?.customerName || ''}</p>
-                                    <LabeledReactSelect
-                                        name="customerDeliveryAddressId"
-                                        label="Lev. adress"
-                                        value={customerOrder?.deliveryAddressName || ''}
-                                        items={customerDeliveryAddressItems}
-                                        onChange={handleCustomerDeliveryAddressChange}
-                                        labelWidth="w-20"
-                                        margintop="2"
-                                        allowRawValueLabel
-                                    />
+                <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
+                    <span>
+                        <div className="grid grid-cols-[380px_380px_300px] gap-x-20 gap-y-8">
+                            <span>
+                                <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">{customerOrder?.customerName || ''}</p>
+                                <LabeledReactSelect
+                                    name="customerDeliveryAddressId"
+                                    label="Lev. adress"
+                                    value={customerOrder?.deliveryAddressName || ''}
+                                    items={customerDeliveryAddressItems}
+                                    onChange={handleCustomerDeliveryAddressChange}
+                                    labelWidth="w-20"
+                                    margintop="2"
+                                    allowRawValueLabel
+                                />
+                                <LabeledInput
+                                    label=""
+                                    value={customerOrder?.deliveryAddressName || ''}
+                                    onChange={(value) => updateCustomerOrder({ deliveryAddressName: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                />
+                                <LabeledInput
+                                    label=""
+                                    value={customerOrder?.deliveryAddress || ''}
+                                    onChange={(value) => updateCustomerOrder({ deliveryAddress: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                />
+                                <div className="flex space-x-1 w-full mt-[0px]">
                                     <LabeledInput
+                                        name="deliveryPostalNr"
                                         label=""
-                                        value={customerOrder?.deliveryAddressName || ''}
-                                        onChange={(value) => updateCustomerOrder({ deliveryAddressName: value })}
+                                        value={customerOrder?.deliveryPostalNr || ''}
+                                        onChange={(value) => updateCustomerOrder({ deliveryPostalNr: value })}
                                         labelWidth="w-20"
+                                        inputWidth="w-25"
                                         margintop="0"
+                                        placeholder=""
                                     />
-                                    <LabeledInput
-                                        label=""
-                                        value={customerOrder?.deliveryAddress || ''}
-                                        onChange={(value) => updateCustomerOrder({ deliveryAddress: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                    />
-                                    <div className="flex space-x-1 w-full mt-[0px]">
-                                        <LabeledInput
-                                            name="deliveryPostalNr"
-                                            label=""
-                                            value={customerOrder?.deliveryPostalNr || ''}
-                                            onChange={(value) => updateCustomerOrder({ deliveryPostalNr: value })}
-                                            labelWidth="w-20"
-                                            inputWidth="w-25"
-                                            margintop="0"
-                                            placeholder=""
+                                    <div className="w-full">
+                                        <input
+                                            name="deliveryPostalAddress"
+                                            value={customerOrder?.deliveryPostalAddress || ''}
+                                            onChange={(event) => updateCustomerOrder({ deliveryPostalAddress: event.target.value })}
+                                            className="text-xs w-full border border-gray-300 rounded-sm px-2 py-1 focus:outline-none bg-white"
                                         />
-                                        <div className="w-full">
-                                            <input
-                                                name="deliveryPostalAddress"
-                                                value={customerOrder?.deliveryPostalAddress || ''}
-                                                onChange={(event) => updateCustomerOrder({ deliveryPostalAddress: event.target.value })}
-                                                className="text-xs w-full border border-gray-300 rounded-sm px-2 py-1 focus:outline-none bg-white"
-                                            />
-                                        </div>
                                     </div>
-                                    <LabeledInput
-                                        label=""
-                                        value={customerOrder?.deliveryCountry || ''}
-                                        onChange={(value) => updateCustomerOrder({ deliveryCountry: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                    />
-                                    <LabeledInput
-                                        label="Kunds onr"
-                                        value={customerOrder?.customerOrderNr || ''}
-                                        onChange={(value) => updateCustomerOrder({ customerOrderNr: value })}
-                                        labelWidth="w-20"
-                                        margintop="3"
-                                    />
-                                </span>
+                                </div>
+                                <LabeledInput
+                                    label=""
+                                    value={customerOrder?.deliveryCountry || ''}
+                                    onChange={(value) => updateCustomerOrder({ deliveryCountry: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                />
+                                <LabeledInput
+                                    label="Kunds onr"
+                                    value={customerOrder?.customerOrderNr || ''}
+                                    onChange={(value) => updateCustomerOrder({ customerOrderNr: value })}
+                                    labelWidth="w-20"
+                                    margintop="3"
+                                />
+                            </span>
 
-                                <span>
-                                    <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">{customerOrder?.supplierOrderNr || customerOrder?.supplierName || 'Saknas'}</p>
-                                    <LabeledReactSelect
-                                        name="yourReference"
-                                        label="Er referens"
-                                        value={customerOrder?.yourReference || ''}
-                                        items={customerContactPersonItems}
-                                        onChange={(value) => updateCustomerOrder({ yourReference: value || '' })}
-                                        labelWidth="w-20"
-                                        margintop="2"
-                                        allowRawValueLabel
-                                    />
-                                    <LabeledReactSelect
-                                        name="ourReference"
-                                        label="Vår referens"
-                                        value={customerOrder?.ourReference || ''}
-                                        items={legacyUserOptions}
-                                        onChange={(value) => updateCustomerOrder({ ourReference: value || '' })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                        allowRawValueLabel
-                                    />
-                                    <LabeledInput
-                                        label="Lev.villkor"
-                                        value={customerOrder?.termsOfDelivery || ''}
-                                        onChange={(value) => updateCustomerOrder({ termsOfDelivery: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                    />
-                                    <LabeledTextArea
-                                        label="Bet.villkor"
-                                        value={customerOrder?.termsOfPayment || ''}
-                                        onChange={(value) => updateCustomerOrder({ termsOfPayment: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                        height="h-10"
-                                    />
-                                    <LabeledTextArea
-                                        label="Meddelande"
-                                        value={customerOrder?.message || ''}
-                                        onChange={(value) => updateCustomerOrder({ message: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                        height="h-20"
-                                    />
-                                </span>
+                            <span>
+                                <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">{customerOrder?.supplierOrderNr || customerOrder?.supplierName || 'Saknas'}</p>
+                                <LabeledReactSelect
+                                    name="yourReference"
+                                    label="Er referens"
+                                    value={customerOrder?.yourReference || ''}
+                                    items={customerContactPersonItems}
+                                    onChange={(value) => updateCustomerOrder({ yourReference: value || '' })}
+                                    labelWidth="w-20"
+                                    margintop="2"
+                                    allowRawValueLabel
+                                />
+                                <LabeledReactSelect
+                                    name="ourReference"
+                                    label="Vår referens"
+                                    value={customerOrder?.ourReference || ''}
+                                    items={legacyUserOptions}
+                                    onChange={(value) => updateCustomerOrder({ ourReference: value || '' })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                    allowRawValueLabel
+                                />
+                                <LabeledInput
+                                    label="Lev.villkor"
+                                    value={customerOrder?.termsOfDelivery || ''}
+                                    onChange={(value) => updateCustomerOrder({ termsOfDelivery: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                />
+                                <LabeledTextArea
+                                    label="Bet.villkor"
+                                    value={customerOrder?.termsOfPayment || ''}
+                                    onChange={(value) => updateCustomerOrder({ termsOfPayment: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                    height="h-10"
+                                />
+                                <LabeledTextArea
+                                    label="Meddelande"
+                                    value={customerOrder?.message || ''}
+                                    onChange={(value) => updateCustomerOrder({ message: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                    height="h-20"
+                                />
+                            </span>
 
-                                <span>
-                                    <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">Orderinfo</p>
-                                    <div className="mt-5 text-xs">
-                                        <p className="text-gray-900 font-bold">Upplaga och pris</p>
-                                        <div className="flex items-center gap-0 mt-2">
-                                            <span className="text-gray-800">{editionLabel || '\u00A0'}</span>
-                                            <span className="ml-2 text-gray-800">{unitLabel || '\u00A0'}</span>
-                                            <span className="ml-10 text-gray-800">{salesPriceLabel || '\u00A0'}</span>
-                                            <span className="ml-2 text-xs text-gray-800">{salesCurrencyLabel || '\u00A0'}</span>
-                                            <span className="ml-10 text-gray-800">{salesCurrencyRateLabel ? `Kurs: ${salesCurrencyRateLabel}` : '\u00A0'}</span>
-                                        </div>
+                            <span>
+                                <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">Orderinfo</p>
+                                <div className="mt-5 text-xs">
+                                    <p className="text-gray-900 font-bold">Upplaga och pris</p>
+                                    <div className="flex items-center gap-0 mt-2">
+                                        <span className="text-gray-800">{editionLabel || '\u00A0'}</span>
+                                        <span className="ml-2 text-gray-800">{unitLabel || '\u00A0'}</span>
+                                        <span className="ml-10 text-gray-800">{salesPriceLabel || '\u00A0'}</span>
+                                        <span className="ml-2 text-xs text-gray-800">{salesCurrencyLabel || '\u00A0'}</span>
+                                        <span className="ml-10 text-gray-800">{salesCurrencyRateLabel ? `Kurs: ${salesCurrencyRateLabel}` : '\u00A0'}</span>
                                     </div>
-                                </span>
+                                </div>
+                            </span>
 
-                                <span className="col-span-2">
-                                    <OrderCost
-                                        customerOrderId={customerOrder?.id}
-                                        supplierOrderId={customerOrder?.supplierOrderId}
-                                        rows={customerOrder?.orderCosts ?? []}
-                                        costOptions={orderCostOptions}
-                                        currencyOptions={currencyOptions}
-                                        palletFormatId={customerOrder?.palletFormatId}
-                                        eurPallet={customerOrder?.eurPallet}
-                                        nrOfEurPallet={customerOrder?.nrOfEurPallet}
-                                        eurPalletValue={customerOrder?.eurPalletValue}
-                                        palletFormatOptions={palletFormatOptions}
-                                        onPalletChange={handlePalletRowChange}
-                                        onChange={handleOrderCostChange}
-                                    />
-                                </span>
-                            </div>
-                        </span>
-                    </div>
+                            <span className="col-span-2">
+                                <OrderCost
+                                    customerOrderId={customerOrder?.id}
+                                    supplierOrderId={customerOrder?.supplierOrderId}
+                                    rows={customerOrder?.orderCosts ?? []}
+                                    costOptions={orderCostOptions}
+                                    currencyOptions={currencyOptions}
+                                    palletFormatId={customerOrder?.palletFormatId}
+                                    eurPallet={customerOrder?.eurPallet}
+                                    nrOfEurPallet={customerOrder?.nrOfEurPallet}
+                                    eurPalletValue={customerOrder?.eurPalletValue}
+                                    palletFormatOptions={palletFormatOptions}
+                                    onPalletChange={handlePalletRowChange}
+                                    onChange={handleOrderCostChange}
+                                />
+                            </span>
+
+                            <span className="col-span-2">
+                                <OrderHistory
+                                    entityType="customerOrder"
+                                    entityId={customerOrder?.id}
+                                    refreshKey={originalCustomerOrder?.edited}
+                                />
+                            </span>
+                        </div>
+                    </span>
+                </div>
             </OrderDetailLayout>
         </div>
     );

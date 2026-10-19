@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Printer, Save, Trash2 } from 'lucide-react';
-import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, ClipboardCopy, Printer, Save, Trash2 } from 'lucide-react';
+import { useBlocker, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
@@ -11,6 +11,7 @@ import OrderNavigationTree from '../../components/OrderNavigationTree';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 import OrderCost from '../../components/OrderCost';
+import OrderHistory from '../../components/OrderHistory';
 import LabeledDatePicker from '../../components/LabeledDatePicker';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
@@ -48,6 +49,7 @@ const formatCompactNumber = (value, maxFractionDigits = 2) => {
     }).format(parsed);
 };
 const makeTempId = () => `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const getTodayDate = () => new Date().toLocaleDateString('sv-SE');
 
 const mapApiOrderCostToEditable = (row) => ({
     localId: row?.id ? String(row.id) : makeTempId(),
@@ -164,6 +166,7 @@ const renderReadOnlyInfoRow = (label, value) => (
 );
 
 const SupplierOrder = () => {
+    const location = useLocation();
     const navigate = useNavigate();
     const { id } = useParams();
     const [searchParams] = useSearchParams();
@@ -562,6 +565,98 @@ const SupplierOrder = () => {
         }
     };
 
+    const canStartSupplierOrderAction = () => {
+        if (!supplierOrder?.id || supplierOrder.id <= 0) return false;
+        if (hasUnsavedChanges()) {
+            setMessages((prev) => [
+                ...prev.filter((message) => message.type !== 'warning'),
+                { type: 'warning', text: 'Spara beställningen innan du skapar ett nytt ordererkännande eller en repeatorder.' },
+            ]);
+            return false;
+        }
+
+        return true;
+    };
+
+    const handleCreateCustomerOrder = async () => {
+        if (!canStartSupplierOrderAction()) return;
+
+        try {
+            const quotationResponse = supplierOrder.quotationId
+                ? await apiClient.get(`/quotations/${supplierOrder.quotationId}`)
+                : null;
+            const quotation = quotationResponse?.data;
+            const quotationRow = toArray(quotation?.quotationRows).find(
+                (row) => Number(row?.calculationRowId) === Number(supplierOrder.selectedCalculationRowId),
+            );
+            const customerOrderDraft = {
+                id: 0,
+                supplierOrderId: supplierOrder.id,
+                supplierOrderNr: supplierOrder.supplierOrderNr || '',
+                quotationId: supplierOrder.quotationId ?? null,
+                customerId: quotation?.customerId ?? supplierOrder.customerId ?? null,
+                customerName: quotation?.customerName ?? supplierOrder.customerName ?? '',
+                deliveryAddressName: quotation?.deliveryAddressName ?? supplierOrder.deliveryAddressName ?? '',
+                deliveryAddress: quotation?.deliveryAddress ?? supplierOrder.deliveryAddress ?? '',
+                deliveryPostalNr: quotation?.deliveryPostalNr ?? supplierOrder.deliveryPostalNr ?? '',
+                deliveryPostalAddress: quotation?.deliveryPostalAddress ?? supplierOrder.deliveryPostalAddress ?? '',
+                deliveryCountry: quotation?.deliveryCountry ?? supplierOrder.deliveryCountry ?? '',
+                date: getTodayDate(),
+                yourReference: quotation?.yourReference ?? supplierOrder.yourReference ?? '',
+                ourReference: quotation?.ourReference ?? supplierOrder.ourReference ?? '',
+                termsOfDelivery: quotation?.termsOfDelivery ?? supplierOrder.termsOfDelivery ?? '',
+                termsOfPayment: quotation?.termsOfPayment ?? supplierOrder.termsOfPayment ?? '',
+                timeOfDelivery: quotation?.timeOfDelivery ?? supplierOrder.timeOfDelivery ?? '',
+                message: quotation?.message ?? supplierOrder.message ?? '',
+                product: quotation?.product ?? supplierOrder.product ?? '',
+                material: quotation?.material ?? supplierOrder.material ?? '',
+                format: quotation?.format ?? supplierOrder.format ?? '',
+                color: quotation?.color ?? supplierOrder.color ?? '',
+                construction: quotation?.construction ?? supplierOrder.construction ?? '',
+                isFSC: Boolean(supplierOrder.isFSC),
+                salesCurrencyId: quotation?.salesCurrencyId ?? null,
+                salesCurrencyRate: quotation?.salesCurrencyRate ?? null,
+                unitId: quotation?.unitId ?? supplierOrder.unitId ?? null,
+                selectedCalculationRowId: supplierOrder.selectedCalculationRowId ?? null,
+                edition: supplierOrder.edition ?? quotationRow?.edition ?? null,
+                salesPrice: quotationRow?.price ?? null,
+                palletFormatId: supplierOrder.palletFormatId ?? null,
+                eurPallet: Boolean(supplierOrder.eurPallet),
+                orderCosts: [],
+            };
+
+            navigate('/order/customerorders/new', { state: { customerOrderDraft } });
+        } catch (error) {
+            console.error('Failed to prepare customer order from supplier order:', error);
+            setMessages((prev) => [
+                ...prev.filter((message) => message.type !== 'error'),
+                { type: 'error', text: 'Kunde inte förbereda ordererkännande från beställningen.' },
+            ]);
+        }
+    };
+
+    const handleCreateRepeatOrder = () => {
+        if (!canStartSupplierOrderAction()) return;
+
+        const repeatDraft = {
+            ...supplierOrder,
+            id: 0,
+            supplierOrderNr: '',
+            basedOnSupplierOrderId: supplierOrder.id,
+            date: getTodayDate(),
+            confirmed: false,
+            confirmedDeliveryDate: null,
+            confirmedDeliveryDateWeekMode: false,
+            orderCosts: [],
+            created: null,
+            edited: null,
+            createdByUserName: null,
+            editedByUserName: null,
+        };
+
+        navigate('/order/supplierorders/new', { state: { supplierOrderDraft: repeatDraft } });
+    };
+
     const handleDelete = async () => {
         setShowDeleteConfirm(false);
 
@@ -637,9 +732,13 @@ const SupplierOrder = () => {
             try {
                 if (isNewSupplierOrder) {
                     const empty = createNewSupplierOrderModel();
+                    const draft = location.state?.supplierOrderDraft;
                     if (!isActive) return;
-                    setSupplierOrder(empty);
-                    setOriginalSupplierOrder(structuredClone(empty));
+                    const initialOrder = draft
+                        ? { ...empty, ...draft, id: 0, orderCosts: toArray(draft.orderCosts) }
+                        : empty;
+                    setSupplierOrder(initialOrder);
+                    setOriginalSupplierOrder(structuredClone(initialOrder));
                 } else {
                     const requestKey = `supplierorders:${id}`;
                     const response = await getSharedRequest(requestKey, () => apiClient.get(`/supplierorders/${id}`));
@@ -668,7 +767,7 @@ const SupplierOrder = () => {
         return () => {
             isActive = false;
         };
-    }, [id, isNewSupplierOrder]);
+    }, [id, isNewSupplierOrder, location.state]);
 
     useEffect(() => {
         let isActive = true;
@@ -1049,329 +1148,353 @@ const SupplierOrder = () => {
                     />
                 )}
             >
-                    <div className="flex justify-between w-full mb-5">
-                        <div className="flex items-center gap-6">
+                <div className="flex justify-between w-full mb-5">
+                    <div className="flex items-center gap-6">
+                        <ActionButton
+                            label="Tillbaka"
+                            icon={ArrowLeft}
+                            onClick={handleBackClick}
+                            accent="slate"
+                        />
+                        <ActionButton
+                            label="Spara"
+                            icon={Save}
+                            onClick={handleSave}
+                            disabled={Boolean(calculationId && calculationId > 0 && !workflowDraftReady)}
+                            accent="lime"
+                        />
+                        {supplierOrder?.id !== 0 && (
                             <ActionButton
-                                label="Tillbaka"
-                                icon={ArrowLeft}
-                                onClick={handleBackClick}
-                                accent="slate"
+                                label="Skriv ut"
+                                icon={Printer}
+                                onClick={() => void getPdf()}
+                                accent="sky"
                             />
-                            <ActionButton
-                                label="Spara"
-                                icon={Save}
-                                onClick={handleSave}
-                                disabled={Boolean(calculationId && calculationId > 0 && !workflowDraftReady)}
-                                accent="lime"
-                            />
-                            {supplierOrder?.id !== 0 && (
+                        )}
+                        {supplierOrder?.id > 0 && !supplierOrder?.blockOrderCalculationId && (
+                            <>
                                 <ActionButton
-                                    label="Skriv ut"
-                                    icon={Printer}
-                                    onClick={() => void getPdf()}
-                                    accent="sky"
+                                    label="Nytt ordererkännande"
+                                    icon={ClipboardCopy}
+                                    onClick={() => void handleCreateCustomerOrder()}
+                                    accent="indigo"
                                 />
-                            )}
+                                <ActionButton
+                                    label="Repeatorder"
+                                    icon={ClipboardCopy}
+                                    onClick={handleCreateRepeatOrder}
+                                    accent="violet"
+                                />
+                            </>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-6">
+                        {supplierOrder?.id !== 0 && (
+                            <ActionButton
+                                label="Radera"
+                                icon={Trash2}
+                                onClick={() => setShowDeleteConfirm(true)}
+                                accent="rose"
+                            />
+                        )}
+                    </div>
+                </div>
+
+                <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-gradient-to-br from-slate-50 via-white to-slate-100 px-5 py-4 shadow-sm">
+                    <div className="grid grid-cols-[3fr_1fr]">
+                        <div className="mt-0 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                            {renderReadOnlyInfoRow('Produkt', supplierOrder?.product)}
+                            {renderReadOnlyInfoRow('Material', supplierOrder?.material)}
+                            {renderReadOnlyInfoRow('Format', supplierOrder?.format)}
+                            {renderReadOnlyInfoRow('Färg', supplierOrder?.color)}
+                            {renderReadOnlyInfoRow('Konstruktion', supplierOrder?.construction)}
+                            {renderReadOnlyInfoRow('FSC', supplierOrder?.isFSC ? 'Ja' : 'Nej')}
                         </div>
-                        <div className="flex items-center gap-6">
-                            {supplierOrder?.id !== 0 && (
-                                <ActionButton
-                                    label="Radera"
-                                    icon={Trash2}
-                                    onClick={() => setShowDeleteConfirm(true)}
-                                    accent="rose"
-                                />
-                            )}
+                        <div>
+                            {renderReadOnlyInfoRow('Packning', supplierOrder?.packagingType || 'Saknas')}
                         </div>
                     </div>
+                </div>
 
-                    <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-gradient-to-br from-slate-50 via-white to-slate-100 px-5 py-4 shadow-sm">
-                        <div className="grid grid-cols-[3fr_1fr]">
-                            <div className="mt-0 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                {renderReadOnlyInfoRow('Produkt', supplierOrder?.product)}
-                                {renderReadOnlyInfoRow('Material', supplierOrder?.material)}
-                                {renderReadOnlyInfoRow('Format', supplierOrder?.format)}
-                                {renderReadOnlyInfoRow('Färg', supplierOrder?.color)}
-                                {renderReadOnlyInfoRow('Konstruktion', supplierOrder?.construction)}
-                                {renderReadOnlyInfoRow('FSC', supplierOrder?.isFSC ? 'Ja' : 'Nej')}
-                            </div>
-                            <div>
-                                {renderReadOnlyInfoRow('Packning', supplierOrder?.packagingType || 'Saknas')}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
-                        <span>
-                            <div className="grid grid-cols-[380px_380px_300px] gap-x-20 gap-y-8">
-                                <span>
-                                    <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">{supplierOrder?.customerName || ''}</p>
-                                    <LabeledReactSelect
-                                        name="customerDeliveryAddressId"
-                                        label="Lev. adress"
-                                        value={supplierOrder?.deliveryAddressName || ''}
-                                        items={customerDeliveryAddressItems}
-                                        onChange={handleCustomerDeliveryAddressChange}
-                                        labelWidth="w-20"
-                                        margintop="2"
-                                        allowRawValueLabel
-                                    />
+                <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
+                    <span>
+                        <div className="grid grid-cols-[380px_380px_300px] gap-x-20 gap-y-8">
+                            <span>
+                                <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">{supplierOrder?.customerName || ''}</p>
+                                <LabeledReactSelect
+                                    name="customerDeliveryAddressId"
+                                    label="Lev. adress"
+                                    value={supplierOrder?.deliveryAddressName || ''}
+                                    items={customerDeliveryAddressItems}
+                                    onChange={handleCustomerDeliveryAddressChange}
+                                    labelWidth="w-20"
+                                    margintop="2"
+                                    allowRawValueLabel
+                                />
+                                <LabeledInput
+                                    label=""
+                                    value={supplierOrder?.deliveryAddressName || ''}
+                                    onChange={(value) => updateSupplierOrder({ deliveryAddressName: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                />
+                                <LabeledInput
+                                    label=""
+                                    value={supplierOrder?.deliveryAddress || ''}
+                                    onChange={(value) => updateSupplierOrder({ deliveryAddress: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                />
+                                <div className="flex space-x-1 w-full mt-[0px]">
                                     <LabeledInput
+                                        name="deliveryPostalNr"
                                         label=""
-                                        value={supplierOrder?.deliveryAddressName || ''}
-                                        onChange={(value) => updateSupplierOrder({ deliveryAddressName: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                    />
-                                    <LabeledInput
-                                        label=""
-                                        value={supplierOrder?.deliveryAddress || ''}
-                                        onChange={(value) => updateSupplierOrder({ deliveryAddress: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                    />
-                                    <div className="flex space-x-1 w-full mt-[0px]">
-                                        <LabeledInput
-                                            name="deliveryPostalNr"
-                                            label=""
-                                            value={supplierOrder?.deliveryPostalNr || ''}
-                                            onChange={(value) => updateSupplierOrder({ deliveryPostalNr: value })}
-                                            labelWidth="w-20"
-                                            inputWidth="w-25"
-                                            margintop="0"
-                                            placeholder=""
-                                        />
-                                        <div className="w-full">
-                                            <input
-                                                name="deliveryPostalAddress"
-                                                value={supplierOrder?.deliveryPostalAddress || ''}
-                                                onChange={(event) => updateSupplierOrder({ deliveryPostalAddress: event.target.value })}
-                                                className="text-xs w-full border border-gray-300 rounded-sm px-2 py-1 focus:outline-none bg-white"
-                                            />
-                                        </div>
-                                    </div>
-                                    <LabeledInput
-                                        label=""
-                                        value={supplierOrder?.deliveryCountry || ''}
-                                        onChange={(value) => updateSupplierOrder({ deliveryCountry: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                    />
-                                    <LabeledInput
-                                        label="Kunds onr"
-                                        value={supplierOrder?.customerOrderNr || ''}
-                                        onChange={(value) => updateSupplierOrder({ customerOrderNr: value })}
-                                        labelWidth="w-20"
-                                        margintop="3"
-                                    />
-                                    <LabeledInput
-                                        label="Tidigare order"
-                                        value={supplierOrder?.basedOnSupplierOrderId || ''}
-                                        onChange={(value) => updateSupplierOrder({ basedOnSupplierOrderId: value })}
+                                        value={supplierOrder?.deliveryPostalNr || ''}
+                                        onChange={(value) => updateSupplierOrder({ deliveryPostalNr: value })}
                                         labelWidth="w-20"
                                         inputWidth="w-25"
                                         margintop="0"
+                                        placeholder=""
+                                    />
+                                    <div className="w-full">
+                                        <input
+                                            name="deliveryPostalAddress"
+                                            value={supplierOrder?.deliveryPostalAddress || ''}
+                                            onChange={(event) => updateSupplierOrder({ deliveryPostalAddress: event.target.value })}
+                                            className="text-xs w-full border border-gray-300 rounded-sm px-2 py-1 focus:outline-none bg-white"
+                                        />
+                                    </div>
+                                </div>
+                                <LabeledInput
+                                    label=""
+                                    value={supplierOrder?.deliveryCountry || ''}
+                                    onChange={(value) => updateSupplierOrder({ deliveryCountry: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                />
+                                <LabeledInput
+                                    label="Kunds onr"
+                                    value={supplierOrder?.customerOrderNr || ''}
+                                    onChange={(value) => updateSupplierOrder({ customerOrderNr: value })}
+                                    labelWidth="w-20"
+                                    margintop="3"
+                                />
+                                <LabeledInput
+                                    label="Tidigare order"
+                                    value={supplierOrder?.basedOnSupplierOrderId || ''}
+                                    onChange={(value) => updateSupplierOrder({ basedOnSupplierOrderId: value })}
+                                    labelWidth="w-20"
+                                    inputWidth="w-25"
+                                    margintop="0"
+                                    numberOnly
+                                />
+                                <div className="flex items-center text-xs mt-[4px]">
+                                    <span className="w-20 flex-none text-xs text-gray-700">Godsmärkning</span>
+                                    <div className="flex items-center gap-3 ml-2">
+                                        <LabeledSwitch
+                                            field="goodsMarkingProdukt"
+                                            name="goodsMarkingProdukt"
+                                            label="produkt"
+                                            labelPosition="right"
+                                            value={showProductInGoodsMarking}
+                                            onChange={(rowId, field, checked) => handleGoodsMarkingToggle('produkt', checked, { hideProductNameOnPrint: !checked })}
+                                            labelWidth="w-auto"
+                                            marginTop={0}
+                                        />
+                                        <LabeledSwitch
+                                            field="goodsMarkingKundordernr"
+                                            name="goodsMarkingKundordernr"
+                                            label="kundordernr"
+                                            labelPosition="right"
+                                            value={showCustomerOrderNrInGoodsMarking}
+                                            onChange={(rowId, field, checked) => handleGoodsMarkingToggle('kundordernr', checked)}
+                                            labelWidth="w-auto"
+                                            marginTop={0}
+                                        />
+                                        <LabeledSwitch
+                                            field="goodsMarkingKundnamn"
+                                            name="goodsMarkingKundnamn"
+                                            label="kundnamn"
+                                            labelPosition="right"
+                                            value={showCustomerNameInGoodsMarking}
+                                            onChange={(rowId, field, checked) => handleGoodsMarkingToggle('kundnamn', checked, { hideCustomerNameOnPrint: !checked })}
+                                            labelWidth="w-auto"
+                                            marginTop={0}
+                                        />
+                                    </div>
+                                </div>
+                            </span>
+
+                            <span>
+                                <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">{supplierOrder?.supplierName ?? 'Saknas'}</p>
+                                <LabeledReactSelect
+                                    name="supplierFactoryId"
+                                    label="Fabrik"
+                                    value={supplierOrder?.supplierFactoryId || ''}
+                                    items={supplierFactoryOptions}
+                                    onChange={(value) => updateSupplierOrder({ supplierFactoryId: parseNullableInt(value) })}
+                                    labelWidth="w-20"
+                                    margintop="2"
+                                    allowRawValueLabel
+                                />
+                                <LabeledReactSelect
+                                    name="inventoryId"
+                                    label="Lager"
+                                    value={supplierOrder?.inventoryId || ''}
+                                    items={inventoryOptions}
+                                    onChange={(value) => updateSupplierOrder({ inventoryId: parseNullableInt(value) })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                    allowRawValueLabel
+                                />
+                                <LabeledReactSelect
+                                    name="yourReference"
+                                    label="Er referens"
+                                    value={supplierOrder?.yourReference || ''}
+                                    items={customerContactPersonItems}
+                                    onChange={(value) => updateSupplierOrder({ yourReference: value || '' })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                    allowRawValueLabel
+                                />
+                                <LabeledReactSelect
+                                    name="ourReference"
+                                    label="Vår referens"
+                                    value={supplierOrder?.ourReference || ''}
+                                    items={legacyUserOptions}
+                                    onChange={(value) => updateSupplierOrder({ ourReference: value || '' })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                    allowRawValueLabel
+                                />
+                                <LabeledInput
+                                    label="Lev.villkor"
+                                    value={supplierOrder?.termsOfDelivery || ''}
+                                    onChange={(value) => updateSupplierOrder({ termsOfDelivery: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                />
+                                <LabeledTextArea
+                                    label="Bet.villkor"
+                                    value={supplierOrder?.termsOfPayment || ''}
+                                    onChange={(value) => updateSupplierOrder({ termsOfPayment: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                    height="h-10"
+                                />
+                                <LabeledTextArea
+                                    label="Meddelande"
+                                    value={supplierOrder?.message || ''}
+                                    onChange={(value) => updateSupplierOrder({ message: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                    height="h-20"
+                                />
+                                <LabeledTextArea
+                                    label="Packinstrukt."
+                                    value={supplierOrder?.loadingInstruction || ''}
+                                    onChange={(value) => updateSupplierOrder({ loadingInstruction: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                    height="h-10"
+                                />
+                            </span>
+
+                            <span>
+                                <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">Beställningsinfo</p>
+                                <div className="">
+                                    <LabeledSwitch
+                                        field="econopackTransportResponsible"
+                                        name="econopackTransportResponsible"
+                                        label="Econopac trp.ansv."
+                                        value={supplierOrder?.econopackTransportResponsible || false}
+                                        onChange={(rowId, field, checked) => updateSupplierOrder({ [field]: checked })}
+                                        labelWidth="w-35"
+                                        marginTop={2}
+                                    />
+
+                                    <LabeledDatePicker
+                                        label="Önskat lev.datum"
+                                        value={supplierOrder?.deliveryDate}
+                                        onChange={(nextValue) => updateSupplierOrder({ deliveryDate: nextValue })}
+                                        weekMode={Boolean(supplierOrder?.deliveryDateWeekMode)}
+                                        onWeekModeChange={(nextWeekMode) => updateSupplierOrder({ deliveryDateWeekMode: nextWeekMode })}
+                                        enableWeekSelect
+                                        labelWidth="w-35"
+                                        inputWidth="w-30"
+                                        margintop="0"
+                                        placeholder="Välj datum/vecka"
+                                    />
+
+                                    <LabeledDatePicker
+                                        label="Bekräftat lev.datum"
+                                        value={supplierOrder?.confirmedDeliveryDate}
+                                        onChange={(nextValue) => updateSupplierOrder({ confirmedDeliveryDate: nextValue })}
+                                        weekMode={Boolean(supplierOrder?.confirmedDeliveryDateWeekMode)}
+                                        onWeekModeChange={(nextWeekMode) => updateSupplierOrder({ confirmedDeliveryDateWeekMode: nextWeekMode })}
+                                        enableWeekSelect
+                                        labelWidth="w-35"
+                                        inputWidth="w-30"
+                                        margintop="0"
+                                        placeholder="Välj datum/vecka"
+                                    />
+
+                                    <div className="mt-5 text-xs">
+                                        <p className="text-gray-900 font-bold">Upplaga och pris</p>
+                                        <div className="flex items-center gap-0 mt-2">
+                                            <span className="text-gray-800">{editionLabel || '\u00A0'}</span>
+                                            <span className="ml-2 text-gray-800">{unitLabel || '\u00A0'}</span>
+                                            <span className="ml-10 text-gray-800">{purchasePriceLabel || '\u00A0'}</span>
+                                            <span className="ml-2 text-xs text-gray-800">{purchaseCurrencyLabel || '\u00A0'}</span>
+                                            <span className="ml-10 text-gray-800">{purchaseCurrencyRateLabel ? `Kurs: ${purchaseCurrencyRateLabel}` : '\u00A0'}</span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="mt-2 shadow-md/30 text-xs text-gray bg-blue-200 hover:bg-blue-300 px-4 pt-[6px] pb-[4px] rounded-sm"
+                                        >
+                                            Uppdatera från kalkyl
+                                        </button>
+                                    </div>
+
+                                    <LabeledInput
+                                        label="Producerat antal"
+                                        value={supplierOrder?.producedEdition || ''}
+                                        onChange={(value) => updateSupplierOrder({ producedEdition: parseNullableInt(value) })}
+                                        labelWidth="w-35"
+                                        inputWidth="w-30"
+                                        margintop="5"
                                         numberOnly
                                     />
-                                    <div className="flex items-center text-xs mt-[4px]">
-                                        <span className="w-20 flex-none text-xs text-gray-700">Godsmärkning</span>
-                                        <div className="flex items-center gap-3 ml-2">
-                                            <LabeledSwitch
-                                                field="goodsMarkingProdukt"
-                                                name="goodsMarkingProdukt"
-                                                label="produkt"
-                                                labelPosition="right"
-                                                value={showProductInGoodsMarking}
-                                                onChange={(rowId, field, checked) => handleGoodsMarkingToggle('produkt', checked, { hideProductNameOnPrint: !checked })}
-                                                labelWidth="w-auto"
-                                                marginTop={0}
-                                            />
-                                            <LabeledSwitch
-                                                field="goodsMarkingKundordernr"
-                                                name="goodsMarkingKundordernr"
-                                                label="kundordernr"
-                                                labelPosition="right"
-                                                value={showCustomerOrderNrInGoodsMarking}
-                                                onChange={(rowId, field, checked) => handleGoodsMarkingToggle('kundordernr', checked)}
-                                                labelWidth="w-auto"
-                                                marginTop={0}
-                                            />
-                                            <LabeledSwitch
-                                                field="goodsMarkingKundnamn"
-                                                name="goodsMarkingKundnamn"
-                                                label="kundnamn"
-                                                labelPosition="right"
-                                                value={showCustomerNameInGoodsMarking}
-                                                onChange={(rowId, field, checked) => handleGoodsMarkingToggle('kundnamn', checked, { hideCustomerNameOnPrint: !checked })}
-                                                labelWidth="w-auto"
-                                                marginTop={0}
-                                            />
-                                        </div>
-                                    </div>
-                                </span>
 
-                                <span>
-                                    <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">{supplierOrder?.supplierName ?? 'Saknas'}</p>
-                                    <LabeledReactSelect
-                                        name="supplierFactoryId"
-                                        label="Fabrik"
-                                        value={supplierOrder?.supplierFactoryId || ''}
-                                        items={supplierFactoryOptions}
-                                        onChange={(value) => updateSupplierOrder({ supplierFactoryId: parseNullableInt(value) })}
-                                        labelWidth="w-20"
-                                        margintop="2"
-                                        allowRawValueLabel
-                                    />
-                                    <LabeledReactSelect
-                                        name="inventoryId"
-                                        label="Lager"
-                                        value={supplierOrder?.inventoryId || ''}
-                                        items={inventoryOptions}
-                                        onChange={(value) => updateSupplierOrder({ inventoryId: parseNullableInt(value) })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                        allowRawValueLabel
-                                    />
-                                    <LabeledReactSelect
-                                        name="yourReference"
-                                        label="Er referens"
-                                        value={supplierOrder?.yourReference || ''}
-                                        items={customerContactPersonItems}
-                                        onChange={(value) => updateSupplierOrder({ yourReference: value || '' })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                        allowRawValueLabel
-                                    />
-                                    <LabeledReactSelect
-                                        name="ourReference"
-                                        label="Vår referens"
-                                        value={supplierOrder?.ourReference || ''}
-                                        items={legacyUserOptions}
-                                        onChange={(value) => updateSupplierOrder({ ourReference: value || '' })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                        allowRawValueLabel
-                                    />
-                                    <LabeledInput
-                                        label="Lev.villkor"
-                                        value={supplierOrder?.termsOfDelivery || ''}
-                                        onChange={(value) => updateSupplierOrder({ termsOfDelivery: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                    />
-                                    <LabeledTextArea
-                                        label="Bet.villkor"
-                                        value={supplierOrder?.termsOfPayment || ''}
-                                        onChange={(value) => updateSupplierOrder({ termsOfPayment: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                        height="h-10"
-                                    />
-                                    <LabeledTextArea
-                                        label="Meddelande"
-                                        value={supplierOrder?.message || ''}
-                                        onChange={(value) => updateSupplierOrder({ message: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                        height="h-20"
-                                    />
-                                    <LabeledTextArea
-                                        label="Packinstrukt."
-                                        value={supplierOrder?.loadingInstruction || ''}
-                                        onChange={(value) => updateSupplierOrder({ loadingInstruction: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                        height="h-10"
-                                    />
-                                </span>
+                                </div>
+                            </span>
 
-                                <span>
-                                    <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">Beställningsinfo</p>
-                                    <div className="">
-                                        <LabeledSwitch
-                                            field="econopackTransportResponsible"
-                                            name="econopackTransportResponsible"
-                                            label="Econopac trp.ansv."
-                                            value={supplierOrder?.econopackTransportResponsible || false}
-                                            onChange={(rowId, field, checked) => updateSupplierOrder({ [field]: checked })}
-                                            labelWidth="w-35"
-                                            marginTop={2}
-                                        />
+                            <span className="col-span-2">
+                                <OrderCost
+                                    supplierOrderId={supplierOrder?.id}
+                                    rows={supplierOrder?.orderCosts ?? []}
+                                    costOptions={orderCostOptions}
+                                    currencyOptions={currencyOptions}
+                                    palletFormatId={supplierOrder?.palletFormatId}
+                                    eurPallet={supplierOrder?.eurPallet}
+                                    nrOfEurPallet={null}
+                                    eurPalletValue={null}
+                                    palletFormatOptions={palletFormatOptions}
+                                    onPalletChange={handlePalletRowChange}
+                                    onChange={handleOrderCostChange}
+                                />
+                            </span>
 
-                                        <LabeledDatePicker
-                                            label="Önskat lev.datum"
-                                            value={supplierOrder?.deliveryDate}
-                                            onChange={(nextValue) => updateSupplierOrder({ deliveryDate: nextValue })}
-                                            weekMode={Boolean(supplierOrder?.deliveryDateWeekMode)}
-                                            onWeekModeChange={(nextWeekMode) => updateSupplierOrder({ deliveryDateWeekMode: nextWeekMode })}
-                                            enableWeekSelect
-                                            labelWidth="w-35"
-                                            inputWidth="w-30"
-                                            margintop="0"
-                                            placeholder="Välj datum/vecka"
-                                        />
-
-                                        <LabeledDatePicker
-                                            label="Bekräftat lev.datum"
-                                            value={supplierOrder?.confirmedDeliveryDate}
-                                            onChange={(nextValue) => updateSupplierOrder({ confirmedDeliveryDate: nextValue })}
-                                            weekMode={Boolean(supplierOrder?.confirmedDeliveryDateWeekMode)}
-                                            onWeekModeChange={(nextWeekMode) => updateSupplierOrder({ confirmedDeliveryDateWeekMode: nextWeekMode })}
-                                            enableWeekSelect
-                                            labelWidth="w-35"
-                                            inputWidth="w-30"
-                                            margintop="0"
-                                            placeholder="Välj datum/vecka"
-                                        />
-
-                                        <div className="mt-5 text-xs">
-                                            <p className="text-gray-900 font-bold">Upplaga och pris</p>
-                                            <div className="flex items-center gap-0 mt-2">
-                                                <span className="text-gray-800">{editionLabel || '\u00A0'}</span>
-                                                <span className="ml-2 text-gray-800">{unitLabel || '\u00A0'}</span>
-                                                <span className="ml-10 text-gray-800">{purchasePriceLabel || '\u00A0'}</span>
-                                                <span className="ml-2 text-xs text-gray-800">{purchaseCurrencyLabel || '\u00A0'}</span>
-                                                <span className="ml-10 text-gray-800">{purchaseCurrencyRateLabel ? `Kurs: ${purchaseCurrencyRateLabel}` : '\u00A0'}</span>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                className="mt-2 shadow-md/30 text-xs text-gray bg-blue-200 hover:bg-blue-300 px-4 pt-[6px] pb-[4px] rounded-sm"
-                                            >
-                                                Uppdatera från kalkyl
-                                            </button>
-                                        </div>
-
-                                        <LabeledInput
-                                            label="Producerat antal"
-                                            value={supplierOrder?.producedEdition || ''}
-                                            onChange={(value) => updateSupplierOrder({ producedEdition: parseNullableInt(value) })}
-                                            labelWidth="w-35"
-                                            inputWidth="w-30"
-                                            margintop="5"
-                                            numberOnly
-                                        />
-
-                                    </div>
-                                </span>
-
-                                <span className="col-span-2">
-                                    <OrderCost
-                                        supplierOrderId={supplierOrder?.id}
-                                        rows={supplierOrder?.orderCosts ?? []}
-                                        costOptions={orderCostOptions}
-                                        currencyOptions={currencyOptions}
-                                        palletFormatId={supplierOrder?.palletFormatId}
-                                        eurPallet={supplierOrder?.eurPallet}
-                                        nrOfEurPallet={null}
-                                        eurPalletValue={null}
-                                        palletFormatOptions={palletFormatOptions}
-                                        onPalletChange={handlePalletRowChange}
-                                        onChange={handleOrderCostChange}
-                                    />
-                                </span>
-                            </div>
-                        </span>
-                    </div>
+                            <span className="col-span-2">
+                                <OrderHistory
+                                    entityType="supplierOrder"
+                                    entityId={supplierOrder?.id}
+                                    refreshKey={originalSupplierOrder?.edited}
+                                />
+                            </span>
+                        </div>
+                    </span>
+                </div>
             </OrderDetailLayout>
         </div>
     );

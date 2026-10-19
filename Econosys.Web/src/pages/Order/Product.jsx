@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useBlocker } from 'react-router-dom';
-import { ArrowLeft, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Calculator, Save, Trash2 } from 'lucide-react';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
@@ -14,6 +14,7 @@ import { formatDateTime } from '../../helpers/dateUtils';
 import { parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
+import OrderNavigationTree from '../../components/OrderNavigationTree';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 
 const createNewProductModel = () => ({
@@ -66,6 +67,8 @@ const Product = () => {
     const [loading, setLoading] = useState(true);
     const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [showNewCalculationConfirm, setShowNewCalculationConfirm] = useState(false);
+    const [isCreatingCalculation, setIsCreatingCalculation] = useState(false);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
 
     const [materials, setMaterials] = useState([]);
@@ -245,12 +248,10 @@ const Product = () => {
         };
     };
 
-    const handleSave = async () => {
-        if (!product) return;
-
+    const saveProduct = async (source) => {
         try {
-            const payload = buildPayload(product);
-            const productId = parseNullableInt(product.id);
+            const payload = buildPayload(source);
+            const productId = parseNullableInt(source.id);
             const isCreatingNew = !(productId && productId > 0);
 
             const response = isCreatingNew
@@ -258,22 +259,69 @@ const Product = () => {
                 : await apiClient.put(`/products/${productId}`, payload);
 
             const savedProduct = response?.data ?? null;
+            if (!savedProduct) {
+                throw new Error('The product save response did not include the saved product.');
+            }
             setProduct(savedProduct);
             setOriginalProduct(structuredClone(savedProduct));
-            setMessages([
-                { type: 'success', text: 'Produkten sparades.' },
-            ]);
-
-            if (isCreatingNew && savedProduct?.id) {
-                skipUnsavedCheckRef.current = true;
-                navigate(`/order/products/${savedProduct.id}`, { replace: true });
-            }
+            return { savedProduct, isCreatingNew };
         } catch (error) {
             console.error('Failed to save product:', error);
             setMessages([
                 { type: 'error', text: 'Kunde inte spara produkten.' },
             ]);
+            return null;
         }
+    };
+
+    const handleSave = async () => {
+        if (!product) return;
+
+        const saveResult = await saveProduct(product);
+        if (!saveResult) return;
+
+        setMessages([{ type: 'success', text: 'Produkten sparades.' }]);
+        if (saveResult.isCreatingNew && saveResult.savedProduct.id) {
+            skipUnsavedCheckRef.current = true;
+            navigate(`/order/products/${saveResult.savedProduct.id}`, { replace: true });
+        }
+    };
+
+    const handleNewCalculation = async () => {
+        if (!product || isCreatingCalculation) return;
+        setShowNewCalculationConfirm(false);
+        setIsCreatingCalculation(true);
+
+        try {
+            const productIsNew = !(Number(product.id) > 0);
+            const productHasChanges = JSON.stringify(product) !== JSON.stringify(originalProduct);
+            let calculationProduct = product;
+
+            if (productIsNew || productHasChanges) {
+                const saveResult = await saveProduct(product);
+                if (!saveResult) return;
+                calculationProduct = saveResult.savedProduct;
+            }
+
+            skipUnsavedCheckRef.current = true;
+            navigate(`/order/calculations/new?productId=${calculationProduct.id}`);
+        } catch (error) {
+            console.error('Failed to create calculation from product:', error);
+            setMessages([{ type: 'error', text: 'Kunde inte skapa kalkyl från produkten.' }]);
+        } finally {
+            setIsCreatingCalculation(false);
+        }
+    };
+
+    const handleNewCalculationClick = () => {
+        const productIsNew = !(Number(product?.id) > 0);
+        const productHasChanges = JSON.stringify(product) !== JSON.stringify(originalProduct);
+        if (productIsNew || productHasChanges) {
+            setShowNewCalculationConfirm(true);
+            return;
+        }
+
+        void handleNewCalculation();
     };
 
     const handleDelete = async () => {
@@ -326,6 +374,17 @@ const Product = () => {
             />
 
             <ConfirmationModal
+                isOpen={showNewCalculationConfirm}
+                onClose={() => setShowNewCalculationConfirm(false)}
+                onConfirm={handleNewCalculation}
+                title="NY KALKYL"
+                message="Produkten måste sparas innan en kalkyl kan skapas. Vill du spara den nu?"
+                confirmText="Spara och fortsätt"
+                cancelText="Avbryt"
+                isDestructive={false}
+            />
+
+            <ConfirmationModal
                 isOpen={showUnsavedWarning}
                 onClose={handleUnsavedWarningAbort}
                 onConfirm={handleUnsavedWarningConfirm}
@@ -351,6 +410,12 @@ const Product = () => {
                         </div>
                     </div>
                 )}
+                infoFooter={(
+                    <OrderNavigationTree
+                        entityType="product"
+                        entityId={Number.isInteger(product?.id) && product.id > 0 ? product.id : null}
+                    />
+                )}
             >
                     <div className="flex justify-between w-full mb-5">
                         <div className="flex items-center gap-6">
@@ -366,6 +431,14 @@ const Product = () => {
                                 icon={Save}
                                 onClick={handleSave}
                                 accent="lime"
+                            >
+                            </ActionButton>
+                            <ActionButton
+                                label="Ny kalkyl"
+                                icon={Calculator}
+                                onClick={handleNewCalculationClick}
+                                disabled={isCreatingCalculation}
+                                accent="teal"
                             >
                             </ActionButton>
                         </div>

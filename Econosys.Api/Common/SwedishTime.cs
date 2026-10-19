@@ -8,6 +8,12 @@ public static class SwedishTime
 
     public static DateTime Today => Now.Date;
 
+    public static DateTimeOffset ToDateTimeOffset(DateTime value)
+    {
+        var local = DateTime.SpecifyKind(value, DateTimeKind.Unspecified);
+        return new DateTimeOffset(local, SwedenTimeZone.GetUtcOffset(local));
+    }
+
     private static TimeZoneInfo ResolveSwedenTimeZone()
     {
         var timezoneIds = new[]

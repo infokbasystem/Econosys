@@ -88,6 +88,7 @@ public static class CalculationUpdateMapper
         int unitMultiplier,
         int salesDecimals)
     {
+        row.CompanyId = calculation.CompanyId;
         row.Edition = request.Edition;
         row.PurchasePrice = request.PurchasePrice;
         row.Freight = request.Freight;

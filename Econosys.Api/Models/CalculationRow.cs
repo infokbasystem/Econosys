@@ -10,6 +10,9 @@ namespace Econosys.Api.Models
         [Column("lngCalculationRow_ID")]
         public int Id { get; set; }
 
+        [Column("CompanyId")]
+        public int CompanyId { get; set; }
+
         [Column("lngCalculation_ID")]
         public int? CalculationId { get; set; }
 

@@ -602,7 +602,7 @@ const NewDelivery = () => {
 
   const validateForm = () => {
     if (!orderInfo?.customerOrderId || !orderInfo.supplierOrderId) {
-      return 'Välj en order med tillhörande leverantörsorder.'
+      return 'Välj en order med tillhörande beställning.'
     }
     if (!form.deliveryDate) return 'Måste ange datum.'
     if (deliveryParts.totalItems == null || deliveryParts.totalItems < 0) {

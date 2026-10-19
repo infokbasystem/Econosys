@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { changeFreightMode, getAutomaticFreightGeometry, getFreightMode, parseFreightFactors } from './calculationFreight.js';
+import { changeFreightMode, getAutomaticFreightGeometry, getFreightEditState, getFreightMode, parseFreightFactors } from './calculationFreight.js';
 
 const createCalculation = () => ({
     autoFreightCalc: true,
@@ -23,6 +23,65 @@ const createCalculation = () => ({
         { archived: true, freight: 150, preCalcAdditionPercent: 5 },
         { isDraft: true, edition: null, freight: null },
     ],
+});
+
+test('opening a saved calculation does not apply freight defaults or recalculate saved rows', () => {
+    const saved = {
+        ...createCalculation(),
+        supplier: { id: 4, name: 'Supplier' },
+        customer: { id: 8, name: 'Customer' },
+        supplierFactoryId: null,
+        customerDeliveryAddressId: null,
+        palletLength: 1200,
+        palletWidth: 800,
+        unitId: 1,
+    };
+    assert.deepEqual(getFreightEditState(structuredClone(saved), saved), {
+        selectDefaultFactory: false,
+        selectDefaultAddress: false,
+        recalculateGeometry: false,
+    });
+    assert.deepEqual(getFreightEditState({ ...saved, freightNote: 'Edited note' }, saved), {
+        selectDefaultFactory: false,
+        selectDefaultAddress: false,
+        recalculateGeometry: false,
+    });
+});
+
+test('freight defaults are applied only after enabling automatic prices or changing the related party', () => {
+    const saved = { ...createCalculation(), supplier: { id: 4 }, customer: { id: 8 } };
+    assert.deepEqual(getFreightEditState({ ...saved, supplier: { id: 5 } }, saved), {
+        selectDefaultFactory: true,
+        selectDefaultAddress: false,
+        recalculateGeometry: false,
+    });
+    assert.deepEqual(getFreightEditState({ ...saved, customer: { id: 9 } }, saved), {
+        selectDefaultFactory: false,
+        selectDefaultAddress: true,
+        recalculateGeometry: false,
+    });
+    assert.deepEqual(getFreightEditState(saved, { ...saved, autoFreightPrice: false }), {
+        selectDefaultFactory: true,
+        selectDefaultAddress: true,
+        recalculateGeometry: false,
+    });
+});
+
+test('relevant freight edits still recalculate geometry and saving resets that state', () => {
+    const saved = { ...createCalculation(), palletLength: 1200, palletWidth: 800, unitId: 1 };
+    const edits = {
+        autoFreightCalc: false,
+        deactivateFreightCalculation: true,
+        palletLength: 1400,
+        palletWidth: 1000,
+        palletIsStackable: false,
+        unitId: 2,
+    };
+    for (const [field, value] of Object.entries(edits)) {
+        const edited = { ...saved, [field]: value };
+        assert.equal(getFreightEditState(edited, saved).recalculateGeometry, true, field);
+        assert.equal(getFreightEditState(edited, structuredClone(edited)).recalculateGeometry, false, field);
+    }
 });
 
 test('deactivation switches off both automatic modes, clears freight and marks the applied result for approval', () => {

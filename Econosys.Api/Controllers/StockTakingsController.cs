@@ -189,7 +189,7 @@ namespace Econosys.Api.Controllers
 
             if (countedItems.Select(x => x.SupplierOrderId).Distinct().Count() != countedItems.Count)
             {
-                return BadRequest(new { message = "Samma leverantörsorder kan inte förekomma flera gånger." });
+                return BadRequest(new { message = "Samma beställning kan inte förekomma flera gånger." });
             }
 
             var calculatedItems = await CalculateStockTakingItemsAsync(stockTakingDate, 0);
