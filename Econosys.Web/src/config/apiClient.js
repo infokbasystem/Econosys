@@ -1,6 +1,6 @@
 import axios from 'axios';
+import { DEMO_API_URL, getApiBaseUrl, getBackendMode, getBackendRevision, setBackendMode } from './backend.js';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://localhost:5001/api';
 const SLOW_REQUEST_THRESHOLD_MS = 1000;
 const REQUEST_HISTORY_LIMIT = 500;
 let unauthorizedHandler = null;
@@ -161,22 +161,38 @@ const shouldHandleUnauthorized = (error) => {
 };
 
 const apiClient = axios.create({
-  baseURL: API_URL,
+  baseURL: getApiBaseUrl(),
   headers: {
     'Content-Type': 'application/json',
   },
   withCredentials: true,
 });
 
+export const selectBackend = (mode) => {
+  setBackendMode(mode);
+  apiClient.defaults.baseURL = getApiBaseUrl();
+};
+
 // Log requests
 apiClient.interceptors.request.use(
   (config) => {
+    if (getBackendMode() === 'demo') {
+      const demoUrl = new URL(DEMO_API_URL);
+      const requestUri = apiClient.getUri(config);
+      const requestUrl = new URL(requestUri.startsWith('//') ? `${demoUrl.protocol}${requestUri}` : requestUri);
+      const isDemoApi = requestUrl.origin === demoUrl.origin
+        && (requestUrl.pathname === demoUrl.pathname || requestUrl.pathname.startsWith(`${demoUrl.pathname}/`));
+      if (requestUrl.protocol !== 'blob:' && !isDemoApi) {
+        throw new axios.AxiosError('Demo mode only allows requests to the demo API.', 'ERR_BAD_OPTION_VALUE', config);
+      }
+    }
     const requestId = createRequestId();
     const startedAt = getNowMs();
 
     config.metadata = {
       requestId,
       startedAt,
+      backendRevision: getBackendRevision(),
     };
 
     console.log('[API][RequestStart]', {
@@ -195,6 +211,9 @@ apiClient.interceptors.request.use(
 // Handle response errors globally
 apiClient.interceptors.response.use(
   (response) => {
+    if (response.config.metadata?.backendRevision !== getBackendRevision()) {
+      return Promise.reject(new axios.CanceledError('Backend session changed.', response.config));
+    }
     const requestId = response.config?.metadata?.requestId || 'unknown';
     const durationMs = toDurationMs(response.config?.metadata?.startedAt);
     const payload = {
@@ -254,7 +273,9 @@ apiClient.interceptors.response.use(
 
     logSlowRequest(durationMs, payload);
 
-    if (shouldHandleUnauthorized(error) && typeof unauthorizedHandler === 'function') {
+    if (error.config?.baseURL === apiClient.defaults.baseURL
+      && error.config?.metadata?.backendRevision === getBackendRevision()
+      && shouldHandleUnauthorized(error) && typeof unauthorizedHandler === 'function') {
       unauthorizedHandler(error);
     }
 

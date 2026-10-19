@@ -52,6 +52,39 @@ VITE_API_URL=http://localhost:8080/api
 
 See `.env.example` for reference.
 
+## Login and Demo backends
+
+The login screen's **Login / Demo** selector chooses the backend for the entire
+session. Both modes require an email and password:
+
+- **Login** uses `VITE_API_URL`, or `https://localhost:5001/api` when unset.
+- **Demo** uses `https://econosysapi.abloyd.se/api`. Use demo-account credentials;
+  selecting Demo does not submit the form or automatically sign in.
+
+The selected mode is remembered in local storage for reloads and newly opened
+tabs, including links opened without an opener. Existing tabs keep their selected
+backend so an active session is never silently moved to another API. Logout,
+expired sessions (`401`), failed login attempts and temporary network errors do
+not change the selected backend or trigger fallback requests. Select **Login**
+explicitly to leave Demo. Demo rejects API requests targeting other servers,
+including absolute URLs and per-request backend overrides (local blob downloads
+are still supported). The application header
+shows the active API address and identifies Demo. Email, file uploads/downloads,
+and other API requests use the same backend with HttpOnly-cookie authentication.
+Demo is not a read-only UI; the demo server controls permissions and data.
+
+The remote API must allow the frontend's exact origin with credentialed CORS
+and issue secure cookies suitable for cross-site requests (`SameSite=None;
+Secure` where applicable). Browser third-party-cookie restrictions may prevent
+cross-site login even with correct CORS. No browser-stored bearer-token fallback
+is used.
+
+Backend selection and request-isolation tests:
+
+```bash
+node --test src/config/backend.test.js src/config/apiClient.test.js
+```
+
 ## Development
 
 Start the development server:
@@ -96,9 +129,9 @@ src/
 
 The application uses an axios client configured in `src/config/apiClient.js` that:
 
-- Automatically includes the authentication token in requests
-- Handles 401 responses by clearing the token and redirecting to login
-- Supports bearer token authentication
+- Includes HttpOnly authentication cookies for the selected backend
+- Handles expired sessions by redirecting to login without changing the selected backend
+- Keeps the selected backend consistent across authentication and application requests
 
 ### Login Endpoint
 

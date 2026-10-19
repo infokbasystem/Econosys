@@ -44,9 +44,9 @@ const EMPTY_LIST = [];
 // Delayed releases survive React Strict Mode's unmount/remount so a re-claim can cancel them.
 const pendingReleaseTimers = new Map();
 
-const releaseOwnership = (budgetId, { keepalive = false } = {}) => {
+const releaseOwnership = (budgetId, { keepalive = false, baseURL = apiClient.defaults.baseURL } = {}) => {
     if (keepalive) {
-        fetch(`${apiClient.defaults.baseURL}/budget/${budgetId}/ownership/release`, {
+        fetch(`${baseURL}/budget/${budgetId}/ownership/release`, {
             method: 'POST',
             credentials: 'include',
             keepalive: true,
@@ -54,7 +54,7 @@ const releaseOwnership = (budgetId, { keepalive = false } = {}) => {
         return;
     }
 
-    apiClient.post(`/budget/${budgetId}/ownership/release`).catch((error) => {
+    apiClient.post(`/budget/${budgetId}/ownership/release`, null, { baseURL }).catch((error) => {
         console.error('Failed to release budget ownership:', error);
     });
 };
@@ -314,10 +314,12 @@ const Budget = ({ isNew = false }) => {
         }
 
         let isActive = true;
-        const pendingRelease = pendingReleaseTimers.get(budgetId);
+        const baseURL = apiClient.defaults.baseURL;
+        const releaseKey = `${baseURL}:${budgetId}`;
+        const pendingRelease = pendingReleaseTimers.get(releaseKey);
         if (pendingRelease) {
             clearTimeout(pendingRelease);
-            pendingReleaseTimers.delete(budgetId);
+            pendingReleaseTimers.delete(releaseKey);
         }
 
         getSharedRequest(`budget:${budgetId}:claim`, () => apiClient.post(`/budget/${budgetId}/ownership/claim`, { force: false }))
@@ -339,7 +341,7 @@ const Budget = ({ isNew = false }) => {
 
         const handlePageHide = () => {
             if (ownsBudgetRef.current) {
-                releaseOwnership(budgetId, { keepalive: true });
+                releaseOwnership(budgetId, { keepalive: true, baseURL });
             }
         };
 
@@ -351,9 +353,9 @@ const Budget = ({ isNew = false }) => {
 
             if (ownsBudgetRef.current) {
                 ownsBudgetRef.current = false;
-                pendingReleaseTimers.set(budgetId, setTimeout(() => {
-                    pendingReleaseTimers.delete(budgetId);
-                    releaseOwnership(budgetId);
+                pendingReleaseTimers.set(releaseKey, setTimeout(() => {
+                    pendingReleaseTimers.delete(releaseKey);
+                    releaseOwnership(budgetId, { baseURL });
                 }, RELEASE_DELAY_MS));
             }
         };

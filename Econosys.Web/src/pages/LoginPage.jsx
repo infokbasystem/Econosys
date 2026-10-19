@@ -1,15 +1,15 @@
 import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 import bg from '../assets/login-bg.png';
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, isAuthenticated, backendMode, changeBackend } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState('admin@econosys.com');
-  const [password, setPassword] = useState('Admin@12345Secure!');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -54,6 +54,10 @@ export default function LoginPage() {
     }
   };
 
+  if (isAuthenticated) {
+    return <Navigate to={getRedirectTarget()} replace />;
+  }
+
   return (
     <main className="relative min-h-screen overflow-hidden text-stone-50">
       <img
@@ -80,20 +84,26 @@ export default function LoginPage() {
               <div className="inline-flex w-50 max-w-[365px] rounded-full border border-white/10 bg-[#1a1f2a] p-1 text-xs">
                 <button
                   type="button"
-                  aria-pressed="true"
-                  className="flex-1 rounded-full bg-lime-200 px-4 py-2 text-black shadow-sm"
+                  aria-pressed={backendMode === 'login'}
+                  disabled={loading}
+                  onClick={() => { changeBackend('login'); setError(''); }}
+                  className={`flex-1 rounded-full px-4 py-2 disabled:opacity-50 ${backendMode === 'login' ? 'bg-lime-200 text-black shadow-sm' : 'text-stone-400'}`}
                 >
                   Login
                 </button>
                 <button
                   type="button"
-                  disabled
-                  aria-disabled="true"
-                  className="flex-1 cursor-not-allowed rounded-full px-4 py-2 text-stone-400 opacity-80"
+                  disabled={loading}
+                  aria-pressed={backendMode === 'demo'}
+                  onClick={() => { changeBackend('demo'); setError(''); }}
+                  className={`flex-1 rounded-full px-4 py-2 disabled:opacity-50 ${backendMode === 'demo' ? 'bg-lime-200 text-black shadow-sm' : 'text-stone-400'}`}
                 >
                   Demo
                 </button>
               </div>
+              {backendMode === 'demo' && (
+                <p className="ml-4 text-xs text-lime-200">Demoläge – logga in med ditt demokonto.</p>
+              )}
 
               {error && (
                 <div className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">

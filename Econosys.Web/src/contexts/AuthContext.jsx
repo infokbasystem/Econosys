@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import apiClient, { setUnauthorizedHandler } from '../config/apiClient';
+import apiClient, { selectBackend, setUnauthorizedHandler } from '../config/apiClient';
+import { getBackendMode, getBackendRevision } from '../config/backend';
 import { getSharedRequest } from '../helpers/sharedRequest';
 
 const AuthContext = createContext(null);
@@ -54,6 +55,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [backendMode, setMode] = useState(getBackendMode);
   const isAuthenticatedRef = useRef(false);
   const keepAliveInFlightRef = useRef(false);
   const lastActivityRef = useRef(Date.now());
@@ -65,10 +67,19 @@ export const AuthProvider = ({ children }) => {
     isAuthenticatedRef.current = nextIsAuthenticated;
   }, []);
 
+  const changeBackend = useCallback((mode) => {
+    if (isAuthenticatedRef.current) {
+      throw new Error('Log out before changing backend.');
+    }
+    selectBackend(mode);
+    setMode(mode);
+  }, []);
+
   const forceSessionExpired = useCallback(() => {
     if (!isAuthenticatedRef.current) return;
 
     updateAuthState(null);
+    selectBackend(getBackendMode());
     // AuthProvider is outside RouterProvider, so redirect via location (full reload),
     // stash the current path so LoginPage can return the user here after re-login.
     const currentPath = `${window.location.pathname}${window.location.search}`;
@@ -78,10 +89,29 @@ export const AuthProvider = ({ children }) => {
     window.location.assign('/login');
   }, [updateAuthState]);
 
-  // Check if user is authenticated on mount
+  const checkAuth = useCallback(async () => {
+    const revision = getBackendRevision();
+    const baseURL = apiClient.defaults.baseURL;
+    try {
+      const response = await getSharedRequest(`auth:me:bootstrap:${baseURL}:${revision}`,
+        () => apiClient.get('/auth/me', { baseURL }));
+      if (revision === getBackendRevision()) updateAuthState(response.data);
+    } catch (error) {
+      if (revision !== getBackendRevision()) return;
+      if (error.response?.status === 401) {
+        updateAuthState(null);
+      } else {
+        console.error('Auth check failed:', error);
+        updateAuthState(null);
+      }
+    } finally {
+      if (revision === getBackendRevision()) setLoading(false);
+    }
+  }, [updateAuthState]);
+
   useEffect(() => {
     checkAuth();
-  }, []);
+  }, [checkAuth]);
 
   useEffect(() => {
     setUnauthorizedHandler(forceSessionExpired);
@@ -121,6 +151,7 @@ export const AuthProvider = ({ children }) => {
 
       keepAliveInFlightRef.current = true;
 
+      const revision = getBackendRevision();
       try {
         await apiClient.get('/auth/me', {
           headers: {
@@ -128,7 +159,7 @@ export const AuthProvider = ({ children }) => {
           },
         });
       } catch (error) {
-        if (error.response?.status === 401) {
+        if (revision === getBackendRevision() && error.response?.status === 401) {
           forceSessionExpired();
         }
       } finally {
@@ -140,33 +171,17 @@ export const AuthProvider = ({ children }) => {
     return () => window.clearInterval(intervalId);
   }, [isAuthenticated, forceSessionExpired]);
 
-  const checkAuth = async () => {
-    try {
-      console.log('🔍 Checking auth...');
-      const response = await getSharedRequest('auth:me:bootstrap', () => apiClient.get('/auth/me'));
-      console.log('✅ Auth check successful:', response.data);
-      updateAuthState(response.data);
-    } catch (error) {
-      // 401 on initial load is expected - user is not logged in yet
-      console.log('⚠️ Auth check failed (expected on first load):', {
-        message: error.message,
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-      });
-      updateAuthState(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const login = async (email, password) => {
+    const revision = getBackendRevision();
     try {
       console.log('🔐 Attempting login...');
       const response = await apiClient.post('/auth/login', {
         email,
         password,
       });
+      if (revision !== getBackendRevision()) {
+        return { success: false, error: 'Servervalet ändrades. Försök logga in igen.' };
+      }
       
       console.log('✅ Login successful! (HttpOnly cookie set by server)');
       
@@ -196,6 +211,7 @@ export const AuthProvider = ({ children }) => {
       console.error('Logout error:', error);
     } finally {
       updateAuthState(null);
+      selectBackend(getBackendMode());
     }
   };
 
@@ -203,6 +219,8 @@ export const AuthProvider = ({ children }) => {
     user,
     loading,
     isAuthenticated,
+    backendMode,
+    changeBackend,
     login,
     logout,
     checkAuth,

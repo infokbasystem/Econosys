@@ -187,17 +187,7 @@ const Deviation = () => {
         // If the file has a real server ID, delete it from the server
         if (fileToRemove.id) {
             try {
-                const token = localStorage.getItem('token');
-                const res = await fetch(`${apiUrl}/attachment/${fileToRemove.id}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                    }
-                });
-
-                if (!res.ok) {
-                    throw new Error('Failed to delete file');
-                }
+                await apiClient.delete(`/attachment/${fileToRemove.id}`);
 
                 // Remove from local state
                 setAttachedFiles(prev => prev.filter(f => f.id !== fileId));

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import RichTextEditor from './RichTextEditor';
+import apiClient from '../config/apiClient';
 
 const createEmptyRecipient = () => ({ email: '', doSend: false });
 
@@ -109,7 +110,6 @@ export default function EmailModal({
     quotationId = null,
     onSent,
 }) {
-    const apiUrl = import.meta.env.VITE_API_URL;
     const [subject, setSubject] = useState(initialSubject);
     const [body, setBody] = useState(initialBody);
     const [receivers, setReceivers] = useState(() => normalizeRecipients(receiverList));
@@ -239,7 +239,6 @@ export default function EmailModal({
         setSendError('');
 
         try {
-            const token = localStorage.getItem('token');
             const payload = {
                 subject,
                 body,
@@ -265,15 +264,10 @@ export default function EmailModal({
             }
 
             if (payload.sourceAttachmentUrl) {
-                const sourceResponse = await fetch(payload.sourceAttachmentUrl, {
-                    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+                const { data: sourceBlob } = await apiClient.get(payload.sourceAttachmentUrl, {
+                    responseType: 'blob',
+                    baseURL: payload.sourceAttachmentUrl.startsWith('blob:') ? '' : apiClient.defaults.baseURL,
                 });
-
-                if (!sourceResponse.ok) {
-                    throw new Error('Kunde inte ladda den ursprungliga PDF-bilagan');
-                }
-
-                const sourceBlob = await sourceResponse.blob();
                 const sourceFileName = ensurePdfFileName(payload.sourceAttachmentName);
                 formData.append('files', sourceBlob, sourceFileName);
             }
@@ -285,24 +279,15 @@ export default function EmailModal({
                 formData.append('files', item.file, fileNameToUse);
             });
 
-            const res = await fetch(`${apiUrl}/email/send`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: formData,
+            await apiClient.post('/email/send', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
             });
-
-            if (!res.ok) {
-                const errorText = await res.text();
-                throw new Error(errorText || 'Kunde inte skicka e-post');
-            }
 
             onSent?.(payload);
             onClose?.();
         } catch (error) {
             console.error('Error sending email:', error);
-            setSendError(error.message || 'Kunde inte skicka e-post');
+            setSendError(error.response?.data?.message || (typeof error.response?.data === 'string' ? error.response.data : '') || error.message || 'Kunde inte skicka e-post');
         } finally {
             setIsSending(false);
         }

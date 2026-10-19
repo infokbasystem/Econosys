@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import apiClient from '../config/apiClient';
 
 const FileEditModal = ({ isOpen, onClose, onSubmit, initialFile = null, entityId = null, entityType = 'inquiry' }) => {
   const [fileName, setFileName] = useState('');
@@ -11,7 +12,6 @@ const FileEditModal = ({ isOpen, onClose, onSubmit, initialFile = null, entityId
   const [loadingPathOptions, setLoadingPathOptions] = useState(false);
   const [isDragOverFile, setIsDragOverFile] = useState(false);
   const fileInputRef = useRef(null);
-  const apiUrl = import.meta.env.VITE_API_URL;
   const lastSavedDateTime = initialFile?.lastSavedDateTime || initialFile?.editedDate || initialFile?.createdDate || null;
   const lastSavedByUserName = initialFile?.lastSavedByUserName || '';
 
@@ -22,20 +22,7 @@ const FileEditModal = ({ isOpen, onClose, onSubmit, initialFile = null, entityId
       setLoadingPathOptions(true);
 
       try {
-        const token = localStorage.getItem('token');
-        const response = await fetch(`${apiUrl}/attachmentpathoption`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error(await response.text() || 'Kunde inte hämta sökvägar');
-        }
-
-        const data = await response.json();
+        const { data } = await apiClient.get('/attachmentpathoption');
         const items = Array.isArray(data) ? data : [];
         setPathOptions(items);
       } catch (error) {
@@ -47,7 +34,7 @@ const FileEditModal = ({ isOpen, onClose, onSubmit, initialFile = null, entityId
     };
 
     loadPathOptions();
-  }, [apiUrl, isOpen]);
+  }, [isOpen]);
 
   useEffect(() => {
     if (initialFile) {
@@ -163,20 +150,8 @@ const FileEditModal = ({ isOpen, onClose, onSubmit, initialFile = null, entityId
   const handleOpenDocument = async () => {
     if (!initialFile?.url) return;
 
-    const token = localStorage.getItem('token');
-
     try {
-      const response = await fetch(`${apiUrl}/attachment/${initialFile.fileName}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Unauthorized or not found');
-      }
-
-      const blob = await response.blob();
+      const { data: blob } = await apiClient.get(`/attachment/${initialFile.fileName}`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(blob);
       window.open(url, '_blank', 'noopener,noreferrer');
     } catch (error) {
@@ -215,23 +190,11 @@ const FileEditModal = ({ isOpen, onClose, onSubmit, initialFile = null, entityId
           formData.append('invoiceId', entityId);
         }
 
-        const token = localStorage.getItem('token');
-
-        const res = await fetch(`${apiUrl}/attachment/upload`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-          body: formData,
+        const { data: uploadedFile } = await apiClient.post('/attachment/upload', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
         });
 
-        if (!res.ok) {
-          throw new Error('File upload failed');
-        }
-
         console.log('File uploaded successfully');
-
-        const uploadedFile = await res.json();
 
         console.log('Uploaded file data:', uploadedFile);
 
