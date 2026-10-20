@@ -11,9 +11,12 @@ import OrderDetailLayout from '../../components/OrderDetailLayout';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 import OrderCost from '../../components/OrderCost';
 import OrderHistory from '../../components/OrderHistory';
+import LabeledDatePicker from '../../components/LabeledDatePicker';
+import LabeledCheckbox from '../../components/LabeledCheckbox';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import LabeledTextArea from '../../components/LabeledTextArea';
+import NumberInput from '../../components/NumberInput';
 import apiClient from '../../config/apiClient';
 import { formatDateTime } from '../../helpers/dateUtils';
 import { parseNullableInt } from '../../helpers/numberUtils';
@@ -97,6 +100,12 @@ const createNewCustomerOrderModel = () => ({
     deliveryPostalNr: '',
     deliveryPostalAddress: '',
     deliveryCountry: '',
+    deliveryDate: null,
+    deliveryDateWeekMode: false,
+    logisticsInfoInternal: '',
+    invoicingInfo: '',
+    completed: false,
+    completedDate: null,
     yourReference: '',
     ourReference: '',
     termsOfDelivery: '',
@@ -227,6 +236,12 @@ const CustomerOrder = () => {
         deliveryPostalAddress: source?.deliveryPostalAddress || null,
         deliveryCountry: source?.deliveryCountry || null,
         date: source?.date || null,
+        deliveryDate: source?.deliveryDate || null,
+        deliveryDateWeekMode: Boolean(source?.deliveryDateWeekMode),
+        logisticsInfoInternal: source?.logisticsInfoInternal || null,
+        invoicingInfo: source?.invoicingInfo || null,
+        completed: Boolean(source?.completed),
+        completedDate: source?.completedDate || null,
         timeOfDelivery: source?.timeOfDelivery || null,
         yourReference: source?.yourReference || null,
         ourReference: source?.ourReference || null,
@@ -482,11 +497,15 @@ const CustomerOrder = () => {
         })
         : [];
 
-    const unitLabel = customerOrder?.unitName ?? (customerOrder?.unitId ? `ID ${customerOrder.unitId}` : '');
+    const unitLabel = customerOrder?.unitMultiplicator != null ? `x ${customerOrder.unitMultiplicator}` : '';
     const salesCurrencyLabel = customerOrder?.salesCurrencyName ?? (customerOrder?.salesCurrencyId ? `ID ${customerOrder.salesCurrencyId}` : '');
-    const editionLabel = formatCompactNumber(customerOrder?.edition, 0);
     const salesPriceLabel = formatCompactNumber(customerOrder?.salesPrice, 2);
     const salesCurrencyRateLabel = formatCompactNumber(customerOrder?.salesCurrencyRate, 4);
+    const producedEditionLabel = formatCompactNumber(customerOrder?.supplierOrderProducedEdition, 0);
+    const purchaseUnitLabel = customerOrder?.supplierOrderUnitMultiplicator != null ? `x ${customerOrder.supplierOrderUnitMultiplicator}` : '';
+    const purchasePriceLabel = formatCompactNumber(customerOrder?.supplierOrderPurchasePrice, 2);
+    const purchaseCurrencyLabel = customerOrder?.supplierOrderPurchaseCurrencyName ?? (customerOrder?.supplierOrderPurchaseCurrencyId ? `ID ${customerOrder.supplierOrderPurchaseCurrencyId}` : '');
+    const purchaseCurrencyRateLabel = formatCompactNumber(customerOrder?.supplierOrderPurchaseCurrencyRate, 4);
 
     return (
         <div className="relative flex min-h-full flex-col">
@@ -558,7 +577,7 @@ const CustomerOrder = () => {
 
                 <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
                     <span>
-                        <div className="grid grid-cols-[380px_380px_300px] gap-x-20 gap-y-8">
+                        <div className="grid grid-cols-[380px_380px_330px] gap-x-20 gap-y-8">
                             <span>
                                 <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">{customerOrder?.customerName || ''}</p>
                                 <LabeledReactSelect
@@ -619,6 +638,15 @@ const CustomerOrder = () => {
                                     labelWidth="w-20"
                                     margintop="3"
                                 />
+                                <LabeledTextArea
+                                    name="logisticsInfoInternal"
+                                    label="Logistikinfo"
+                                    value={customerOrder?.logisticsInfoInternal || ''}
+                                    onChange={(value) => updateCustomerOrder({ logisticsInfoInternal: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                    height="h-10"
+                                />
                             </span>
 
                             <span>
@@ -656,7 +684,7 @@ const CustomerOrder = () => {
                                     onChange={(value) => updateCustomerOrder({ termsOfPayment: value })}
                                     labelWidth="w-20"
                                     margintop="0"
-                                    height="h-10"
+                                    height="h-16"
                                 />
                                 <LabeledTextArea
                                     label="Meddelande"
@@ -664,20 +692,77 @@ const CustomerOrder = () => {
                                     onChange={(value) => updateCustomerOrder({ message: value })}
                                     labelWidth="w-20"
                                     margintop="0"
-                                    height="h-20"
+                                    height="h-14"
                                 />
                             </span>
 
                             <span>
                                 <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">Orderinfo</p>
+                                <LabeledDatePicker
+                                    label="Leveransdatum"
+                                    value={customerOrder?.deliveryDate}
+                                    onChange={(nextValue) => updateCustomerOrder({ deliveryDate: nextValue })}
+                                    weekMode={Boolean(customerOrder?.deliveryDateWeekMode)}
+                                    onWeekModeChange={(nextWeekMode) => updateCustomerOrder({ deliveryDateWeekMode: nextWeekMode })}
+                                    enableWeekSelect
+                                    labelWidth="w-26"
+                                    inputWidth="w-35"
+                                    margintop="0"
+                                    placeholder="Välj datum/vecka"
+                                />
+                                <div className="flex items-center gap-0">
+                                    <LabeledDatePicker
+                                        label="Slutleverad"
+                                        labelWidth="w-26"
+                                        inputWidth="w-35"
+                                        name="completedDate"
+                                        value={customerOrder?.completedDate}
+                                        onChange={(nextValue) => updateCustomerOrder({ completedDate: nextValue })}
+                                        margintop="0"
+                                    />
+                                    <LabeledCheckbox
+                                        name="completed"
+                                        label="Slutförd"
+                                        checked={Boolean(customerOrder?.completed)}
+                                        onChange={(checked) => updateCustomerOrder({ completed: checked })}
+                                    />
+                                </div>
+                                <LabeledTextArea
+                                    name="invoicingInfo"
+                                    label="Faktureringsinfo"
+                                    value={customerOrder?.invoicingInfo || ''}
+                                    onChange={(value) => updateCustomerOrder({ invoicingInfo: value })}
+                                    labelWidth="w-26"
+                                    margintop="2"
+                                    height="h-8"
+                                />
                                 <div className="mt-5 text-xs">
-                                    <p className="text-gray-900 font-bold">Upplaga och pris</p>
+                                    <p className="text-gray-900 font-bold">Upplaga och fsg.pris</p>
                                     <div className="flex items-center gap-0 mt-2">
-                                        <span className="text-gray-800">{editionLabel || '\u00A0'}</span>
-                                        <span className="ml-2 text-gray-800">{unitLabel || '\u00A0'}</span>
-                                        <span className="ml-10 text-gray-800">{salesPriceLabel || '\u00A0'}</span>
+                                        <NumberInput
+                                            name="edition"
+                                            aria-label="Upplaga"
+                                            field="edition"
+                                            value={customerOrder?.edition ?? null}
+                                            decimals={0}
+                                            suffix="st"
+                                            onChange={(_rowId, field, value) => updateCustomerOrder({ [field]: value })}
+                                            className="w-20 h-6 text-xs text-gray-800 border border-gray-300 rounded-sm bg-white"
+                                        />
+                                        <span className="w-10 ml-2 text-gray-800">{unitLabel || '\u00A0'}</span>
+                                        <span className="w-10 ml-10 text-gray-800 text-right">{salesPriceLabel || '\u00A0'}</span>
                                         <span className="ml-2 text-xs text-gray-800">{salesCurrencyLabel || '\u00A0'}</span>
                                         <span className="ml-10 text-gray-800">{salesCurrencyRateLabel ? `Kurs: ${salesCurrencyRateLabel}` : '\u00A0'}</span>
+                                    </div>
+                                </div>
+                                <div className="mt-5 text-xs">
+                                    <p className="text-gray-900 font-bold">Producerat och inköpspris</p>
+                                    <div className="flex items-center gap-0 mt-2">
+                                        <span className="pr-2 w-20 text-right text-gray-800">{producedEditionLabel ? `${producedEditionLabel} st` : '\u00A0'}</span>
+                                        <span className="w-10 ml-2 text-gray-800">{purchaseUnitLabel || '\u00A0'}</span>
+                                        <span className="w-10 ml-10 text-gray-800 text-right">{purchasePriceLabel || '\u00A0'}</span>
+                                        <span className="ml-2 text-xs text-gray-800">{purchaseCurrencyLabel || '\u00A0'}</span>
+                                        <span className="ml-10 text-gray-800">{purchaseCurrencyRateLabel ? `Kurs: ${purchaseCurrencyRateLabel}` : '\u00A0'}</span>
                                     </div>
                                 </div>
                             </span>

@@ -11,6 +11,13 @@ const SWEDISH_DATE_FORMATTER = new Intl.DateTimeFormat(SWEDISH_LOCALE, {
     day: '2-digit',
 });
 
+const API_DATE_FORMATTER = new Intl.DateTimeFormat(SWEDISH_LOCALE, {
+    timeZone: SWEDISH_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+});
+
 const toValidDate = (value) => {
     if (value == null || value === '') {
         return null;
@@ -18,6 +25,21 @@ const toValidDate = (value) => {
 
     const date = value instanceof Date ? value : new Date(value);
     return Number.isNaN(date.getTime()) ? null : date;
+};
+
+export const formatApiDateToSwedish = (value) => {
+    if (value == null || value === '') return '';
+
+    const normalizedValue = typeof value === 'string'
+        && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(value)
+        ? `${value}Z`
+        : value;
+    const date = toValidDate(normalizedValue);
+    if (!date) return '';
+
+    const parts = API_DATE_FORMATTER.formatToParts(date);
+    const values = Object.fromEntries(parts.map(({ type, value: partValue }) => [type, partValue]));
+    return `${values.year}-${values.month}-${values.day}`;
 };
 
 const getISOWeek = (date) => {

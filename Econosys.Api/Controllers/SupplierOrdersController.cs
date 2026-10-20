@@ -389,6 +389,7 @@ namespace Econosys.Api.Controllers
                     (hasNumericId && x.Id == idValue) ||
                     (x.SupplierOrderNr != null && EF.Functions.Like(x.SupplierOrderNr, likePattern)) ||
                     (x.CustomerOrderNr != null && EF.Functions.Like(x.CustomerOrderNr, likePattern)) ||
+                    (x.SupplierName != null && EF.Functions.Like(x.SupplierName, likePattern)) ||
                     (x.Customer != null && x.Customer.Name != null && EF.Functions.Like(x.Customer.Name, likePattern)));
             }
 

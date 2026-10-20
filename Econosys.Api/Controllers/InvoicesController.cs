@@ -163,6 +163,35 @@ namespace Econosys.Api.Controllers
             return NoContent();
         }
 
+        [HttpPost("header-search")]
+        public async Task<ActionResult<List<HeaderSearchResultDto>>> SearchHeader([FromBody] HeaderSearchRequest? request)
+        {
+            var searchTerm = request?.SearchTerm?.Trim();
+            if (string.IsNullOrWhiteSpace(searchTerm)
+                || searchTerm.Length < 4
+                || !int.TryParse(searchTerm, NumberStyles.None, CultureInfo.InvariantCulture, out var invoiceNumber))
+            {
+                return Ok(new List<HeaderSearchResultDto>());
+            }
+
+            var results = await _dbContext.Invoices
+                .AsNoTracking()
+                .Where(x => x.InvoiceNumber == invoiceNumber)
+                .OrderByDescending(x => x.InvoiceDate)
+                .ThenByDescending(x => x.Id)
+                .Take(5)
+                .Select(x => new HeaderSearchResultDto
+                {
+                    Id = x.Id,
+                    Number = x.InvoiceNumber.HasValue ? x.InvoiceNumber.Value.ToString() : string.Empty,
+                    Name = x.CustomerName ?? string.Empty,
+                    Date = x.InvoiceDate,
+                })
+                .ToListAsync();
+
+            return Ok(results);
+        }
+
         [HttpPost("search")]
         public async Task<ActionResult<PagedResultWithTotalsDto<InvoiceSearchRowDto, InvoiceSearchTotalsDto>>> SearchList([FromBody] SearchInvoiceRequest? request)
         {

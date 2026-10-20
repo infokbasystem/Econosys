@@ -684,6 +684,9 @@ namespace Econosys.Api.Controllers
                 .Include(x => x.Unit)
                 .Include(x => x.SalesCurrency)
                 .Include(x => x.SupplierOrder)
+                    .ThenInclude(x => x!.PurchaseCurrency)
+                .Include(x => x.SupplierOrder)
+                    .ThenInclude(x => x!.Unit)
                 .Include(x => x.OrderCosts)
                     .ThenInclude(x => x.InvoiceRows);
         }
@@ -796,6 +799,12 @@ namespace Econosys.Api.Controllers
             entity.DeliveryPostalAddress = request.DeliveryPostalAddress;
             entity.DeliveryCountry = request.DeliveryCountry;
             entity.Date = request.Date;
+            entity.DeliveryDate = request.DeliveryDate;
+            entity.DeliveryDateWeekMode = request.DeliveryDateWeekMode;
+            entity.LogisticsInfoInternal = request.LogisticsInfoInternal;
+            entity.InvoicingInfo = request.InvoicingInfo;
+            entity.Completed = request.Completed;
+            entity.CompletedDate = request.CompletedDate;
             entity.TimeOfDelivery = request.TimeOfDelivery;
             entity.YourReference = request.YourReference;
             entity.OurReference = request.OurReference;
@@ -826,6 +835,12 @@ namespace Econosys.Api.Controllers
             entity.DeliveryPostalAddress = request.DeliveryPostalAddress;
             entity.DeliveryCountry = request.DeliveryCountry;
             entity.Date = request.Date;
+            entity.DeliveryDate = request.DeliveryDate;
+            entity.DeliveryDateWeekMode = request.DeliveryDateWeekMode;
+            entity.LogisticsInfoInternal = request.LogisticsInfoInternal;
+            entity.InvoicingInfo = request.InvoicingInfo;
+            entity.Completed = request.Completed;
+            entity.CompletedDate = request.CompletedDate;
             entity.TimeOfDelivery = request.TimeOfDelivery;
             entity.YourReference = request.YourReference;
             entity.OurReference = request.OurReference;
@@ -855,6 +870,12 @@ namespace Econosys.Api.Controllers
                 QuotationId = source.QuotationId,
                 SupplierOrderId = source.SupplierOrderId,
                 SupplierOrderNr = source.SupplierOrder?.SupplierOrderNr,
+                SupplierOrderProducedEdition = source.SupplierOrder?.ProducedEdition,
+                SupplierOrderUnitMultiplicator = source.SupplierOrder?.Unit?.Multiplicator,
+                SupplierOrderPurchasePrice = source.SupplierOrder?.PurchasePrice,
+                SupplierOrderPurchaseCurrencyId = source.SupplierOrder?.PurchaseCurrencyId,
+                SupplierOrderPurchaseCurrencyName = source.SupplierOrder?.PurchaseCurrency?.Name,
+                SupplierOrderPurchaseCurrencyRate = source.SupplierOrder?.PurchaseCurrencyRate,
                 CustomerOrderNr = source.CustomerOrderNr,
                 CustomerId = source.CustomerId,
                 CustomerName = source.CustomerName ?? source.Customer?.Name,
@@ -886,6 +907,7 @@ namespace Econosys.Api.Controllers
                 SalesCurrencyName = source.SalesCurrency?.Name,
                 UnitId = source.UnitId,
                 UnitName = source.Unit?.Name,
+                UnitMultiplicator = source.Unit?.Multiplicator,
                 SelectedCalculationRowId = source.SelectedCalculationRowId,
                 Edition = source.Edition,
                 SalesPrice = source.SalesPrice,

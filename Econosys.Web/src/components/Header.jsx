@@ -1,16 +1,103 @@
+import { useEffect, useRef, useState } from 'react';
+import { Search } from 'lucide-react';
 import { useNavigate } from "react-router-dom";
 import { useAuth } from '../contexts/AuthContext';
 import { getApiBaseUrl } from '../config/backend';
+import { formatApiDateToSwedish } from '../helpers/dateUtils';
+import { searchHeader } from '../helpers/globalSearch';
 
 import './Header.css'
 import bg from '../assets/header.png'
-import logo from '../assets/index.jpg'
 
 
 const Header = () => {
     const navigate = useNavigate();
     const { logout, backendMode } = useAuth();
     const apiUrl = getApiBaseUrl();
+    const searchContainerRef = useRef(null);
+    const searchRequestIdRef = useRef(0);
+    const [searchText, setSearchText] = useState('');
+    const [searchGroups, setSearchGroups] = useState([]);
+    const [searchOpen, setSearchOpen] = useState(false);
+    const [searchLoading, setSearchLoading] = useState(false);
+    const [searchHadErrors, setSearchHadErrors] = useState(false);
+    const [activeResultIndex, setActiveResultIndex] = useState(-1);
+
+    const flattenedResults = searchGroups.flatMap((group) => group.results);
+
+    useEffect(() => {
+        const term = searchText.trim();
+        if (term.length < 4) return undefined;
+
+        const timer = setTimeout(async () => {
+            const requestId = searchRequestIdRef.current;
+            const result = await searchHeader(term);
+            if (requestId !== searchRequestIdRef.current) return;
+
+            setSearchGroups(result.groups);
+            setSearchHadErrors(result.hadErrors);
+            setSearchLoading(false);
+        }, 250);
+
+        return () => {
+            clearTimeout(timer);
+            searchRequestIdRef.current += 1;
+        };
+    }, [searchText]);
+
+    const handleSearchTextChange = (value) => {
+        searchRequestIdRef.current += 1;
+        setSearchText(value);
+        setSearchGroups([]);
+        setSearchHadErrors(false);
+        setActiveResultIndex(-1);
+
+        const canSearch = value.trim().length >= 4;
+        setSearchOpen(canSearch);
+        setSearchLoading(canSearch);
+    };
+
+    useEffect(() => {
+        const handlePointerDown = (event) => {
+            if (!searchContainerRef.current?.contains(event.target)) {
+                setSearchOpen(false);
+            }
+        };
+
+        document.addEventListener('pointerdown', handlePointerDown);
+        return () => document.removeEventListener('pointerdown', handlePointerDown);
+    }, []);
+
+    const openSearchResult = (result) => {
+        setSearchOpen(false);
+        setSearchText('');
+        navigate(result.path);
+    };
+
+    const handleSearchKeyDown = (event) => {
+        if (event.key === 'Escape') {
+            setSearchOpen(false);
+            setActiveResultIndex(-1);
+            return;
+        }
+
+        if (event.key === 'ArrowDown' && flattenedResults.length > 0) {
+            event.preventDefault();
+            setSearchOpen(true);
+            setActiveResultIndex((current) => (current + 1) % flattenedResults.length);
+        }
+
+        if (event.key === 'ArrowUp' && flattenedResults.length > 0) {
+            event.preventDefault();
+            setSearchOpen(true);
+            setActiveResultIndex((current) => (current <= 0 ? flattenedResults.length - 1 : current - 1));
+        }
+
+        if (event.key === 'Enter' && activeResultIndex >= 0) {
+            event.preventDefault();
+            openSearchResult(flattenedResults[activeResultIndex]);
+        }
+    };
 
     const handleLogout = async () => {
         await logout();
@@ -18,7 +105,7 @@ const Header = () => {
     };
 
     return (
-        <div id='header' className='flex items-center' style={{ backgroundImage: `url(${bg})` }}>
+        <div id='header' className={`relative ${searchOpen ? 'z-[60]' : 'z-40'} flex items-center`} style={{ backgroundImage: `url(${bg})` }}>
             <div className="flex h-10 flex-1 basis-0 items-center gap-3">
                 {/* <p className='place-self-center'><img className="object-fill w-13 h-13" src={logo} /></p> */}
                 <svg
@@ -52,16 +139,83 @@ const Header = () => {
                     <button type='button' onClick={handleLogout} className="text-tiny text-white-700 bg-transparent hover:text-white-600 leading-0 p-1">Logga ut</button>
                 </div>
             </div>
-            <div className="flex-1 basis-0">
-                <div className='place-self-center'>
-                    <div className="relative text-gray-600 mr-9">
-                        <input type="search" name="serch" placeholder="Sök" className="bg-gray-200 h-6 px-5 pr-10 rounded text-xs focus:outline-none" />
-                        <button type="submit" className="absolute right-0 top-0 mt-1.5 mr-4">
-                            <svg className="h-3.5 w-3.5 fill-current" xmlns="http://www.w3.org/2000/svg" xmlnsXlink="http://www.w3.org/1999/xlink" version="1.1" id="Capa_1" x="0px" y="0px" viewBox="0 0 56.966 56.966" xmlSpace="preserve" width="512px" height="512px">
-                                <path d="M55.146,51.887L41.588,37.786c3.486-4.144,5.396-9.358,5.396-14.786c0-12.682-10.318-23-23-23s-23,10.318-23,23  s10.318,23,23,23c4.761,0,9.298-1.436,13.177-4.162l13.661,14.208c0.571,0.593,1.339,0.92,2.162,0.92  c0.779,0,1.518-0.297,2.079-0.837C56.255,54.982,56.293,53.08,55.146,51.887z M23.984,6c9.374,0,17,7.626,17,17s-7.626,17-17,17  s-17-7.626-17-17S14.61,6,23.984,6z" />
-                            </svg>
-                        </button>
+            <div className="flex min-w-0 flex-1 basis-0 justify-center">
+                <div className="header-search" ref={searchContainerRef}>
+                    <div className="header-search-control text-xs">
+                        <input
+                            type="search"
+                            name="global-search"
+                            value={searchText}
+                            placeholder="Sök"
+                            autoComplete="off"
+                            role="combobox"
+                            aria-label="Sök i Econosys"
+                            aria-autocomplete="list"
+                            aria-expanded={searchOpen}
+                            aria-controls="superSearch"
+                            aria-activedescendant={activeResultIndex >= 0 ? `header-search-option-${activeResultIndex}` : undefined}
+                            onChange={(event) => handleSearchTextChange(event.target.value)}
+                            onFocus={() => {
+                                if (searchText.trim().length >= 4) setSearchOpen(true);
+                            }}
+                            onKeyDown={handleSearchKeyDown}
+                        />
+                        <Search aria-hidden="true" className="header-search-icon" />
                     </div>
+
+                    {searchOpen && searchText.trim().length >= 4 && (
+                        <div id="superSearch" className="header-search-results" role="listbox" aria-label="Sökresultat">
+                            {searchLoading ? (
+                                <div className="header-search-status text-center" role="option" aria-disabled="true" aria-selected="false">Söker...</div>
+                            ) : (
+                                <>
+                                    {searchHadErrors && (
+                                        <div className="header-search-error" role="option" aria-disabled="true" aria-selected="false">
+                                            Vissa sökresultat kunde inte hämtas.
+                                        </div>
+                                    )}
+                                    {searchGroups.length === 0 ? (
+                                        <div className="header-search-status text-center" role="option" aria-disabled="true" aria-selected="false">Inga träffar</div>
+                                    ) : searchGroups.map((group) => (
+                                        <section className="header-search-group" key={group.key} role="group" aria-label={group.label}>
+                                            <h2 className="text-tiny pl-3 tracking-[0.12em] text-stone-500 mt-2">{group.label}</h2>
+                                            <div className="header-search-group-results">
+                                                {group.results.map((result) => {
+                                                    const resultIndex = flattenedResults.indexOf(result);
+                                                    const isActive = resultIndex === activeResultIndex;
+
+                                                    return (
+                                                        <button
+                                                            id={`header-search-option-${resultIndex}`}
+                                                            type="button"
+                                                            role="option"
+                                                            aria-selected={isActive}
+                                                            className={`text-tiny py-1 px-3 header-search-result${isActive ? ' is-active' : ''}`}
+                                                            key={`${group.key}-${result.id}`}
+                                                            onMouseEnter={() => setActiveResultIndex(resultIndex)}
+                                                            onClick={() => openSearchResult(result)}
+                                                        >
+                                                            {/* <span className="header-search-action">VISA</span> */}
+                                                            <span className="">{result.number}</span>
+                                                            <span className="">
+                                                                <span>{result.name || result.details || '-'}</span>
+                                                                {result.name && result.details && (
+                                                                    <small>{result.details}</small>
+                                                                )}
+                                                            </span>
+                                                            <time className="text-right" dateTime={result.date || undefined}>
+                                                                {formatApiDateToSwedish(result.date)}
+                                                            </time>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </section>
+                                    ))}
+                                </>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

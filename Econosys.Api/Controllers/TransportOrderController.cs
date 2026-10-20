@@ -28,6 +28,40 @@ namespace Econosys.Api.Controllers
             _costCalculationService = costCalculationService;
         }
 
+        [HttpPost("search")]
+        public async Task<ActionResult<List<HeaderSearchResultDto>>> Search([FromBody] HeaderSearchRequest? request)
+        {
+            var searchTerm = request?.SearchTerm?.Trim();
+            if (string.IsNullOrWhiteSpace(searchTerm) || searchTerm.Length < 4)
+            {
+                return Ok(new List<HeaderSearchResultDto>());
+            }
+
+            var isNumeric = int.TryParse(searchTerm, NumberStyles.None, CultureInfo.InvariantCulture, out var transportOrderNr);
+            var query = _dbContext.TransportOrders
+                .AsNoTracking()
+                .Where(x => isNumeric
+                    ? x.TransportOrderNr == transportOrderNr
+                    : (x.SenderReference != null && x.SenderReference.Contains(searchTerm))
+                        || (x.Shipper != null && x.Shipper.Name != null && x.Shipper.Name.Contains(searchTerm)));
+
+            var results = await query
+                .OrderByDescending(x => x.DateCreated)
+                .ThenByDescending(x => x.Id)
+                .Take(5)
+                .Select(x => new HeaderSearchResultDto
+                {
+                    Id = x.Id,
+                    Number = x.TransportOrderNr.ToString(),
+                    Name = x.Shipper != null ? x.Shipper.Name ?? string.Empty : string.Empty,
+                    Details = x.SenderReference ?? string.Empty,
+                    Date = x.DateCreated,
+                })
+                .ToListAsync();
+
+            return Ok(results);
+        }
+
         [HttpGet("{id:int}")]
         public async Task<ActionResult<TransportOrderDto>> GetById(int id)
         {

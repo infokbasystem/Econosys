@@ -59,6 +59,32 @@ legacy account, including repeat supplier orders. The company is assigned
 server-side, not supplied by the client. These map existing database columns;
 no database migration is needed.
 
+Customer order create and update requests accept `deliveryDate` (nullable) and
+`deliveryDateWeekMode` (boolean). Both are returned in the order details. The web
+order's **Orderinfo** column uses these fields for **Leveransdatum**: select a day
+for an exact date or a week number for week mode; clearing the picker clears the
+date and resets week mode.
+
+The same requests accept nullable `logisticsInfoInternal` and `invoicingInfo`
+strings, shown as multiline **Logistikinfo** and **Faktureringsinfo** fields below
+the delivery date in **Orderinfo**. Clearing either field saves `null`.
+
+**Slutlevererad** in **Orderinfo** edits `completed` and the nullable
+`completedDate` through these same requests. As in the legacy order form, the
+checkbox and exact date are independently editable; toggling the status does not
+automatically assign or clear the date. The completion date does not use week mode.
+
+Customer order responses include the selected unit's nullable `unitMultiplicator`.
+**Upplaga och pris** displays it as `x {unitMultiplicator}` instead of the unit name.
+
+**Producerat och inköpspris** is a read-only summary of the linked supplier order's
+produced edition, unit multiplicator, purchase price, purchase currency and saved
+purchase exchange rate. Customer order responses expose these as
+`supplierOrderProducedEdition`, `supplierOrderUnitMultiplicator`,
+`supplierOrderPurchasePrice`, `supplierOrderPurchaseCurrencyId`,
+`supplierOrderPurchaseCurrencyName` and `supplierOrderPurchaseCurrencyRate`.
+Missing supplier values remain blank rather than falling back to sales values.
+
 ## Order history
 
 The authenticated `GET /api/orderhistory/supplierorders/{id}` and

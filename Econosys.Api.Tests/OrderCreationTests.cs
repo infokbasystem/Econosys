@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Security.Claims;
 using Econosys.Api.Controllers;
 using Econosys.Api.Data;
@@ -13,6 +14,67 @@ namespace Econosys.Api.Tests;
 
 public class OrderCreationTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void CustomerOrderResponseUsesLinkedSupplierOrderPurchaseValues(
+        bool hasSupplierOrder, bool hasValues)
+    {
+        var supplierOrder = hasSupplierOrder ? new SupplierOrder
+        {
+            ProducedEdition = hasValues ? 0 : null,
+            PurchasePrice = hasValues ? 125.5 : null,
+            PurchaseCurrencyId = hasValues ? 2 : null,
+            PurchaseCurrency = hasValues ? new Currency { Name = "EUR", RateToSek = 99 } : null,
+            PurchaseCurrencyRate = hasValues ? 11.25 : null,
+            Unit = hasValues ? new Unit { Multiplicator = 100 } : null,
+        } : null;
+        var order = new CustomerOrder
+        {
+            Edition = 30000,
+            SalesPrice = 3127,
+            SalesCurrency = new Currency { Name = "SEK" },
+            SalesCurrencyRate = 1,
+            Unit = new Unit { Multiplicator = 1000 },
+            SupplierOrder = supplierOrder,
+        };
+        var mapToDto = typeof(CustomerOrdersController).GetMethod(
+            "MapToDto", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var response = Assert.IsType<CustomerOrderDto>(mapToDto.Invoke(null, [order]));
+
+        Assert.Equal(supplierOrder?.ProducedEdition, response.SupplierOrderProducedEdition);
+        Assert.Equal(supplierOrder?.Unit?.Multiplicator, response.SupplierOrderUnitMultiplicator);
+        Assert.Equal(supplierOrder?.PurchasePrice, response.SupplierOrderPurchasePrice);
+        Assert.Equal(supplierOrder?.PurchaseCurrencyId, response.SupplierOrderPurchaseCurrencyId);
+        Assert.Equal(supplierOrder?.PurchaseCurrency?.Name, response.SupplierOrderPurchaseCurrencyName);
+        Assert.Equal(supplierOrder?.PurchaseCurrencyRate, response.SupplierOrderPurchaseCurrencyRate);
+        Assert.Equal(order.Edition, response.Edition);
+        Assert.Equal(order.SalesPrice, response.SalesPrice);
+        Assert.Equal(order.SalesCurrencyRate, response.SalesCurrencyRate);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(1000)]
+    [InlineData(null)]
+    public void CustomerOrderResponseIncludesUnitMultiplicator(int? multiplicator)
+    {
+        var order = new CustomerOrder
+        {
+            Unit = multiplicator.HasValue
+                ? new Unit { Name = "Unit", Multiplicator = (short)multiplicator.Value }
+                : null,
+        };
+        var mapToDto = typeof(CustomerOrdersController).GetMethod(
+            "MapToDto", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        var response = Assert.IsType<CustomerOrderDto>(mapToDto.Invoke(null, [order]));
+
+        Assert.Equal(order.Unit?.Multiplicator, response.UnitMultiplicator);
+    }
+
     [Fact]
     public void OrdersMapTheExistingRequiredCompanyColumn()
     {
@@ -47,6 +109,111 @@ public class OrderCreationTests
         Assert.Equal(companyId, order.CompanyId);
         Assert.Equal(42, order.CreatedBy);
         Assert.Equal(42, order.EditedBy);
+    }
+
+    [Theory]
+    [InlineData("ApplyCreateRequestToEntity", false, false)]
+    [InlineData("ApplyCreateRequestToEntity", true, false)]
+    [InlineData("ApplyCreateRequestToEntity", false, true)]
+    [InlineData("ApplyUpdateRequestToEntity", false, false)]
+    [InlineData("ApplyUpdateRequestToEntity", true, false)]
+    [InlineData("ApplyUpdateRequestToEntity", false, true)]
+    public void CustomerOrderRequestsRoundTripDeliveryDateAndWeekMode(
+        string mappingMethod, bool weekMode, bool clearDate)
+    {
+        var order = new CustomerOrder
+        {
+            DeliveryDate = new DateTime(2026, 5, 22),
+            DeliveryDateWeekMode = true,
+        };
+        CreateCustomerOrderRequest request = mappingMethod == "ApplyCreateRequestToEntity"
+            ? new CreateCustomerOrderRequest()
+            : new UpdateCustomerOrderRequest();
+        request.DeliveryDate = clearDate ? null : new DateTime(2026, 10, 19);
+        request.DeliveryDateWeekMode = weekMode;
+
+        var applyRequest = typeof(CustomerOrdersController).GetMethod(
+            mappingMethod, BindingFlags.NonPublic | BindingFlags.Static)!;
+        applyRequest.Invoke(null, [order, request]);
+
+        Assert.Equal(request.DeliveryDate, order.DeliveryDate);
+        Assert.Equal(weekMode, order.DeliveryDateWeekMode);
+
+        var mapToDto = typeof(CustomerOrdersController).GetMethod(
+            "MapToDto", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var response = Assert.IsType<CustomerOrderDto>(mapToDto.Invoke(null, [order]));
+        Assert.Equal(request.DeliveryDate, response.DeliveryDate);
+        Assert.Equal(weekMode, response.DeliveryDateWeekMode);
+    }
+
+    [Theory]
+    [InlineData("ApplyCreateRequestToEntity", "Logistics\nSecond line", "Invoice\nSecond line")]
+    [InlineData("ApplyCreateRequestToEntity", null, null)]
+    [InlineData("ApplyUpdateRequestToEntity", "Logistics\nSecond line", "Invoice\nSecond line")]
+    [InlineData("ApplyUpdateRequestToEntity", null, null)]
+    public void CustomerOrderRequestsRoundTripLogisticsAndInvoicingInfo(
+        string mappingMethod, string? logisticsInfo, string? invoicingInfo)
+    {
+        var order = new CustomerOrder
+        {
+            LogisticsInfoInternal = "Previous logistics info",
+            InvoicingInfo = "Previous invoicing info",
+        };
+        CreateCustomerOrderRequest request = mappingMethod == "ApplyCreateRequestToEntity"
+            ? new CreateCustomerOrderRequest()
+            : new UpdateCustomerOrderRequest();
+        request.LogisticsInfoInternal = logisticsInfo;
+        request.InvoicingInfo = invoicingInfo;
+
+        var applyRequest = typeof(CustomerOrdersController).GetMethod(
+            mappingMethod, BindingFlags.NonPublic | BindingFlags.Static)!;
+        applyRequest.Invoke(null, [order, request]);
+
+        Assert.Equal(logisticsInfo, order.LogisticsInfoInternal);
+        Assert.Equal(invoicingInfo, order.InvoicingInfo);
+
+        var mapToDto = typeof(CustomerOrdersController).GetMethod(
+            "MapToDto", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var response = Assert.IsType<CustomerOrderDto>(mapToDto.Invoke(null, [order]));
+        Assert.Equal(logisticsInfo, response.LogisticsInfoInternal);
+        Assert.Equal(invoicingInfo, response.InvoicingInfo);
+    }
+
+    [Theory]
+    [InlineData("ApplyCreateRequestToEntity", false, false)]
+    [InlineData("ApplyCreateRequestToEntity", true, false)]
+    [InlineData("ApplyCreateRequestToEntity", false, true)]
+    [InlineData("ApplyCreateRequestToEntity", true, true)]
+    [InlineData("ApplyUpdateRequestToEntity", false, false)]
+    [InlineData("ApplyUpdateRequestToEntity", true, false)]
+    [InlineData("ApplyUpdateRequestToEntity", false, true)]
+    [InlineData("ApplyUpdateRequestToEntity", true, true)]
+    public void CustomerOrderRequestsRoundTripCompletionStatusAndDate(
+        string mappingMethod, bool completed, bool clearDate)
+    {
+        var order = new CustomerOrder
+        {
+            Completed = !completed,
+            CompletedDate = new DateTime(2026, 5, 22),
+        };
+        CreateCustomerOrderRequest request = mappingMethod == "ApplyCreateRequestToEntity"
+            ? new CreateCustomerOrderRequest()
+            : new UpdateCustomerOrderRequest();
+        request.Completed = completed;
+        request.CompletedDate = clearDate ? null : new DateTime(2026, 10, 15);
+
+        var applyRequest = typeof(CustomerOrdersController).GetMethod(
+            mappingMethod, BindingFlags.NonPublic | BindingFlags.Static)!;
+        applyRequest.Invoke(null, [order, request]);
+
+        Assert.Equal(completed, order.Completed);
+        Assert.Equal(request.CompletedDate, order.CompletedDate);
+
+        var mapToDto = typeof(CustomerOrdersController).GetMethod(
+            "MapToDto", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var response = Assert.IsType<CustomerOrderDto>(mapToDto.Invoke(null, [order]));
+        Assert.Equal(completed, response.Completed);
+        Assert.Equal(request.CompletedDate, response.CompletedDate);
     }
 
     [Theory]

@@ -26,6 +26,58 @@ namespace Econosys.Api.Controllers
             _legacyUserResolution = legacyUserResolution;
         }
 
+        [HttpPost("search")]
+        public async Task<ActionResult<List<HeaderSearchResultDto>>> Search([FromBody] HeaderSearchRequest? request)
+        {
+            var searchTerm = request?.SearchTerm?.Trim();
+            if (string.IsNullOrWhiteSpace(searchTerm) || searchTerm.Length < 4)
+            {
+                return Ok(new List<HeaderSearchResultDto>());
+            }
+
+            var isNumeric = int.TryParse(searchTerm, NumberStyles.None, CultureInfo.InvariantCulture, out var callOffId);
+            var query = _dbContext.CallOffs
+                .AsNoTracking()
+                .Where(x => isNumeric
+                    ? x.Id == callOffId
+                    : x.CallOffDeliveries.Any(delivery =>
+                        delivery.DeliveryFromStock != null
+                        && ((delivery.DeliveryFromStock.CustomerOrder != null
+                                && delivery.DeliveryFromStock.CustomerOrder.SupplierOrder != null
+                                && delivery.DeliveryFromStock.CustomerOrder.SupplierOrder.SupplierOrderNr != null
+                                && delivery.DeliveryFromStock.CustomerOrder.SupplierOrder.SupplierOrderNr.Contains(searchTerm))
+                            || (delivery.DeliveryFromStock.DeliveryToStock != null
+                                && delivery.DeliveryFromStock.DeliveryToStock.SupplierOrder != null
+                                && delivery.DeliveryFromStock.DeliveryToStock.SupplierOrder.SupplierOrderNr != null
+                                && delivery.DeliveryFromStock.DeliveryToStock.SupplierOrder.SupplierOrderNr.Contains(searchTerm)))));
+
+            var results = await query
+                .OrderByDescending(x => x.CreatedDateTime)
+                .ThenByDescending(x => x.Id)
+                .Take(5)
+                .Select(x => new HeaderSearchResultDto
+                {
+                    Id = x.Id,
+                    Number = x.Id.ToString(),
+                    Name = x.Reference ?? string.Empty,
+                    Details = x.CallOffDeliveries
+                        .Select(delivery => delivery.DeliveryFromStock != null
+                            && delivery.DeliveryFromStock.CustomerOrder != null
+                            && delivery.DeliveryFromStock.CustomerOrder.SupplierOrder != null
+                                ? delivery.DeliveryFromStock.CustomerOrder.SupplierOrder.SupplierOrderNr
+                                : delivery.DeliveryFromStock != null
+                                    && delivery.DeliveryFromStock.DeliveryToStock != null
+                                    && delivery.DeliveryFromStock.DeliveryToStock.SupplierOrder != null
+                                        ? delivery.DeliveryFromStock.DeliveryToStock.SupplierOrder.SupplierOrderNr
+                                        : null)
+                        .FirstOrDefault() ?? string.Empty,
+                    Date = x.CreatedDateTime,
+                })
+                .ToListAsync();
+
+            return Ok(results);
+        }
+
         [HttpGet("form-options")]
         public async Task<ActionResult<CallOffFormOptionsDto>> GetFormOptions()
         {

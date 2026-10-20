@@ -1421,7 +1421,7 @@ const SupplierOrder = () => {
                                         onWeekModeChange={(nextWeekMode) => updateSupplierOrder({ deliveryDateWeekMode: nextWeekMode })}
                                         enableWeekSelect
                                         labelWidth="w-35"
-                                        inputWidth="w-30"
+                                        inputWidth="w-35"
                                         margintop="0"
                                         placeholder="Välj datum/vecka"
                                     />
@@ -1434,7 +1434,7 @@ const SupplierOrder = () => {
                                         onWeekModeChange={(nextWeekMode) => updateSupplierOrder({ confirmedDeliveryDateWeekMode: nextWeekMode })}
                                         enableWeekSelect
                                         labelWidth="w-35"
-                                        inputWidth="w-30"
+                                        inputWidth="w-35"
                                         margintop="0"
                                         placeholder="Välj datum/vecka"
                                     />

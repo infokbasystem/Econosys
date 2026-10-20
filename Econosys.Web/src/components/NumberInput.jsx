@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 
 const NumberInput = ({
     rowId,
@@ -7,6 +7,7 @@ const NumberInput = ({
     disabled = false,
     decimals = 2,
     hideZeroDecimals = false,
+    suffix = '',
     className,
     onChange,
     ...props
@@ -29,7 +30,8 @@ const NumberInput = ({
         let decPart = parts[1];
         // Add space as thousand separator
         intPart = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-        return displayDecimals > 0 ? `${intPart},${decPart}` : intPart;
+        const formattedValue = displayDecimals > 0 ? `${intPart},${decPart}` : intPart;
+        return suffix ? `${formattedValue} ${suffix}` : formattedValue;
     };
 
     // Prepare number for editing (Swedish comma but no spaces)
@@ -40,13 +42,6 @@ const NumberInput = ({
             ? num.toFixed(editDecimals).replace(".", ",")
             : Math.round(num).toString();
     };
-
-    // Sync when external value changes
-    useEffect(() => {
-        if (!isFocused) {
-            setDisplayValue(formatNumber(value));
-        }
-    }, [value, isFocused]);
 
     const handleFocus = () => {
         setIsFocused(true);
@@ -100,7 +95,7 @@ const NumberInput = ({
     return (
         <input
             type="text"
-            value={displayValue}
+            value={isFocused ? displayValue : formatNumber(value)}
             disabled={disabled}
             onFocus={handleFocus}
             onBlur={handleBlur}

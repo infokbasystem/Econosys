@@ -52,6 +52,12 @@ namespace Econosys.Api.DTOs
         public int? QuotationId { get; set; }
         public int? SupplierOrderId { get; set; }
         public string? SupplierOrderNr { get; set; }
+        public int? SupplierOrderProducedEdition { get; set; }
+        public short? SupplierOrderUnitMultiplicator { get; set; }
+        public double? SupplierOrderPurchasePrice { get; set; }
+        public int? SupplierOrderPurchaseCurrencyId { get; set; }
+        public string? SupplierOrderPurchaseCurrencyName { get; set; }
+        public double? SupplierOrderPurchaseCurrencyRate { get; set; }
         public string? CustomerOrderNr { get; set; }
         public int? CustomerId { get; set; }
         public string? CustomerName { get; set; }
@@ -83,6 +89,7 @@ namespace Econosys.Api.DTOs
         public string? SalesCurrencyName { get; set; }
         public int? UnitId { get; set; }
         public string? UnitName { get; set; }
+        public short? UnitMultiplicator { get; set; }
         public int? SelectedCalculationRowId { get; set; }
         public int? Edition { get; set; }
         public double? SalesPrice { get; set; }
@@ -163,7 +170,13 @@ namespace Econosys.Api.DTOs
         public string? DeliveryPostalAddress { get; set; }
         public string? DeliveryCountry { get; set; }
         public DateTime? Date { get; set; }
+        public DateTime? DeliveryDate { get; set; }
+        public bool DeliveryDateWeekMode { get; set; }
+        public string? LogisticsInfoInternal { get; set; }
+        public string? InvoicingInfo { get; set; }
         public string? TimeOfDelivery { get; set; }
+        public bool Completed { get; set; }
+        public DateTime? CompletedDate { get; set; }
         public string? YourReference { get; set; }
         public string? OurReference { get; set; }
         public string? TermsOfDelivery { get; set; }
