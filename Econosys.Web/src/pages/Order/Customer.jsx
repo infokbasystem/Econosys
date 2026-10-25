@@ -388,7 +388,7 @@ const Customer = () => {
             return;
         }
 
-        navigate('/order/customers');
+        window.close();
     };
 
     const handleUnsavedWarningConfirm = () => {

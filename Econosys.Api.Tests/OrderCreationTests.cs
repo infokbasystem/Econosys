@@ -5,6 +5,7 @@ using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
 using Econosys.Api.Services;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -14,6 +15,97 @@ namespace Econosys.Api.Tests;
 
 public class OrderCreationTests
 {
+    [Theory]
+    [InlineData("ApplyCreateRequestToEntity", null, null)]
+    [InlineData("ApplyCreateRequestToEntity", 12, 175.5)]
+    [InlineData("ApplyUpdateRequestToEntity", null, null)]
+    [InlineData("ApplyUpdateRequestToEntity", 12, 175.5)]
+    public void CustomerOrderPackagingQuantityAndPriceRoundTrip(string method, int? quantity, double? price)
+    {
+        var order = new CustomerOrder { NrOfEurPallet = 3, EurPalletValue = 99 };
+        CreateCustomerOrderRequest request = method == "ApplyCreateRequestToEntity"
+            ? new CreateCustomerOrderRequest()
+            : new UpdateCustomerOrderRequest();
+        request.PalletFormatId = 7;
+        request.EurPallet = true;
+        request.NrOfEurPallet = (short?)quantity;
+        request.EurPalletValue = price;
+        typeof(CustomerOrdersController).GetMethod(method, BindingFlags.NonPublic | BindingFlags.Static)!
+            .Invoke(null, [order, request]);
+        var response = Assert.IsType<CustomerOrderDto>(typeof(CustomerOrdersController)
+            .GetMethod("MapToDto", BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null, [order]));
+        Assert.Equal(request.NrOfEurPallet, response.NrOfEurPallet);
+        Assert.Equal(price, response.EurPalletValue);
+        Assert.Equal(7, response.PalletFormatId);
+        Assert.True(response.EurPallet);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CustomerOrderCreateLinksExistingSupplierCostsWithoutDuplicatingThem(bool includeCostEdits)
+    {
+        using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var supplierOrder = new SupplierOrder { Id = 10, CompanyId = 1 };
+        var original = new OrderCost
+        {
+            Id = 20, SupplierOrderId = 10, CostId = 3, InPrice = 100,
+            InPriceCurrencyId = 7, CalculationRowId = 4, QuotationId = 5,
+            CreatedById = 42, Note = "Supplier cost",
+        };
+        var otherCost = new OrderCost { Id = 21, SupplierOrderId = 11, CostId = 3 };
+        context.SupplierOrders.Add(supplierOrder);
+        context.OrderCosts.AddRange(original, otherCost);
+        await context.SaveChangesAsync();
+        var controller = new CustomerOrdersController(context,
+            NullLogger<CustomerOrdersController>.Instance,
+            new UserResolution(new LegacyUser { Id = 42, CompanyId = 1 }));
+        var request = new CreateCustomerOrderRequest { SupplierOrderId = 10 };
+        if (includeCostEdits)
+        {
+            request.OrderCosts.Add(new UpsertCustomerOrderOrderCostRequest
+            {
+                Id = 20, SupplierOrderId = 10, CustomerOrderId = 999,
+                CostId = 3, InPrice = 125, Note = "Edited cost",
+            });
+        }
+        request.OrderCosts.Add(new UpsertCustomerOrderOrderCostRequest { CostId = 8, InPrice = 50 });
+
+        var result = await controller.Create(request);
+
+        var created = Assert.IsType<CustomerOrderDto>(Assert.IsType<CreatedAtActionResult>(result.Result).Value);
+        Assert.True(created.Id > 0);
+        Assert.Equal(2, created.OrderCosts.Count);
+        Assert.Equal(3, await context.OrderCosts.CountAsync());
+        Assert.Equal(created.Id, original.CustomerOrderId);
+        Assert.Equal(10, original.SupplierOrderId);
+        Assert.Equal(includeCostEdits ? 125m : 100m, original.InPrice);
+        Assert.Equal(7, original.InPriceCurrencyId);
+        Assert.Equal(4, original.CalculationRowId);
+        Assert.Equal(5, original.QuotationId);
+        Assert.Equal(42, original.CreatedById);
+        Assert.Null(otherCost.CustomerOrderId);
+        var added = await context.OrderCosts.SingleAsync(x => x.CostId == 8);
+        Assert.Equal(created.Id, added.CustomerOrderId);
+        Assert.Equal(10, added.SupplierOrderId);
+
+        var update = new UpdateCustomerOrderRequest
+        {
+            Id = created.Id,
+            SupplierOrderId = 10,
+            OrderCosts = created.OrderCosts.Select(cost => new UpsertCustomerOrderOrderCostRequest
+            {
+                Id = cost.Id, CustomerOrderId = null, SupplierOrderId = cost.SupplierOrderId,
+                CostId = cost.CostId, InPrice = cost.InPrice,
+            }).ToList(),
+        };
+        await controller.Update(created.Id, update);
+        context.ChangeTracker.Clear();
+        Assert.Equal(2, await context.OrderCosts.CountAsync(x => x.CustomerOrderId == created.Id));
+        Assert.Equal(3, await context.OrderCosts.CountAsync());
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, false)]

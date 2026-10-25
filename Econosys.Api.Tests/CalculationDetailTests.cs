@@ -1,14 +1,85 @@
 using Econosys.Api.DTOs;
 using Econosys.Api.Data;
 using Econosys.Api.Models;
+using Econosys.Api.Migrations;
 using Econosys.Api.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Xunit;
 
 namespace Econosys.Api.Tests;
 
 public class CalculationDetailTests
 {
+    [Fact]
+    public void ArchiveMigrationOnlyAddsTheRequiredFlagWithAnUnarchivedDefault()
+    {
+        var migration = new AddCalculationIsArchived();
+        var add = Assert.IsType<AddColumnOperation>(Assert.Single(migration.UpOperations));
+        Assert.Equal("Calculation", add.Table);
+        Assert.Equal("IsArchived", add.Name);
+        Assert.Equal("bit", add.ColumnType);
+        Assert.False(add.IsNullable);
+        Assert.Equal(false, add.DefaultValue);
+        var drop = Assert.IsType<DropColumnOperation>(Assert.Single(migration.DownOperations));
+        Assert.Equal(add.Table, drop.Table);
+        Assert.Equal(add.Name, drop.Name);
+    }
+
+    [Fact]
+    public void ArchiveFlagMapsToTheRequiredDatabaseColumn()
+    {
+        using var context = new ApplicationDbContext(
+            new DbContextOptionsBuilder<ApplicationDbContext>()
+                .UseSqlServer("Server=localhost;Database=ModelMappingOnly;Integrated Security=true")
+                .Options);
+        var property = context.Model.FindEntityType(typeof(Calculation))!
+            .FindProperty(nameof(Calculation.IsArchived))!;
+
+        Assert.Equal("IsArchived", property.GetColumnName());
+        Assert.False(property.IsNullable);
+    }
+
+    [Fact]
+    public void NewCalculationsAreNotArchived()
+    {
+        var calculation = new Calculation();
+
+        Assert.False(calculation.IsArchived);
+        Assert.False(CalculationDetailMapper.Map(calculation, new Dictionary<int, string?>()).IsArchived);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ArchiveStatusIsSavedAndReloadedWithoutChangingRowArchiveStatus(bool isArchived)
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var context = new ApplicationDbContext(options);
+        var calculation = SavedCalculation;
+        calculation.IsArchived = !isArchived;
+        calculation.CalculationRows.Add(new CalculationRow { Id = 10, Archived = true });
+        context.Calculations.Add(calculation);
+        await context.SaveChangesAsync();
+
+        CalculationUpdateMapper.Apply(calculation, new UpdateCalculationRequest
+        {
+            IsArchived = isArchived,
+        }, editedBy: 8, new DateTime(2026, 10, 21, 12, 0, 0));
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var reloaded = await context.Calculations.Include(item => item.CalculationRows)
+            .SingleAsync(item => item.Id == calculation.Id);
+        var details = CalculationDetailMapper.Map(reloaded, new Dictionary<int, string?>());
+        Assert.Equal(isArchived, reloaded.IsArchived);
+        Assert.Equal(isArchived, details.IsArchived);
+        Assert.False(details.Rows.Single(row => row.Id == 9).Archived);
+        Assert.True(details.Rows.Single(row => row.Id == 10).Archived);
+    }
+
     [Fact]
     public void CalculationAndRowsMapTheExistingRequiredCompanyColumn()
     {

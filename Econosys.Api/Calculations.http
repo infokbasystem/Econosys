@@ -1,5 +1,38 @@
 @baseUrl = https://localhost:5001
 @accessToken = REPLACE_WITH_ACCESS_TOKEN
+@historySupplierOrderId = 44631
+
+### Read the supplier-selected calculation row, including archived snapshots
+# @name linkedCalculationRow
+GET {{baseUrl}}/api/supplierorders/{{historySupplierOrderId}}/calculation-row
+Authorization: Bearer {{accessToken}}
+
+### Save all values read above (no recalculation and no order synchronization)
+# Run the named GET first. Edit the full values object to change individual fields.
+PUT {{baseUrl}}/api/supplierorders/{{historySupplierOrderId}}/calculation-row
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "expectedRowId": {{linkedCalculationRow.response.body.$.id}},
+  "values": {{linkedCalculationRow.response.body.$.values}}
+}
+
+### Missing supplier order / missing selected row returns 404
+GET {{baseUrl}}/api/supplierorders/2147483647/calculation-row
+Authorization: Bearer {{accessToken}}
+
+### Reload pricing history after closing the editor
+GET {{baseUrl}}/api/calculations/18487/history
+Authorization: Bearer {{accessToken}}
+
+### Grouped legacy-style navigation (only this calculation's related documents)
+GET {{baseUrl}}/api/ordernavigation/calculation/24050/flow
+Authorization: Bearer {{accessToken}}
+
+### Missing calculation navigation returns 404
+GET {{baseUrl}}/api/ordernavigation/calculation/2147483647/flow
+Authorization: Bearer {{accessToken}}
 
 ### Read saved calculation details (no price refresh or database writes)
 GET {{baseUrl}}/api/calculations/24050/aggregate

@@ -4,6 +4,7 @@ namespace Econosys.Api.DTOs;
 
 public sealed class UpdateCalculationRequest
 {
+    public bool IsArchived { get; init; }
     public int? CustomerId { get; init; }
     public int? SupplierId { get; init; }
     [Range(1, int.MaxValue)]

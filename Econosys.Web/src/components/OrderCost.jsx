@@ -97,6 +97,7 @@ const OrderCost = ({
     quotationId,
     customerOrderId,
     supplierOrderId,
+    showForDraft = false,
     rows,
     costOptions,
     currencyOptions,
@@ -366,7 +367,7 @@ const OrderCost = ({
         }
     };
 
-    if (!quotationId && !customerOrderId && !supplierOrderId) {
+    if (!showForDraft && !quotationId && !customerOrderId && !supplierOrderId) {
         return null;
     }
 
@@ -859,4 +860,3 @@ const OrderCost = ({
 };
 
 export default OrderCost;
-

@@ -11,6 +11,7 @@ namespace Econosys.Api.DTOs
     public class OrderNavigationCalculationDto
     {
         public int Id { get; set; }
+        public bool IsArchived { get; set; }
         public bool IsCurrent { get; set; }
         public List<OrderNavigationInquiryDto> Inquiries { get; set; } = new();
         public List<OrderNavigationQuotationDto> Quotations { get; set; } = new();

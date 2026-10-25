@@ -139,6 +139,7 @@ public class CalculationsController(
                 UnitMultiplier = order.Unit != null ? order.Unit.Multiplicator : (short?)1,
                 SupplierOrderId = order.SupplierOrder != null ? order.SupplierOrder.Id : (int?)null,
                 SupplierOrderNr = order.SupplierOrder != null ? order.SupplierOrder.SupplierOrderNr : null,
+                SelectedCalculationRowId = order.SupplierOrder != null ? order.SupplierOrder.SelectedCalculationRowId : null,
                 SupplierOrderCreated = order.SupplierOrder != null ? order.SupplierOrder.Created : null,
                 SupplierOrderDeliveryDate = order.SupplierOrder != null ? order.SupplierOrder.DeliveryDate : null,
                 SupplierOrderDeliveryDateWeekMode = order.SupplierOrder != null && order.SupplierOrder.DeliveryDateWeekMode,
@@ -148,13 +149,13 @@ public class CalculationsController(
                 SupplierPurchaseCurrencyName = order.SupplierOrder != null && order.SupplierOrder.PurchaseCurrency != null
                     ? order.SupplierOrder.PurchaseCurrency.Name
                     : null,
-                CalculationRowPurchasePrice = order.SelectedCalculationRow != null ? order.SelectedCalculationRow.PurchasePrice : null,
-                CalculationRowSalesPrice = order.SelectedCalculationRow != null ? order.SelectedCalculationRow.SalesPrice : null,
-                CalculationRowFreightCost = order.SelectedCalculationRow != null ? order.SelectedCalculationRow.Freight : null,
-                CalculationRowOtherCost = order.SelectedCalculationRow != null ? order.SelectedCalculationRow.Other : null,
-                CalculationRowStorageCost = order.SelectedCalculationRow != null ? order.SelectedCalculationRow.Storage : null,
-                CalculationRowPercentAddition = order.SelectedCalculationRow != null ? order.SelectedCalculationRow.PercentAddition : null,
-                CalculationRowPackagingCost = order.SelectedCalculationRow != null ? order.SelectedCalculationRow.PackagingCost : null,
+                CalculationRowPurchasePrice = order.SupplierOrder != null && order.SupplierOrder.SelectedCalculationRow != null ? order.SupplierOrder.SelectedCalculationRow.PurchasePrice : null,
+                CalculationRowSalesPrice = order.SupplierOrder != null && order.SupplierOrder.SelectedCalculationRow != null ? order.SupplierOrder.SelectedCalculationRow.SalesPrice : null,
+                CalculationRowFreightCost = order.SupplierOrder != null && order.SupplierOrder.SelectedCalculationRow != null ? order.SupplierOrder.SelectedCalculationRow.Freight : null,
+                CalculationRowOtherCost = order.SupplierOrder != null && order.SupplierOrder.SelectedCalculationRow != null ? order.SupplierOrder.SelectedCalculationRow.Other : null,
+                CalculationRowStorageCost = order.SupplierOrder != null && order.SupplierOrder.SelectedCalculationRow != null ? order.SupplierOrder.SelectedCalculationRow.Storage : null,
+                CalculationRowPercentAddition = order.SupplierOrder != null && order.SupplierOrder.SelectedCalculationRow != null ? order.SupplierOrder.SelectedCalculationRow.PercentAddition : null,
+                CalculationRowPackagingCost = order.SupplierOrder != null && order.SupplierOrder.SelectedCalculationRow != null ? order.SupplierOrder.SelectedCalculationRow.PackagingCost : null,
             })
             .ToListAsync(cancellationToken);
 
@@ -214,7 +215,8 @@ public class CalculationsController(
                 order.SalesCurrencyName,
                 order.SalesCurrencyRate,
                 tbTotalSek,
-                infoParts.Count == 0 ? null : string.Join($"{Environment.NewLine}{Environment.NewLine}", infoParts));
+                infoParts.Count == 0 ? null : string.Join($"{Environment.NewLine}{Environment.NewLine}", infoParts),
+                order.SelectedCalculationRowId);
         }).ToArray();
 
         var supplierOrders = await dbContext.SupplierOrders
@@ -228,6 +230,7 @@ public class CalculationsController(
             {
                 order.Id,
                 order.SupplierOrderNr,
+                order.SelectedCalculationRowId,
                 order.Created,
                 order.DeliveryDate,
                 order.DeliveryDateWeekMode,
@@ -260,7 +263,8 @@ public class CalculationsController(
             null,
             null,
             null,
-            null)).ToArray();
+            null,
+            order.SelectedCalculationRowId)).ToArray();
 
         return Ok(supplierHistory.Concat(customerHistory).ToArray());
     }

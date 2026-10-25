@@ -7,6 +7,16 @@ export const getFreightMode = (calculation) => {
     };
 };
 
+export const getFreightWarningMessage = (calculation, supplier) => {
+    if (supplier?.econopackTransportResponsible !== true) return '';
+    const disabledSettings = [
+        calculation?.autoFreightCalc === false ? 'Automatisk fraktberäkning' : null,
+        calculation?.autoFreightPrice === false ? 'Automatiskt fraktpris' : null,
+    ].filter(Boolean);
+    if (disabledSettings.length === 0) return '';
+    return `Econopac är transportansvarig för den valda leverantören, men följande är avstängt i kalkylen: ${disabledSettings.join(' och ')}. Kontrollera fraktinställningarna.`;
+};
+
 export const getFreightEditState = (calculation, saved) => {
     const enabledAutomaticPrices = Boolean(calculation?.autoFreightPrice && !saved?.autoFreightPrice);
     return {

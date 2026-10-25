@@ -502,6 +502,10 @@ namespace Econosys.Api.Migrations
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("strCalculationFollowUp");
 
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
+
                     b.Property<int?>("ConnectedToCalculationId")
                         .HasColumnType("int")
                         .HasColumnName("lngConnectedToCalculation_ID");
@@ -596,6 +600,10 @@ namespace Econosys.Api.Migrations
                     b.Property<double?>("Interest")
                         .HasColumnType("float")
                         .HasColumnName("dblInterest");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("bit")
+                        .HasColumnName("IsArchived");
 
                     b.Property<bool>("IsYtterforpackning")
                         .HasColumnType("bit")
@@ -1106,6 +1114,10 @@ namespace Econosys.Api.Migrations
                     b.Property<double?>("CalculationPrice")
                         .HasColumnType("float")
                         .HasColumnName("dblCalculationPrice");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
 
                     b.Property<int?>("CustomerDeliveryAddressId")
                         .HasColumnType("int")
@@ -1703,6 +1715,40 @@ namespace Econosys.Api.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Econosys.Api.Models.CostPrice", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("CalculationAutoAddSupplier")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("CostId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CustomerId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("DefaultInPrice")
+                        .HasColumnType("decimal(10, 2)");
+
+                    b.Property<decimal?>("DefaultOutPrice")
+                        .HasColumnType("decimal(10, 2)");
+
+                    b.Property<int?>("SupplierId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("CostPrice", null, t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
             modelBuilder.Entity("Econosys.Api.Models.Currency", b =>
                 {
                     b.Property<int>("Id")
@@ -2283,6 +2329,10 @@ namespace Econosys.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("strColor");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
 
                     b.Property<bool>("Completed")
                         .HasColumnType("bit")
@@ -6062,6 +6112,10 @@ namespace Econosys.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("strColor");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
 
                     b.Property<bool>("Confirmed")
                         .HasColumnType("bit")

@@ -15,6 +15,7 @@ public static class CalculationDetailMapper
         return new CalculationDetailDto
         {
             Id = calculation.Id,
+            IsArchived = calculation.IsArchived,
             Product = product is null ? null : new CalculationProductDto(product.Id, product.Name,
                 product.Material?.Name, product.Construction?.Name, product.ProductCode,
                 product.LengthMm, product.WidthMm, product.HeightMm, product.Format,

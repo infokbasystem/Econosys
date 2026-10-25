@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, Plus, Search } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
@@ -194,12 +194,6 @@ const ProductSearch = () => {
         ].join(' ');
     };
 
-    const handleOpenProduct = (event, rowId) => {
-        event.preventDefault();
-        event.stopPropagation();
-        navigate(`/order/products/${rowId}`);
-    };
-
     return (
         <div className="flex h-full flex-col pt-3 pb-4 ps-10 pe-0">
             <div className="flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-2 mt-2">
@@ -314,22 +308,22 @@ const ProductSearch = () => {
                                     onClick={() => setSelectedRowId((prev) => (prev === row.id ? null : row.id))}
                                 >
                                     <td className="truncate px-2 py-1 text-gray-800">
-                                        <button
-                                            type="button"
-                                            onClick={(event) => handleOpenProduct(event, row.id)}
+                                        <Link
+                                            to={`/order/products/${row.id}`}
+                                            onClick={(event) => event.stopPropagation()}
                                             className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                         >
                                             {row.id}
-                                        </button>
+                                        </Link>
                                     </td>
                                     <td className="truncate px-2 py-1 text-gray-800">
-                                        <button
-                                            type="button"
-                                            onClick={(event) => handleOpenProduct(event, row.id)}
+                                        <Link
+                                            to={`/order/products/${row.id}`}
+                                            onClick={(event) => event.stopPropagation()}
                                             className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                         >
                                             {row.name}
-                                        </button>
+                                        </Link>
                                     </td>
                                     <td className="truncate px-2 py-1 text-gray-800">{formatProductDimensions(row)}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.construction?.name ?? row.constructionId}</td>

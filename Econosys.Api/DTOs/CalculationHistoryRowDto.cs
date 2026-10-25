@@ -21,4 +21,5 @@ public sealed record CalculationHistoryRowDto(
     string? SalesCurrencyName,
     double? SalesCurrencyRate,
     double? TbTotalSek,
-    string? Info);
+    string? Info,
+    int? SelectedCalculationRowId = null);

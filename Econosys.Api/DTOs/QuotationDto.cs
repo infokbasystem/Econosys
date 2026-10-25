@@ -148,6 +148,7 @@ namespace Econosys.Api.DTOs
 
     public class CreateQuotationRequest
     {
+        public List<int> CalculationRowIds { get; set; } = new();
         public int CompanyId { get; set; }
         public int? CalculationId { get; set; }
         public int? InquiryId { get; set; }

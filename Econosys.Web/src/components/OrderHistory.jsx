@@ -117,7 +117,7 @@ const HistoryDetails = ({ row, onClose }) => {
 
 const HistoryList = ({ entityType, entityId, refreshKey }) => {
     const [history, setHistory] = useState(null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(entityId > 0);
     const [error, setError] = useState('');
     const [refresh, setRefresh] = useState(0);
     const [selectedRow, setSelectedRow] = useState(null);
@@ -150,8 +150,6 @@ const HistoryList = ({ entityType, entityId, refreshKey }) => {
         return () => { active = false; };
     }, [entityId, resource, refreshKey, refresh]);
 
-    if (!(entityId > 0)) return null;
-
     const rows = history?.rows ?? [];
     const showStock = history?.showStockBalance ?? true;
     const columns = showStock ? 10 : 9;
@@ -165,7 +163,7 @@ const HistoryList = ({ entityType, entityId, refreshKey }) => {
                     setHistory(null);
                     setSelectedRow(null);
                     setRefresh((value) => value + 1);
-                }} disabled={loading}
+                }} disabled={loading || !(entityId > 0)}
                     className="inline-flex items-center gap-1 text-xs text-gray-600 hover:underline disabled:opacity-50">
                     <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Uppdatera historik
                 </button>
@@ -221,7 +219,7 @@ const HistoryList = ({ entityType, entityId, refreshKey }) => {
     );
 };
 
-const OrderHistory = ({ entityType, entityId, refreshKey }) => entityId > 0 ? (
+const OrderHistory = ({ entityType, entityId, refreshKey, showForDraft = false }) => entityId > 0 || showForDraft ? (
     <HistoryList
         key={`${entityType}:${entityId}:${refreshKey ?? ''}`}
         entityType={entityType}

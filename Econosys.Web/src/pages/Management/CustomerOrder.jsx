@@ -261,6 +261,8 @@ const CustomerOrder = () => {
         salesPrice: parseNullableDecimal(source?.salesPrice),
         palletFormatId: parseNullableInt(source?.palletFormatId),
         eurPallet: Boolean(source?.eurPallet),
+        nrOfEurPallet: parseNullableInt(source?.nrOfEurPallet),
+        eurPalletValue: parseNullableDecimal(source?.eurPalletValue),
         orderCosts: toArray(source?.orderCosts)
             .filter((row) => row.costId != null)
             .map(buildOrderCostPayload),
@@ -398,7 +400,6 @@ const CustomerOrder = () => {
                 setLegacyUserOptions(toLegacyUserOptions(usersRes?.data));
                 setOrderCostOptions(toArray(costsRes?.data));
                 setCurrencyOptions(Array.isArray(currenciesRes?.data?.items) ? currenciesRes.data.items : []);
-                setPalletFormatOptions([]);
             } catch (error) {
                 console.error('Failed to load customer order form options:', error);
                 if (!isActive) return;
@@ -415,6 +416,29 @@ const CustomerOrder = () => {
             isActive = false;
         };
     }, []);
+
+    useEffect(() => {
+        const customerId = parseNullableInt(customerOrder?.customerId);
+        if (!customerId) {
+            setPalletFormatOptions([]);
+            return undefined;
+        }
+        let active = true;
+        apiClient.get('/palletformats/searchwithprices', { params: { customerId } })
+            .then((response) => {
+                if (active) setPalletFormatOptions(toArray(response.data));
+            })
+            .catch((error) => {
+                if (!active) return;
+                console.error('Failed to load customer order packaging options:', error);
+                setPalletFormatOptions([]);
+                setMessages((previous) => [
+                    ...previous,
+                    { type: 'error', text: 'Kunde inte hämta pall/packning för kunden.' },
+                ]);
+            });
+        return () => { active = false; };
+    }, [customerOrder?.customerId, setMessages]);
 
     useEffect(() => {
         const customerId = parseNullableInt(customerOrder?.customerId);

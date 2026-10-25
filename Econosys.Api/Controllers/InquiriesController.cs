@@ -57,6 +57,57 @@ namespace Econosys.Api.Controllers
             return Ok(MapToDto(inquiry));
         }
 
+        /// <summary>Builds an unsaved inquiry from the saved calculation using legacy defaults.</summary>
+        [HttpGet("from-calculation/{calculationId:int}")]
+        public async Task<ActionResult<InquiryDto>> FromCalculation(int calculationId, CancellationToken cancellationToken)
+        {
+            var user = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+            if (user is null)
+            {
+                return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+            }
+
+            var calculation = await _dbContext.Calculations.AsNoTracking()
+                .Include(x => x.Product).ThenInclude(x => x!.Material)
+                .Include(x => x.Product).ThenInclude(x => x!.Construction)
+                .Include(x => x.Product).ThenInclude(x => x!.Varnish)
+                .Include(x => x.Supplier).ThenInclude(x => x!.Language)
+                .Include(x => x.Customer)
+                .Include(x => x.PurchaseCurrency)
+                .Include(x => x.SalesCurrency)
+                .Include(x => x.CalculationRows)
+                .FirstOrDefaultAsync(x => x.Id == calculationId, cancellationToken);
+            if (calculation is null)
+            {
+                return NotFound();
+            }
+            if (calculation.Product is null || calculation.Supplier is null || calculation.Customer is null)
+            {
+                return Problem(statusCode: StatusCodes.Status400BadRequest,
+                    detail: "Calculation must have a product, supplier and customer.");
+            }
+
+            var addressQuery = _dbContext.CustomerDeliveryAddresses.AsNoTracking()
+                .Where(x => x.CustomerId == calculation.CustomerId);
+            var address = calculation.AutoFreightPrice && calculation.CustomerDeliveryAddressId.HasValue
+                ? await addressQuery.FirstOrDefaultAsync(x => x.Id == calculation.CustomerDeliveryAddressId, cancellationToken)
+                : await addressQuery.OrderBy(x => x.Id).FirstOrDefaultAsync(x => x.IsDefault, cancellationToken);
+            var answerDays = await _dbContext.Settings.Where(x => x.CompanyId == calculation.CompanyId)
+                .Select(x => x.NrOfInquiryAnswerDays).FirstOrDefaultAsync(cancellationToken);
+            var languageCode = calculation.Supplier.Language?.LanguageCode;
+            var codes = new[] { calculation.Product.Material?.TranslationCode,
+                calculation.Product.Construction?.TranslationCode, calculation.Product.Varnish?.TranslationCode };
+            var translations = string.IsNullOrWhiteSpace(languageCode) ? new List<TranslationItem>()
+                : await _dbContext.TranslationItems.AsNoTracking()
+                    .Where(x => x.LangCode == languageCode && codes.Contains(x.TranslationCode))
+                    .OrderBy(x => x.Id).ToListAsync(cancellationToken);
+
+            return Ok(InquiryDraftMapper.Map(calculation, address, user, SwedishTime.Now,
+                answerDays, translations.Where(x => x.TranslationCode.HasValue)
+                    .GroupBy(x => x.TranslationCode!.Value)
+                    .ToDictionary(x => x.Key, x => x.First().Translation)));
+        }
+
         [HttpPost]
         public async Task<ActionResult<InquiryDto>> Create([FromBody] CreateInquiryRequest request)
         {
@@ -69,6 +120,38 @@ namespace Econosys.Api.Controllers
             if (legacyUser is null)
             {
                 return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+            }
+
+            var requestedRowIds = request.CalculationRowIds.Distinct().ToList();
+            var calculationRows = await _dbContext.CalculationRows
+                .Where(x => requestedRowIds.Contains(x.Id)
+                    && x.CalculationId == request.CalculationId && !x.Archived)
+                .ToListAsync();
+            if (calculationRows.Count != requestedRowIds.Count)
+            {
+                return BadRequest(new { message = "Inquiry rows must belong to the calculation and must not be archived." });
+            }
+
+            InquiryRecipient? newRecipient = null;
+            if (!request.SelectedInquiryRecipientId.HasValue && request.SelectedSupplierId.HasValue)
+            {
+                var calculation = await _dbContext.Calculations.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == request.CalculationId
+                        && x.SupplierId == request.SelectedSupplierId);
+                if (calculation is null)
+                {
+                    return BadRequest(new { message = "Supplier must belong to the calculation." });
+                }
+                newRecipient = new InquiryRecipient
+                {
+                    CompanyId = request.CompanyId,
+                    SupplierId = request.SelectedSupplierId,
+                    YourRef = request.SelectedRecipientYourRef,
+                    TermsOfDelivery = request.SelectedRecipientTermsOfDelivery,
+                    TermsOfPayment = request.SelectedRecipientTermsOfPayment,
+                    LanguageId = request.SelectedRecipientLanguageId,
+                    Note = calculation.LoadingInstruction,
+                };
             }
 
             var entity = new Inquiry
@@ -97,6 +180,11 @@ namespace Econosys.Api.Controllers
                 HideCustomerInfoOnPrint = request.HideCustomerInfoOnPrint,
                 CustomerDeliveryAddressId = request.CustomerDeliveryAddressId,
                 IsFSC = request.IsFSC,
+                InquiryRows = calculationRows.Select(row => new InquiryRow
+                {
+                    CalculationRowId = row.Id,
+                    Edition = row.Edition,
+                }).ToList(),
             };
 
             entity.CreatedAt = SwedishTime.Now;
@@ -104,9 +192,20 @@ namespace Econosys.Api.Controllers
             entity.EditedAt = SwedishTime.Now;
             entity.EditedBy = legacyUser.Id;
 
+            if (newRecipient is not null)
+            {
+                entity.InquiryRecipients.Add(newRecipient);
+            }
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
             _dbContext.Inquiries.Add(entity);
             await ApplySelectedInquiryRecipientFieldsAsync(request, entity.SelectedInquiryRecipientId);
             await _dbContext.SaveChangesAsync();
+            if (newRecipient is not null)
+            {
+                entity.SelectedInquiryRecipientId = newRecipient.Id;
+                await _dbContext.SaveChangesAsync();
+            }
+            await transaction.CommitAsync();
 
             var saved = await _dbContext.Inquiries
                 .AsNoTracking()
@@ -121,6 +220,8 @@ namespace Econosys.Api.Controllers
                     .ThenInclude(x => x!.PurchaseCurrency)
                 .Include(x => x.Calculation)
                     .ThenInclude(x => x!.SalesCurrency)
+                .Include(x => x.InquiryRows)
+                    .ThenInclude(x => x.CalculationRow)
                 .FirstAsync(x => x.Id == entity.Id);
 
             return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(saved));
@@ -216,15 +317,24 @@ namespace Econosys.Api.Controllers
         [HttpDelete("{id:int}")]
         public async Task<IActionResult> Delete(int id)
         {
-            var entity = await _dbContext.Inquiries.FirstOrDefaultAsync(x => x.Id == id);
+            var entity = await _dbContext.Inquiries
+                .Include(x => x.InquiryRows)
+                .Include(x => x.InquiryRecipients)
+                .FirstOrDefaultAsync(x => x.Id == id);
 
             if (entity is null)
             {
                 return NotFound();
             }
 
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            entity.SelectedInquiryRecipientId = null;
+            await _dbContext.SaveChangesAsync();
+            _dbContext.InquiryRows.RemoveRange(entity.InquiryRows);
+            _dbContext.InquiryRecipients.RemoveRange(entity.InquiryRecipients);
             _dbContext.Inquiries.Remove(entity);
             await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             return NoContent();
         }

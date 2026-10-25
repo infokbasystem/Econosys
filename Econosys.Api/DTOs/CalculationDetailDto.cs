@@ -4,6 +4,7 @@ namespace Econosys.Api.DTOs;
 public sealed record CalculationDetailDto
 {
     public int Id { get; init; }
+    public bool IsArchived { get; init; }
     public CalculationProductDto? Product { get; init; }
     public CalculationPartyDto? Supplier { get; init; }
     public CalculationPartyDto? Customer { get; init; }

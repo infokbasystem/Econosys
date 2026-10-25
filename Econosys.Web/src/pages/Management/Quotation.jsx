@@ -7,6 +7,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 import { usePdf } from '../../contexts/PdfContext';
 import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
+import InquirySelectionModal from '../../components/InquirySelectionModal';
 import OrderNavigationTree from '../../components/OrderNavigationTree';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
@@ -20,6 +21,7 @@ import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
 import { parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import LabeledTextArea from '../../components/LabeledTextArea';
+import { createAutomaticInquiry } from '../../helpers/inquiryPayload';
 
 const COMPANY_ID = 1;
 
@@ -120,7 +122,7 @@ const createNewQuotationModel = (initialValues = {}) => ({
     nrOfEurPallet: null,
     eurPalletValue: null,
     palletFormatId: null,
-    isFSC: false,
+    isFsc: false,
     quotationRows: [],
     orderCosts: [],
 });
@@ -157,8 +159,9 @@ const renderReadOnlyInfoRow = (label, value) => (
 const Quotation = () => {
     const navigate = useNavigate();
     const { id } = useParams();
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const calculationId = parseNullableInt(searchParams.get('calculationId'));
+    const inquiryId = parseNullableInt(searchParams.get('inquiryId'));
     const isNewQuotation = id === 'new' || id == null;
 
     const {
@@ -180,6 +183,11 @@ const Quotation = () => {
     const [quotation, setQuotation] = useState(null);
     const [originalQuotation, setOriginalQuotation] = useState(null);
     const [selectedSupplierDetails, setSelectedSupplierDetails] = useState(null);
+    const [inquiryOptions, setInquiryOptions] = useState(null);
+    const [isCreatingInquiry, setIsCreatingInquiry] = useState(false);
+    const [inquiryCreationError, setInquiryCreationError] = useState('');
+    const creatingInquiryRef = useRef(false);
+    const [loadError, setLoadError] = useState('');
     const [selectedCustomerDetails, setSelectedCustomerDetails] = useState(null);
     const [, setSelectedDeliveryAddressOption] = useState('');
     const [legacyUserOptions, setLegacyUserOptions] = useState([]);
@@ -198,6 +206,30 @@ const Quotation = () => {
         }
 
         window.close();
+    };
+
+    const selectInquiry = (selectedInquiryId) => {
+        const nextParams = new URLSearchParams(searchParams);
+        nextParams.set('inquiryId', String(selectedInquiryId));
+        setSearchParams(nextParams, { replace: true });
+    };
+
+    const handleCreateInquiry = async () => {
+        if (creatingInquiryRef.current) return;
+        creatingInquiryRef.current = true;
+        setIsCreatingInquiry(true);
+        setInquiryCreationError('');
+        try {
+            const createdInquiry = await createAutomaticInquiry(apiClient, calculationId);
+            selectInquiry(createdInquiry.id);
+        } catch (error) {
+            console.error('Failed to automatically create inquiry:', error);
+            setInquiryCreationError(error.response?.data?.detail || error.response?.data?.message
+                || 'Kunde inte skapa förfrågan automatiskt.');
+        } finally {
+            creatingInquiryRef.current = false;
+            setIsCreatingInquiry(false);
+        }
     };
 
     const hasUnsavedChanges = useCallback(() => {
@@ -299,7 +331,7 @@ const Quotation = () => {
         const selectedCustomerEmail = selectedCustomerDetails?.customer?.email;
 
         setBadges([
-            { text: currentQuotation?.isFSC ? 'FSC' : 'Ej FSC', color: currentQuotation?.isFSC ? '#166534' : '#6b7280' },
+            { text: currentQuotation?.isFsc ? 'FSC' : 'Ej FSC', color: currentQuotation?.isFsc ? '#166534' : '#6b7280' },
             { text: currentQuotation?.hideDeliveryAddressOnPrint ? 'Döljer leveransadress' : 'Visar leveransadress', color: currentQuotation?.hideDeliveryAddressOnPrint ? '#b45309' : '#2563eb' },
         ]);
 
@@ -349,6 +381,19 @@ const Quotation = () => {
     const buildQuotationPayload = (source) => ({
         companyId: parseNullableInt(source?.companyId) ?? COMPANY_ID,
         calculationId: parseNullableInt(source?.calculationId),
+        inquiryId: parseNullableInt(source?.inquiryId),
+        address: source?.address ?? null,
+        address2: source?.address2 ?? null,
+        postalNr: source?.postalNr ?? null,
+        postalAddress: source?.postalAddress ?? null,
+        country: source?.country ?? null,
+        paymentDays: parseNullableInt(source?.paymentDays),
+        productMessage: source?.productMessage ?? null,
+        salesCurrencyId: parseNullableInt(source?.salesCurrencyId),
+        salesCurrencyRate: parseNullableDecimal(source?.salesCurrencyRate),
+        purchaseCurrencyId: parseNullableInt(source?.purchaseCurrencyId),
+        purchaseCurrencyRate: parseNullableDecimal(source?.purchaseCurrencyRate),
+        unitId: parseNullableInt(source?.unitId),
         autoGenerated: Boolean(source?.autoGenerated),
         customerId: parseNullableInt(source?.customerId),
         product: source?.product ?? null,
@@ -380,7 +425,10 @@ const Quotation = () => {
         createdBy: parseNullableInt(source?.createdBy),
         editedBy: parseNullableInt(source?.editedBy),
         customerDeliveryAddressId: parseNullableInt(source?.customerDeliveryAddressId),
-        isFSC: Boolean(source?.isFSC),
+        isFsc: Boolean(source?.isFsc),
+        calculationRowIds: toArray(source?.quotationRows)
+            .map((row) => parseNullableInt(row?.calculationRowId))
+            .filter((rowId) => rowId && rowId > 0),
         quotationRowIds: Array.isArray(source?.quotationRows)
             ? source.quotationRows
                 .map((row) => parseNullableInt(row?.id))
@@ -437,7 +485,7 @@ const Quotation = () => {
             console.error('Failed to save quotation:', error);
             setMessages((prev) => [
                 ...prev.filter((message) => message.type !== 'error'),
-                { type: 'error', text: 'Kunde inte spara offert.' },
+                { type: 'error', text: error.response?.data?.detail || error.response?.data?.message || 'Kunde inte spara offert.' },
             ]);
         }
     };
@@ -467,6 +515,8 @@ const Quotation = () => {
 
         const loadQuotation = async () => {
             setLoading(true);
+            setLoadError('');
+            setInquiryCreationError('');
             quotationLoadStartedAtRef.current = Date.now();
 
             try {
@@ -475,34 +525,31 @@ const Quotation = () => {
                 }
 
                 if (isNewQuotation) {
-                    let initialValues = {};
+                    let emptyQuotation = createNewQuotationModel();
                     if (calculationId && calculationId > 0) {
-                        const requestKey = `calculation:${calculationId}:detail`;
+                        if (!inquiryId || inquiryId <= 0) {
+                            const response = await getSharedRequest(
+                                `quotations:calculation:${calculationId}:inquiries`,
+                                () => apiClient.get(`/quotations/from-calculation/${calculationId}/inquiries`),
+                            );
+                            if (!isActive) return;
+                            setInquiryOptions(toArray(response.data));
+                            setQuotation(null);
+                            setOriginalQuotation(null);
+                            return;
+                        }
+                        const requestKey = `quotations:from-calculation:${calculationId}:inquiry:${inquiryId}`;
                         const response = await getSharedRequest(
                             requestKey,
-                            () => apiClient.get(`/calculations/${calculationId}/aggregate`),
+                            () => apiClient.get(`/quotations/from-calculation/${calculationId}`, {
+                                params: { inquiryId },
+                            }),
                         );
-                        const calculation = response?.data;
-                        const dimensions = [
-                            calculation?.product?.length,
-                            calculation?.product?.width,
-                            calculation?.product?.height,
-                        ].filter((value) => value != null && value !== '').join(' x ');
-                        initialValues = {
-                            calculationId: calculation?.id,
-                            customerId: calculation?.customer?.id,
-                            customerName: calculation?.customer?.name,
-                            product: calculation?.product?.name,
-                            material: calculation?.product?.material,
-                            format: dimensions || calculation?.product?.format,
-                            color: calculation?.product?.colors == null
-                                ? ''
-                                : String(calculation.product.colors),
-                            construction: calculation?.product?.construction,
-                            customerDeliveryAddressId: calculation?.customerDeliveryAddressId,
+                        emptyQuotation = {
+                            ...response.data,
+                            orderCosts: toArray(response.data?.orderCosts).map(mapApiOrderCostToEditable),
                         };
                     }
-                    const emptyQuotation = createNewQuotationModel(initialValues);
                     if (!isActive) return;
                     setQuotation(emptyQuotation);
                     setOriginalQuotation(structuredClone(emptyQuotation));
@@ -527,6 +574,7 @@ const Quotation = () => {
                 console.error('Failed to load quotation:', error);
                 if (!isActive) return;
                 setQuotation(null);
+                setLoadError(error.response?.data?.detail || error.response?.data?.message || 'Kunde inte ladda affärsförslag.');
             } finally {
                 if (isActive) {
                     setLoading(false);
@@ -539,7 +587,7 @@ const Quotation = () => {
         return () => {
             isActive = false;
         };
-    }, [calculationId, clearStale, id, isNewQuotation]);
+    }, [calculationId, clearStale, id, inquiryId, isNewQuotation]);
 
     useEffect(() => {
         if (loading || isSupplierDetailsLoading || isCustomerDetailsLoading) {
@@ -653,7 +701,6 @@ const Quotation = () => {
                 setLegacyUserOptions(toLegacyUserOptions(usersRes?.data));
                 setOrderCostOptions(toArray(costsRes?.data));
                 setCurrencyOptions(Array.isArray(currenciesRes?.data?.items) ? currenciesRes.data.items : []);
-                setPalletFormatOptions([]);
             } catch (error) {
                 console.error('Failed to load quotation form options:', error);
                 if (!isActive) return;
@@ -670,6 +717,32 @@ const Quotation = () => {
             isActive = false;
         };
     }, [id, isNewQuotation]);
+
+    useEffect(() => {
+        if (!isNewQuotation || !quotation?.customerId || !quotation?.selectedSupplierId) return;
+        let isActive = true;
+        const loadPalletFormats = async () => {
+            try {
+                const response = await apiClient.get('/palletformats/searchwithprices', {
+                    params: {
+                        customerId: quotation.customerId,
+                        supplierId: quotation.selectedSupplierId,
+                    },
+                });
+                if (isActive) setPalletFormatOptions(toArray(response.data));
+            } catch (error) {
+                console.error('Failed to load quotation pallet formats:', error);
+                if (isActive) {
+                    setMessages((previous) => [
+                        ...previous.filter((message) => message.type !== 'error'),
+                        { type: 'error', text: 'Kunde inte ladda pallformat.' },
+                    ]);
+                }
+            }
+        };
+        loadPalletFormats();
+        return () => { isActive = false; };
+    }, [isNewQuotation, quotation?.customerId, quotation?.selectedSupplierId, setMessages]);
 
     useEffect(() => {
         const customerId = parseNullableInt(quotation?.customerId);
@@ -720,10 +793,37 @@ const Quotation = () => {
         );
     }
 
+    if (isNewQuotation && calculationId > 0 && !inquiryId && inquiryOptions !== null && !loadError) {
+        return (
+            <InquirySelectionModal
+                key={calculationId}
+                inquiries={inquiryOptions}
+                onClose={() => navigate(`/order/calculations/${calculationId}`, { replace: true })}
+                onSelect={selectInquiry}
+                onCreate={handleCreateInquiry}
+                isCreating={isCreatingInquiry}
+                error={inquiryCreationError}
+            />
+        );
+    }
+
     if (!quotation) {
         return (
             <div className="pt-2 text-sm text-red-700">
-                Kunde inte ladda offert.
+                <span role="alert">{loadError || 'Kunde inte ladda affärsförslag.'}</span>
+                {isNewQuotation && calculationId > 0 && inquiryId > 0 && (
+                    <button
+                        type="button"
+                        className="ml-4 underline"
+                        onClick={() => {
+                            const nextParams = new URLSearchParams(searchParams);
+                            nextParams.delete('inquiryId');
+                            setSearchParams(nextParams);
+                        }}
+                    >
+                        Välj en annan förfrågan
+                    </button>
+                )}
                 <button
                     type="button"
                     onClick={() => navigate('/order/quotations')}
@@ -865,7 +965,7 @@ const Quotation = () => {
                                 {renderReadOnlyInfoRow('Format', quotation?.format)}
                                 {renderReadOnlyInfoRow('Färg', quotation?.color)}
                                 {renderReadOnlyInfoRow('Konstruktion', quotation?.construction)}
-                                {renderReadOnlyInfoRow('FSC', quotation?.isFSC ? 'Ja' : 'Nej')}
+                                {renderReadOnlyInfoRow('FSC', quotation?.isFsc ? 'Ja' : 'Nej')}
                             </div>
                             <div>
                                 {renderReadOnlyInfoRow('Packning', 'todo')}

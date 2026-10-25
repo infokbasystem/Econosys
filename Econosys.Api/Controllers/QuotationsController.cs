@@ -142,6 +142,91 @@ namespace Econosys.Api.Controllers
             });
         }
 
+        /// <summary>Lists inquiries belonging to the calculation for legacy quotation selection.</summary>
+        [HttpGet("from-calculation/{calculationId:int}/inquiries")]
+        public async Task<ActionResult<List<FilterOptionDto<int>>>> GetCalculationInquiries(
+            int calculationId, CancellationToken cancellationToken)
+        {
+            if (!await _dbContext.Calculations.AnyAsync(x => x.Id == calculationId, cancellationToken))
+            {
+                return NotFound();
+            }
+            var inquiries = await _dbContext.Inquiries.AsNoTracking()
+                .Where(x => x.CalculationId == calculationId)
+                .OrderByDescending(x => x.Id)
+                .Select(x => new FilterOptionDto<int>
+                {
+                    Id = x.Id,
+                    Name = x.Id.ToString() + " - "
+                        + (x.SelectedInquiryRecipient != null && x.SelectedInquiryRecipient.Supplier != null
+                            ? x.SelectedInquiryRecipient.Supplier.Name : "Saknar leverantör")
+                        + " - " + (x.CustomerName ?? ""),
+                }).ToListAsync(cancellationToken);
+            return Ok(inquiries);
+        }
+
+        /// <summary>Builds an unsaved quotation from a calculation and a selected inquiry.</summary>
+        [HttpGet("from-calculation/{calculationId:int}")]
+        public async Task<ActionResult<QuotationDto>> FromCalculation(
+            int calculationId, [FromQuery] int inquiryId, CancellationToken cancellationToken)
+        {
+            var user = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+            if (user is null)
+            {
+                return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+            }
+            var calculation = await BuildDraftCalculationQuery()
+                .FirstOrDefaultAsync(x => x.Id == calculationId, cancellationToken);
+            if (calculation is null)
+            {
+                return NotFound();
+            }
+            if (calculation.Product is null || calculation.Customer is null)
+            {
+                return Problem(statusCode: 400, detail: "Välj produkt och kund på kalkylen först.");
+            }
+            var inquiry = await _dbContext.Inquiries.AsNoTracking()
+                .Include(x => x.SelectedInquiryRecipient).ThenInclude(x => x!.Supplier)
+                .Include(x => x.Customer).ThenInclude(x => x!.ResponsibleUser)
+                .FirstOrDefaultAsync(x => x.Id == inquiryId && x.CalculationId == calculationId, cancellationToken);
+            if (inquiry is null)
+            {
+                return Problem(statusCode: 400, detail: "Välj en förfrågan som tillhör kalkylen.");
+            }
+            if (inquiry.CustomerId != calculation.CustomerId)
+            {
+                return Problem(statusCode: 400, detail: "Kalkylen och förfrågans kund-id skiljer sig åt. Korrigera detta först.");
+            }
+            if (calculation.CalculationRows.Any(x => !x.Archived && (x.PercentAddition == null || x.PercentAddition == 0)))
+            {
+                return Problem(statusCode: 400, detail: "Det finns kalkylrader utan påslag.");
+            }
+            var addressQuery = _dbContext.CustomerDeliveryAddresses.AsNoTracking()
+                .Where(x => x.CustomerId == calculation.CustomerId);
+            var address = calculation.AutoFreightPrice && calculation.CustomerDeliveryAddressId.HasValue
+                ? await addressQuery.FirstOrDefaultAsync(x => x.Id == calculation.CustomerDeliveryAddressId, cancellationToken)
+                : await addressQuery.OrderBy(x => x.Id).FirstOrDefaultAsync(x => x.IsDefault, cancellationToken);
+            var message = await _dbContext.Settings.Where(x => x.CompanyId == calculation.CompanyId)
+                .Select(x => x.DefaultCustomerMessage).FirstOrDefaultAsync(cancellationToken);
+            var palletPrice = calculation.PalletFormatId.HasValue
+                ? await _dbContext.PalletFormatPrices.Where(x => x.PalletFormatId == calculation.PalletFormatId
+                    && x.CustomerId == calculation.CustomerId).OrderBy(x => x.Id)
+                    .Select(x => x.PalletPrice).FirstOrDefaultAsync(cancellationToken)
+                : null;
+            var languageCode = calculation.Customer.Language?.LanguageCode;
+            var codes = new[] { calculation.Product.Material?.TranslationCode,
+                calculation.Product.Construction?.TranslationCode };
+            var translations = string.IsNullOrWhiteSpace(languageCode) ? new List<TranslationItem>()
+                : await _dbContext.TranslationItems.AsNoTracking()
+                    .Where(x => x.LangCode == languageCode && codes.Contains(x.TranslationCode))
+                    .OrderBy(x => x.Id).ToListAsync(cancellationToken);
+
+            return Ok(QuotationDraftMapper.Map(calculation, inquiry, address, user, SwedishTime.Now,
+                message, palletPrice, translations.Where(x => x.TranslationCode.HasValue)
+                    .GroupBy(x => x.TranslationCode!.Value)
+                    .ToDictionary(x => x.Key, x => x.First().Translation)));
+        }
+
         [HttpPost]
         public async Task<ActionResult<QuotationDto>> Create([FromBody] CreateQuotationRequest request)
         {
@@ -156,20 +241,60 @@ namespace Econosys.Api.Controllers
                 return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
             }
 
+            Calculation? calculation = null;
+            if (request.CalculationId.HasValue)
+            {
+                calculation = await _dbContext.Calculations.AsNoTracking()
+                    .Include(x => x.Unit).Include(x => x.CalculationRows)
+                    .FirstOrDefaultAsync(x => x.Id == request.CalculationId);
+                if (calculation is null)
+                {
+                    return BadRequest(new { message = "Kalkylen saknas." });
+                }
+                var inquiry = await _dbContext.Inquiries.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == request.InquiryId && x.CalculationId == calculation.Id);
+                if (inquiry is null || inquiry.CustomerId != calculation.CustomerId
+                    || request.CustomerId != calculation.CustomerId)
+                {
+                    return BadRequest(new { message = "Välj en förfrågan med samma kalkyl och kund." });
+                }
+            }
+            var requestedRowIds = request.CalculationRowIds.Distinct().ToHashSet();
+            var rows = calculation?.CalculationRows
+                .Where(x => requestedRowIds.Contains(x.Id) && !x.Archived).ToList() ?? [];
+            if (rows.Count != requestedRowIds.Count)
+            {
+                return BadRequest(new { message = "Affärsförslagets rader måste vara aktiva rader från kalkylen." });
+            }
+            if (rows.Any(x => x.PercentAddition == null || x.PercentAddition == 0))
+            {
+                return BadRequest(new { message = "Det finns kalkylrader utan påslag." });
+            }
             var entity = new Quotation();
-            // ApplyRequestToEntity(entity, request);
+            ApplyCreateRequestToEntity(entity, request);
+            if (calculation is not null)
+            {
+                entity.QuotationRows = rows.Select(row => new QuotationRow
+                {
+                    CompanyId = entity.CompanyId,
+                    CalculationRowId = row.Id,
+                    Edition = row.Edition,
+                    Price = QuotationDraftMapper.MapRow(calculation, row).Price,
+                }).ToList();
+            }
 
             entity.CreatedAt ??= SwedishTime.Now;
             entity.CreatedBy ??= legacyUser.Id;
             entity.EditedAt = SwedishTime.Now;
             entity.EditedBy = legacyUser.Id;
 
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
             _dbContext.Quotations.Add(entity);
             await _dbContext.SaveChangesAsync();
 
-            await SyncQuotationRowsAsync(entity, request.QuotationRowIds);
             await SyncOrderCostsAsync(entity.Id, request.OrderCosts);
             await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             var saved = await BuildDetailsQuery().FirstAsync(x => x.Id == entity.Id);
             return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(saved));
@@ -219,6 +344,8 @@ namespace Econosys.Api.Controllers
             entity.PalletFormatId = request.PalletFormatId;
             entity.EurPallet = request.EurPallet;
             entity.NrOfEurPallet = request.NrOfEurPallet;
+            entity.EurPalletValue = request.EurPalletValue;
+            entity.CustomerDeliveryAddressId = request.CustomerDeliveryAddressId;
 
 
             entity.EditedAt = SwedishTime.Now;
@@ -495,6 +622,83 @@ namespace Econosys.Api.Controllers
             public string? CreatedByName { get; set; }
             public DateTime? CreatedAt { get; set; }
             public DateTime? EditedAt { get; set; }
+        }
+
+        private IQueryable<Calculation> BuildDraftCalculationQuery() =>
+            _dbContext.Calculations.AsNoTracking()
+                .Include(x => x.Product).ThenInclude(x => x!.Material)
+                .Include(x => x.Product).ThenInclude(x => x!.Construction)
+                .Include(x => x.Product).ThenInclude(x => x!.Varnish)
+                .Include(x => x.Customer).ThenInclude(x => x!.Language)
+                .Include(x => x.SalesCurrency)
+                .Include(x => x.Unit)
+                .Include(x => x.CalculationRows);
+
+        private static void ApplyCreateRequestToEntity(Quotation entity, CreateQuotationRequest request)
+        {
+            entity.CompanyId = request.CompanyId;
+            entity.CalculationId = request.CalculationId;
+            entity.InquiryId = request.InquiryId;
+            entity.CustomerId = request.CustomerId;
+            entity.CustomerName = request.CustomerName;
+            entity.Address = request.Address;
+            entity.Address2 = request.Address2;
+            entity.PostalNr = request.PostalNr;
+            entity.PostalAddress = request.PostalAddress;
+            entity.Country = request.Country;
+            entity.DeliveryAddressName = request.DeliveryAddressName;
+            entity.DeliveryAddress = request.DeliveryAddress;
+            entity.DeliveryPostalNr = request.DeliveryPostalNr;
+            entity.DeliveryPostalAddress = request.DeliveryPostalAddress;
+            entity.DeliveryCountry = request.DeliveryCountry;
+            entity.CustomerDeliveryAddressId = request.CustomerDeliveryAddressId;
+            entity.Date = request.Date;
+            entity.YourReference = request.YourReference;
+            entity.OurReference = request.OurReference;
+            entity.Product = request.Product;
+            entity.Material = request.Material;
+            entity.MaterialThickness = request.MaterialThickness;
+            entity.Format = request.Format;
+            entity.Color = request.Color;
+            entity.Construction = request.Construction;
+            entity.TimeOfDelivery = request.TimeOfDelivery;
+            entity.TermsOfDelivery = request.TermsOfDelivery;
+            entity.TermsOfPayment = request.TermsOfPayment;
+            entity.PaymentDays = request.PaymentDays;
+            entity.Message = request.Message;
+            entity.SalesCurrencyId = request.SalesCurrencyId;
+            entity.SalesCurrencyRate = request.SalesCurrencyRate;
+            entity.PurchaseCurrencyId = request.PurchaseCurrencyId;
+            entity.PurchaseCurrencyRate = request.PurchaseCurrencyRate;
+            entity.UnitId = request.UnitId;
+            entity.PartOfPrintEdition = request.PartOfPrintEdition;
+            entity.PartOfPrintEditionValue = request.PartOfPrintEditionValue;
+            entity.PartOfPunchEdition = request.PartOfPunchEdition;
+            entity.PartOfPunchEditionValue = request.PartOfPunchEditionValue;
+            entity.ChangeOfSheet = request.ChangeOfSheet;
+            entity.NrOfChangeOfSheet = request.NrOfChangeOfSheet;
+            entity.ChangeOfSheetValue = request.ChangeOfSheetValue;
+            entity.ChangeOfCliche = request.ChangeOfCliche;
+            entity.NrOfChangeOfCliche = request.NrOfChangeOfCliche;
+            entity.ChangeOfClicheValue = request.ChangeOfClicheValue;
+            entity.ChangeOfColor = request.ChangeOfColor;
+            entity.NrOfChangeOfColor = request.NrOfChangeOfColor;
+            entity.ChangeOfColorValue = request.ChangeOfColorValue;
+            entity.PmsColor = request.PmsColor;
+            entity.PmsColorValue = request.PmsColorValue;
+            entity.EurPallet = request.EurPallet;
+            entity.NrOfEurPallet = request.NrOfEurPallet;
+            entity.EurPalletValue = request.EurPalletValue;
+            entity.OtherCost = request.OtherCost;
+            entity.OtherCostName = request.OtherCostName;
+            entity.OtherCostValue = request.OtherCostValue;
+            entity.Printed = request.Printed;
+            entity.HideDeliveryAddressOnPrint = request.HideDeliveryAddressOnPrint;
+            entity.ProductMessage = request.ProductMessage;
+            entity.NoteInternal = request.NoteInternal;
+            entity.AutoGenerated = request.AutoGenerated;
+            entity.PalletFormatId = request.PalletFormatId;
+            entity.IsFsc = request.IsFsc;
         }
 
         private IQueryable<Quotation> BuildDetailsQuery()

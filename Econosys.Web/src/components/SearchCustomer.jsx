@@ -130,7 +130,7 @@ export default function SearchCustomer({
                     }}
                     placeholder={placeholder}
                     autoComplete="off"
-                    className={`h-6 w-full rounded-full border border-lime-600 bg-white px-4 ${selectedCustomerId ? 'pr-14' : 'pr-9'} text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700`}
+                    className={`h-6 w-full rounded-full border border-lime-600 bg-white px-4 pt-[1px] ${selectedCustomerId ? 'pr-14' : 'pr-9'} text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700`}
                 />
                 {selectedCustomerId && (
                     <button

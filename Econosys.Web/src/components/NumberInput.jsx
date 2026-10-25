@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 
 const NumberInput = ({
     rowId,
@@ -14,6 +14,7 @@ const NumberInput = ({
 }) => {
     const [displayValue, setDisplayValue] = useState("");
     const [isFocused, setIsFocused] = useState(false);
+    const editedSinceFocus = useRef(false);
 
     const getDecimalsFor = (num) => {
         if (!hideZeroDecimals || decimals === 0) return decimals;
@@ -44,16 +45,19 @@ const NumberInput = ({
     };
 
     const handleFocus = () => {
+        editedSinceFocus.current = false;
         setIsFocused(true);
         setDisplayValue(formatForEdit(value));
     };
 
     const handleBlur = () => {
         setIsFocused(false);
+        if (!editedSinceFocus.current) return;
+        editedSinceFocus.current = false;
 
         // If input is empty, set to null
         if (displayValue === "" || displayValue == null) {
-            onChange(rowId, field, null);
+            if (value != null && value !== "") onChange(rowId, field, null);
             setDisplayValue("");
             return;
         }
@@ -61,7 +65,7 @@ const NumberInput = ({
         // Parse and format again for display
         const parsed = parseInput(displayValue);
         if (!isNaN(parsed)) {
-            onChange(rowId, field, parsed);
+            if (parsed !== value) onChange(rowId, field, parsed);
             setDisplayValue(formatNumber(parsed));
         } else {
             setDisplayValue(formatNumber(value));
@@ -76,6 +80,7 @@ const NumberInput = ({
     };
 
     const handleChange = (e) => {
+        editedSinceFocus.current = true;
         let newVal = e.target.value;
 
         // Only allow digits, comma, and spaces while typing
@@ -89,7 +94,7 @@ const NumberInput = ({
         setDisplayValue(newVal);
 
         const parsed = parseInput(newVal);
-        if (!isNaN(parsed)) onChange(rowId, field, parsed);
+        if (!isNaN(parsed) && parsed !== value) onChange(rowId, field, parsed);
     };
 
     return (

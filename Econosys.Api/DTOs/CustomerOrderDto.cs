@@ -196,6 +196,8 @@ namespace Econosys.Api.DTOs
         public int? PalletFormatId { get; set; }
         public bool EurPallet { get; set; }
         public List<UpsertCustomerOrderOrderCostRequest> OrderCosts { get; set; } = new();
+        public short? NrOfEurPallet { get; set; }
+        public double? EurPalletValue { get; set; }
     }
 
     public class UpdateCustomerOrderRequest : CreateCustomerOrderRequest

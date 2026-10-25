@@ -1,0 +1,28 @@
+@baseUrl = https://localhost:5001
+@token = replace-with-access-token
+@calculationId = 1
+
+### Preview an unsaved inquiry with supplier, customer and active calculation rows
+GET {{baseUrl}}/api/inquiries/from-calculation/{{calculationId}}
+Authorization: Bearer {{token}}
+
+### Unknown calculation returns 404
+GET {{baseUrl}}/api/inquiries/from-calculation/2147483647
+Authorization: Bearer {{token}}
+
+### Save a draft: use IDs and edited values from the preview response
+POST {{baseUrl}}/api/inquiries
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "companyId": 1,
+  "calculationId": {{calculationId}},
+  "customerId": 1,
+  "selectedSupplierId": 1,
+  "selectedRecipientYourRef": "Supplier contact",
+  "selectedRecipientTermsOfDelivery": "DAP",
+  "selectedRecipientTermsOfPayment": "30 days",
+  "selectedRecipientLanguageId": 1,
+  "calculationRowIds": [1]
+}

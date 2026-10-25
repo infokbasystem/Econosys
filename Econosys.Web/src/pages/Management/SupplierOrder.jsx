@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowLeft, ClipboardCopy, Printer, Save, Trash2 } from 'lucide-react';
 import { useBlocker, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
@@ -622,7 +623,12 @@ const SupplierOrder = () => {
                 salesPrice: quotationRow?.price ?? null,
                 palletFormatId: supplierOrder.palletFormatId ?? null,
                 eurPallet: Boolean(supplierOrder.eurPallet),
-                orderCosts: [],
+                nrOfEurPallet: null,
+                eurPalletValue: quotation?.eurPalletValue ?? null,
+                orderCosts: toArray(supplierOrder.orderCosts).map((row) => ({
+                    ...row,
+                    customerOrderId: null,
+                })),
             };
 
             navigate('/order/customerorders/new', { state: { customerOrderDraft } });
@@ -952,29 +958,45 @@ const SupplierOrder = () => {
 
     return (
         <div className="relative flex min-h-full flex-col">
-            {workflowOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            {workflowOpen && createPortal(
+                <div className="fixed inset-0 z-50 overflow-y-auto">
+                    <div className="fixed inset-0 bg-black/50 z-40" />
+                    <div className="relative z-50 flex min-h-screen items-start justify-center pt-20 pb-8">
                     <section
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="supplier-order-workflow-title"
-                        className="w-full max-w-2xl rounded-md bg-white p-6 shadow-xl"
+                        aria-busy={workflowLoading || workflowSaving}
+                        className="relative bg-white rounded-sm shadow-xl max-w-xl w-full mx-4 p-6"
+                        style={{ background: 'rgb(255, 255, 234)' }}
                     >
-                        <h2 id="supplier-order-workflow-title" className="text-base font-semibold text-gray-800">
-                            {workflowStep === 'inquiry' ? 'Välj förfrågan och kalkylrad' : 'Välj affärsförslag'}
-                        </h2>
+                        <div className="relative flex items-center justify-center mb-4">
+                            <h2 id="supplier-order-workflow-title" className="text-sm font-semibold text-center">
+                                {workflowStep === 'inquiry' ? 'Välj förfrågan och kalkylrad' : 'Välj affärsförslag'}
+                            </h2>
+                            <button
+                                type="button"
+                                onClick={cancelSupplierOrderWorkflow}
+                                disabled={workflowSaving}
+                                aria-label="Stäng"
+                                className="absolute right-0 text-gray-400 hover:text-gray-600 text-l leading-none mb-1 disabled:opacity-50"
+                            >
+                                ×
+                            </button>
+                        </div>
+                        <div className="mx-2 mt-7 text-xs text-gray-700 sm:mx-10">
                         {workflowLoading ? (
-                            <p className="mt-5 text-sm text-gray-600">Laddar val från kalkylen…</p>
+                            <p role="status" className="text-center">Laddar val från kalkylen…</p>
                         ) : workflowStep === 'inquiry' ? (
-                            <div className="mt-5 space-y-5">
+                            <div className="space-y-5">
                                 <fieldset>
-                                    <legend className="mb-2 text-sm font-medium text-gray-700">Förfrågan</legend>
+                                    <legend className="mb-2 text-xs font-medium text-gray-700">Förfrågan</legend>
                                     {toArray(workflowOptions?.inquiries).length === 0 ? (
-                                        <p className="text-sm text-gray-500">Det finns ingen förfrågan kopplad till kalkylen.</p>
+                                        <p className="text-xs text-gray-500">Det finns ingen förfrågan kopplad till kalkylen.</p>
                                     ) : (
                                         <div className="max-h-48 space-y-1 overflow-y-auto">
                                             {workflowOptions.inquiries.map((inquiry) => (
-                                                <label key={inquiry.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-gray-50">
+                                                <label key={inquiry.id} className="flex cursor-pointer items-center gap-2 px-2 py-2 text-xs hover:bg-white/60">
                                                     <input
                                                         type="radio"
                                                         name="supplier-order-inquiry"
@@ -996,17 +1018,17 @@ const SupplierOrder = () => {
                                         type="button"
                                         onClick={createWorkflowInquiry}
                                         disabled={workflowSaving}
-                                        className="mt-2 rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                        className="mt-2 shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-5 p-[5px] disabled:opacity-50"
                                     >
                                         Ny förfrågan
                                     </button>
                                 </fieldset>
 
                                 <fieldset>
-                                    <legend className="mb-2 text-sm font-medium text-gray-700">Kalkylrad</legend>
+                                    <legend className="mb-2 text-xs font-medium text-gray-700">Kalkylrad</legend>
                                     <div className="max-h-48 space-y-1 overflow-y-auto">
                                         {toArray(workflowOptions?.calculationRows).map((row) => (
-                                            <label key={row.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-gray-50">
+                                            <label key={row.id} className="flex cursor-pointer items-center gap-2 px-2 py-2 text-xs hover:bg-white/60">
                                                 <input
                                                     type="radio"
                                                     name="supplier-order-calculation-row"
@@ -1021,11 +1043,12 @@ const SupplierOrder = () => {
                                         ))}
                                     </div>
                                 </fieldset>
-                                <div className="flex justify-end gap-2">
+                                <div className="flex flex-wrap gap-4 mt-6 mb-3 pt-4 justify-end">
                                     <button
                                         type="button"
                                         onClick={cancelSupplierOrderWorkflow}
-                                        className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                        disabled={workflowSaving}
+                                        className="shadow-md/30 text-xs text-white bg-orange-400 hover:bg-orange-600 px-5 p-[5px] disabled:opacity-50"
                                     >
                                         Avbryt
                                     </button>
@@ -1033,20 +1056,20 @@ const SupplierOrder = () => {
                                         type="button"
                                         onClick={() => setWorkflowStep('quotation')}
                                         disabled={!selectedInquiryId || !selectedCalculationRowId || workflowSaving}
-                                        className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+                                        className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-5 p-[5px] disabled:opacity-50"
                                     >
                                         Nästa
                                     </button>
                                 </div>
                             </div>
                         ) : (
-                            <div className="mt-5">
+                            <div>
                                 {toArray(workflowOptions?.quotations).length === 0 ? (
-                                    <p className="text-sm text-gray-500">Det finns inget affärsförslag kopplat till kalkylen.</p>
+                                    <p className="text-xs text-gray-500">Det finns inget affärsförslag kopplat till kalkylen.</p>
                                 ) : (
                                     <div className="max-h-64 space-y-1 overflow-y-auto">
                                         {workflowOptions.quotations.map((quotation) => (
-                                            <label key={quotation.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-gray-50">
+                                            <label key={quotation.id} className="flex cursor-pointer items-center gap-2 px-2 py-2 text-xs hover:bg-white/60">
                                                 <input
                                                     type="radio"
                                                     name="supplier-order-quotation"
@@ -1068,16 +1091,16 @@ const SupplierOrder = () => {
                                     type="button"
                                     onClick={createWorkflowQuotation}
                                     disabled={workflowSaving}
-                                    className="mt-2 rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                    className="mt-2 shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-5 p-[5px] disabled:opacity-50"
                                 >
                                     Nytt affärsförslag
                                 </button>
-                                <div className="mt-6 flex justify-end gap-2">
+                                <div className="flex flex-wrap gap-4 mt-6 mb-3 pt-4 justify-end">
                                     <button
                                         type="button"
                                         onClick={() => setWorkflowStep('inquiry')}
                                         disabled={workflowSaving}
-                                        className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                        className="shadow-md/30 text-xs text-white bg-orange-400 hover:bg-orange-600 px-5 p-[5px] disabled:opacity-50"
                                     >
                                         Tillbaka
                                     </button>
@@ -1085,7 +1108,7 @@ const SupplierOrder = () => {
                                         type="button"
                                         onClick={cancelSupplierOrderWorkflow}
                                         disabled={workflowSaving}
-                                        className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                        className="shadow-md/30 text-xs text-white bg-orange-400 hover:bg-orange-600 px-5 p-[5px] disabled:opacity-50"
                                     >
                                         Avbryt
                                     </button>
@@ -1093,15 +1116,18 @@ const SupplierOrder = () => {
                                         type="button"
                                         onClick={finishSupplierOrderWorkflow}
                                         disabled={!selectedQuotationId || workflowSaving}
-                                        className="rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+                                        className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-5 p-[5px] disabled:opacity-50"
                                     >
                                         {workflowSaving ? 'Skapar…' : 'Skapa beställning'}
                                     </button>
                                 </div>
                             </div>
                         )}
+                        </div>
                     </section>
-                </div>
+                    </div>
+                </div>,
+                document.body,
             )}
 
             <ConfirmationModal
@@ -1471,7 +1497,8 @@ const SupplierOrder = () => {
 
                             <span className="col-span-2">
                                 <OrderCost
-                                    supplierOrderId={supplierOrder?.id}
+                                    supplierOrderId={supplierOrder?.id > 0 ? supplierOrder.id : null}
+                                    showForDraft
                                     rows={supplierOrder?.orderCosts ?? []}
                                     costOptions={orderCostOptions}
                                     currencyOptions={currencyOptions}
@@ -1489,6 +1516,7 @@ const SupplierOrder = () => {
                                 <OrderHistory
                                     entityType="supplierOrder"
                                     entityId={supplierOrder?.id}
+                                    showForDraft
                                     refreshKey={originalSupplierOrder?.edited}
                                 />
                             </span>

@@ -283,7 +283,7 @@ const Supplier = () => {
             return;
         }
 
-        navigate('/order/suppliers');
+        window.close();
     };
 
     const handleUnsavedWarningConfirm = () => {

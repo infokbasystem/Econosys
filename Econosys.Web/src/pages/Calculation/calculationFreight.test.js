@@ -1,6 +1,30 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { changeFreightMode, getAutomaticFreightGeometry, getFreightEditState, getFreightMode, parseFreightFactors } from './calculationFreight.js';
+import { changeFreightMode, getAutomaticFreightGeometry, getFreightEditState, getFreightMode, getFreightWarningMessage, parseFreightFactors } from './calculationFreight.js';
+
+test('transport-responsible suppliers warn for either or both disabled automatic freight settings', () => {
+    const supplier = { econopackTransportResponsible: true };
+    for (const autoFreightCalc of [true, false]) {
+        for (const autoFreightPrice of [true, false]) {
+            const calculation = { autoFreightCalc, autoFreightPrice };
+            const message = getFreightWarningMessage(calculation, supplier);
+            assert.equal(Boolean(message), !autoFreightCalc || !autoFreightPrice);
+            assert.equal(message.includes('Automatisk fraktberäkning'), !autoFreightCalc);
+            assert.equal(message.includes('Automatiskt fraktpris'), !autoFreightPrice);
+            assert.equal(getFreightWarningMessage({ ...calculation, deactivateFreightCalculation: true }, supplier), message);
+        }
+    }
+});
+
+test('freight warnings require explicit supplier responsibility and disabled settings', () => {
+    const calculation = { autoFreightCalc: false, autoFreightPrice: false };
+    for (const supplier of [null, {}, { econopackTransportResponsible: false }]) {
+        assert.equal(getFreightWarningMessage(calculation, supplier), '');
+    }
+    const supplier = { econopackTransportResponsible: true };
+    assert.equal(getFreightWarningMessage(null, supplier), '');
+    assert.equal(getFreightWarningMessage({}, supplier), '');
+});
 
 const createCalculation = () => ({
     autoFreightCalc: true,

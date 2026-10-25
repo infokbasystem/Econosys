@@ -1,5 +1,6 @@
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +17,17 @@ namespace Econosys.Api.Controllers
         public OrderNavigationController(ApplicationDbContext dbContext)
         {
             _dbContext = dbContext;
+        }
+
+        /// <summary>Grouped navigation for this calculation and its related documents, excluding sibling calculations.</summary>
+        [HttpGet("calculation/{id:int}/flow")]
+        [ProducesResponseType<IReadOnlyList<OrderFlowNavigationItemDto>>(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<IReadOnlyList<OrderFlowNavigationItemDto>>> GetCalculationFlow(
+            int id, [FromServices] IOrderFlowNavigationService service, CancellationToken cancellationToken)
+        {
+            var items = await service.GetCalculationFlowAsync(id, cancellationToken);
+            return items is null ? NotFound() : Ok(items);
         }
 
         [HttpGet("{entityType}/{id:int}")]
@@ -46,6 +58,11 @@ namespace Econosys.Api.Controllers
             {
                 return Ok(tree);
             }
+
+            var calculationArchiveStatus = await _dbContext.Calculations
+                .AsNoTracking()
+                .Where(x => calculationIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.IsArchived);
 
             var inquiries = await _dbContext.Inquiries
                 .AsNoTracking()
@@ -238,6 +255,7 @@ namespace Econosys.Api.Controllers
                 .Select(calculationId => new OrderNavigationCalculationDto
                 {
                     Id = calculationId,
+                    IsArchived = calculationArchiveStatus.GetValueOrDefault(calculationId),
                     IsCurrent = IsCurrent(context, "calculation", calculationId),
                     Inquiries = inquiriesByCalculation.TryGetValue(calculationId, out var calculationInquiries)
                         ? calculationInquiries

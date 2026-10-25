@@ -7,6 +7,7 @@ public static class CalculationUpdateMapper
 {
     public static void Apply(Calculation calculation, UpdateCalculationRequest request, int editedBy, DateTime editedAt)
     {
+        calculation.IsArchived = request.IsArchived;
         calculation.CustomerId = request.CustomerId;
         calculation.SupplierId = request.SupplierId;
         calculation.UnitId = request.UnitId;

@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 import apiClient from '../config/apiClient';
+import { getVisibleNavigationIds } from './orderNavigationVisibility.js';
 
 // Last known tree per entity, shown immediately while a fresh copy loads in the background.
 const navigationCache = new Map();
@@ -93,13 +94,16 @@ const nodeLabels = {
     customerOrder: 'Kundorder',
 };
 
-const OrderBranch = ({ node, type, depth, isCurrent }) => {
+const OrderBranch = ({ node, type, depth, isCurrent, visibleIds }) => {
     const [isExpanded, setIsExpanded] = useState(() => containsCurrentNode(node, type, isCurrent));
+    const [showAll, setShowAll] = useState(false);
     const contentId = useId();
-    const children = childNodeTypes.flatMap(([collection, childType]) => (
+    const allChildren = childNodeTypes.flatMap(([collection, childType]) => (
         (node[collection] ?? []).map((child) => ({ node: child, type: childType }))
     ));
-    const hasChildren = children.length > 0;
+    const hasHiddenItems = allChildren.some((child) => !visibleIds[child.type]?.has(child.node.id));
+    const children = showAll ? allChildren : allChildren.filter((child) => visibleIds[child.type]?.has(child.node.id));
+    const hasChildren = allChildren.length > 0;
 
     return (
         <div className="space-y-1">
@@ -117,6 +121,18 @@ const OrderBranch = ({ node, type, depth, isCurrent }) => {
             />
             {hasChildren && (
                 <div id={contentId} hidden={!isExpanded} className="space-y-1">
+                    {hasHiddenItems && (
+                        <button
+                            type="button"
+                            className="rounded-sm px-2 py-1 text-xs text-red-600 hover:underline focus-visible:outline-2 focus-visible:outline-lime-700"
+                            style={{ marginLeft: `${(depth + 1) * 14}px` }}
+                            aria-expanded={showAll}
+                            aria-controls={contentId}
+                            onClick={() => setShowAll((value) => !value)}
+                        >
+                            {showAll ? 'Visa färre' : 'Visa fler'}
+                        </button>
+                    )}
                     {children.map((child) => (
                         <OrderBranch
                             key={`${child.type}-${child.node.id}`}
@@ -124,6 +140,7 @@ const OrderBranch = ({ node, type, depth, isCurrent }) => {
                             type={child.type}
                             depth={depth + 1}
                             isCurrent={isCurrent}
+                            visibleIds={visibleIds}
                         />
                     ))}
                 </div>
@@ -149,8 +166,22 @@ const OrderNavigationTree = ({ entityType, entityId }) => {
     const [tree, setTree] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [hasError, setHasError] = useState(false);
+    const [archivedVisibleFor, setArchivedVisibleFor] = useState(null);
+    const calculationsId = useId();
 
     const normalizedEntityType = useMemo(() => normalizeEntityType(entityType), [entityType]);
+    const navigationKey = getNavigationKey(normalizedEntityType, entityId);
+    const filterArchived = ['product', 'inquiry', 'quotation', 'supplierOrder', 'customerOrder'].includes(normalizedEntityType);
+    const showArchived = archivedVisibleFor === navigationKey;
+    const calculations = tree?.calculations ?? [];
+    const hasArchived = filterArchived && calculations.some((calculation) => calculation.isArchived);
+    const visibleIds = useMemo(
+        () => getVisibleNavigationIds(tree, normalizedEntityType, entityId),
+        [entityId, normalizedEntityType, tree]
+    );
+    const visibleCalculations = filterArchived && !showArchived
+        ? calculations.filter((calculation) => !calculation.isArchived)
+        : calculations;
 
     useEffect(() => {
         if (!normalizedEntityType || !entityId || entityId <= 0) {
@@ -246,15 +277,30 @@ const OrderNavigationTree = ({ entityType, entityId }) => {
                         depth={0}
                     />
 
-                    {(tree?.calculations ?? []).map((calculationNode) => (
-                        <OrderBranch
-                            key={`${normalizedEntityType}-${entityId}-calculation-${calculationNode.id}`}
-                            node={calculationNode}
-                            type="calculation"
-                            depth={1}
-                            isCurrent={isCurrent}
-                        />
-                    ))}
+                    {hasArchived && (
+                        <button
+                            type="button"
+                            className="rounded-sm px-2 py-1 text-xs text-red-600 hover:underline focus-visible:outline-2 focus-visible:outline-lime-700"
+                            aria-expanded={showArchived}
+                            aria-controls={calculationsId}
+                            onClick={() => setArchivedVisibleFor(showArchived ? null : navigationKey)}
+                        >
+                            {showArchived ? 'Dölj arkiverade kalkyler' : 'Visa även arkiverade kalkyler'}
+                        </button>
+                    )}
+
+                    <div id={calculationsId} className="space-y-1">
+                        {visibleCalculations.map((calculationNode) => (
+                            <OrderBranch
+                                key={`${normalizedEntityType}-${entityId}-calculation-${calculationNode.id}`}
+                                node={calculationNode}
+                                type="calculation"
+                                depth={1}
+                                isCurrent={isCurrent}
+                                visibleIds={visibleIds}
+                            />
+                        ))}
+                    </div>
                 </div>
             )}
         </div>

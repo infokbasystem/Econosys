@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link, useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, ExternalLink, FilePlus2, Info as InfoIcon, Minus, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Save, Send, ShoppingCart, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ExternalLink, FilePlus2, Info as InfoIcon, Minus, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RefreshCw, Save, Send, ShoppingCart, Trash2 } from 'lucide-react';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
+import CalculationRowEditModal from '../../components/CalculationRowEditModal';
 import LabeledCheckbox from '../../components/LabeledCheckbox';
 import LabeledSelect from '../../components/LabeledSelect';
 import LabeledInput from '../../components/LabeledInput';
@@ -21,7 +22,9 @@ import { formatDateTime } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import { calculatePackagesPerPallet, updateAutomaticLoadingInstruction } from './calculationPackaging';
 import { applyApprovalRows, calculatePackagingCost, getApprovalText, getFreightForApproval, updateAndApproveAllSections } from './calculationApprovals';
-import { changeFreightMode, getAutomaticFreightGeometry, getFreightEditState, getFreightMode, parseFreightFactors } from './calculationFreight';
+import { changeFreightMode, getAutomaticFreightGeometry, getFreightEditState, getFreightMode, getFreightWarningMessage, parseFreightFactors } from './calculationFreight';
+import CalculationNavigation from './CalculationNavigation';
+import { handleCalculationTableKeyDown } from './calculationTableNavigation';
 
 const EMPTY_ROWS = [];
 const INFO_PANEL_WIDE_QUERY = '(min-width: 96rem)';
@@ -35,6 +38,7 @@ const APPROVAL_LABELS = { packaging: 'Packning', freight: 'Frakt', other: 'Övri
 const EMPTY_CALCULATION_ROW_KEY = 'draft-row';
 const SALES_COLUMNS = [
     { field: 'edition', label: 'Upplaga', precision: 0, width: '50px' },
+    { field: 'nrOfPallets', label: 'Ant pall', width: '80px' },
     { field: 'purchasePrice', label: 'Ink.pris', width: '50px' },
     { field: 'convertedPurchasePrice', label: 'Omräknat', width: '50px' },
     { field: 'freight', label: 'Frakt', width: '50px' },
@@ -108,6 +112,7 @@ const createRowCosts = (row, rowKey) => {
 };
 
 const createCalculationDraft = (data) => ({
+    isArchived: data.isArchived ?? false,
     customer: data.customer ? { id: data.customer.id, name: data.customer.name ?? '' } : null,
     supplier: data.supplier ? { id: data.supplier.id, name: data.supplier.name ?? '' } : null,
     deletedRowIds: [],
@@ -617,8 +622,8 @@ const SavedFlag = ({ label, checked, editing = false, onChange }) => (
 
 const ProductInfoRow = ({ label, value, numeric = false }) => (
     <div className="min-w-0">
-        <dt className="text-tiny tracking-wide text-gray-400">{label}</dt>
-        <dd className="mt-1 whitespace-pre-wrap break-words text-xs text-gray-800">
+        <dt className="text-tiny tracking-wide text-black">{label}</dt>
+        <dd className="mt-1 whitespace-pre-wrap break-words text-xs text-red-500">
             {numeric ? numberText(value) : (value ?? '') === '' ? '' : value}
         </dd>
     </div>
@@ -698,7 +703,7 @@ const CalculationSection = ({ title, children, initiallyOpen = false, className 
 
     return (
         <section className={`min-w-0 mt-5 ${isOpen
-            ? 'rounded-sm border border-gray-200 bg-lime-50 px-5 pt-2 pb-1 shadow-sm'
+            ? 'rounded-sm border border-gray-200 bg-stone-50 px-5 pt-2 pb-1 shadow-sm'
             : 'px-5 pt-2 pb-1'} ${className}`}>
             <div className={`mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 ${isOpen ? 'justify-between' : ''}`}>
                 <div className="flex items-center gap-2 w-150">
@@ -790,6 +795,28 @@ const EditionTable = ({ rows, columns, decimals, name, infoWidth = INFO_COLUMN_W
     </div>
 );
 
+const PalletEditionButtons = ({ row, editionPerPallet, onAdjustEdition }) => (
+    <span className="inline-flex shrink-0">
+        {[1, -1].map((direction) => {
+            const label = direction > 0 ? 'Öka upplagan med en pall' : 'Minska upplagan med en pall';
+            const Icon = direction > 0 ? Plus : Minus;
+            return (
+                <button
+                    key={direction}
+                    type="button"
+                    onClick={() => onAdjustEdition(row.clientKey, direction)}
+                    disabled={row.archived || !(toNumber(editionPerPallet) > 0)}
+                    title={label}
+                    aria-label={`${label}, upplaga ${row.edition ?? 'ny rad'}`}
+                    className="inline-flex w-6 items-center justify-center text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
+                >
+                    <Icon size={14} aria-hidden="true" />
+                </button>
+            );
+        })}
+    </span>
+);
+
 const FreightRowsTable = ({
     rows,
     calculation,
@@ -800,12 +827,11 @@ const FreightRowsTable = ({
     const salesDecimals = calculation.salesDecimals ?? 0;
     const { active, automaticCalculation: isAutoCalc, automaticPrices: isAutoPrice } = getFreightMode(calculation);
     const isDeactivated = !active;
-    const canAdjustEdition = toNumber(calculation.editionPerPallet) > 0;
     const labelOf = (field) => FREIGHT_COLUMNS.find((column) => column.field === field)?.label ?? field;
 
     return (
         <div className="min-w-0 overflow-x-auto" role="region" aria-label="Fraktberäkning" tabIndex={0}>
-            <table className="w-full min-w-max border-collapse text-xs tabular-nums" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+            <table onKeyDownCapture={handleCalculationTableKeyDown} className="w-full min-w-max border-collapse text-xs tabular-nums" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                 <thead>
                     <tr className="border-b border-gray-300 text-gray-500 text-tiny uppercase">
                         {FREIGHT_COLUMNS.map(({ field, label, width }) => (
@@ -910,26 +936,7 @@ const FreightRowsTable = ({
                                     </td>
                                 ))}
                                 <td className="w-14 px-0 py-0 text-center">
-                                    <button
-                                        type="button"
-                                        onClick={() => onAdjustEdition(row.clientKey, 1)}
-                                        disabled={row.archived || !canAdjustEdition}
-                                        title="Öka upplagan med en pall"
-                                        aria-label={`Öka upplagan med en pall, ${rowLabel}`}
-                                        className="inline-flex w-6 items-center justify-center text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
-                                    >
-                                        <Plus size={14} aria-hidden="true" />
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => onAdjustEdition(row.clientKey, -1)}
-                                        disabled={row.archived || !canAdjustEdition}
-                                        title="Minska upplagan med en pall"
-                                        aria-label={`Minska upplagan med en pall, ${rowLabel}`}
-                                        className="inline-flex w-6 items-center justify-center text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-300"
-                                    >
-                                        <Minus size={14} aria-hidden="true" />
-                                    </button>
+                                    <PalletEditionButtons row={row} editionPerPallet={calculation.editionPerPallet} onAdjustEdition={onAdjustEdition} />
                                 </td>
                             </tr>
                         );
@@ -949,21 +956,8 @@ const StorageRowsTable = ({ rows, calculation, unitMultiplier, decimals, onRowCh
             role="region"
             aria-label="Lagringskostnader"
             tabIndex={0}
-            onKeyDown={(event) => {
-                if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-                const currentInput = event.target.closest('[data-storage-field]');
-                if (!currentInput) return;
-                const field = currentInput.dataset.storageField;
-                const inputs = Array.from(event.currentTarget.querySelectorAll(`[data-storage-field="${field}"]`));
-                const currentIndex = inputs.indexOf(currentInput);
-                const nextIndex = currentIndex + (event.key === 'ArrowDown' ? 1 : -1);
-                if (nextIndex < 0 || nextIndex >= inputs.length) return;
-                event.preventDefault();
-                inputs[nextIndex].focus();
-                inputs[nextIndex].select();
-            }}
         >
-            <table className="w-full min-w-max border-collapse text-xs tabular-nums" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+            <table onKeyDownCapture={handleCalculationTableKeyDown} className="w-full min-w-max border-collapse text-xs tabular-nums" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                 <thead>
                     <tr className="border-b border-gray-300 text-gray-500 text-tiny uppercase">
                         {STORAGE_COLUMNS.map(({ field, label, width }) => (
@@ -1005,7 +999,6 @@ const StorageRowsTable = ({ rows, calculation, unitMultiplier, decimals, onRowCh
                                                     decimals={field === 'storageMonths' ? 1 : 0}
                                                     disabled={row.archived}
                                                     onChange={onRowChange}
-                                                    data-storage-field={field}
                                                     className="h-full w-full border-0 px-2 text-right text-xs focus:outline-none"
                                                     aria-label={`${field === 'storageNrOfPallets' ? 'Ant pall' : 'Antal månader'}, upplaga ${row.edition}`}
                                                 />
@@ -1063,7 +1056,7 @@ const CalculationCostsTable = ({
 
     return (
         <div className="min-w-0 overflow-x-auto" role="region" aria-label="Övriga kostnader" tabIndex={0}>
-            <table className="w-full min-w-max border-collapse text-xs tabular-nums" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+            <table onKeyDownCapture={handleCalculationTableKeyDown} className="w-full min-w-max border-collapse text-xs tabular-nums" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                 <thead>
                     <tr className="border-b border-gray-300 text-gray-500 text-tiny uppercase">
                         {COST_COLUMNS.map(({ field, label, width, align }) => (
@@ -1250,7 +1243,11 @@ const CalculationRowsTable = ({
     salesDecimals,
     lockOutPrice,
     deactivateFreightCalculation,
+    autoFreightCalc,
+    editionPerPallet,
     onRowChange,
+    onFreightRowChange,
+    onAdjustEdition,
     onDeleteRow,
 }) => {
     const editableFields = new Set([
@@ -1272,7 +1269,7 @@ const CalculationRowsTable = ({
 
     return (
         <div className="min-w-0 overflow-x-auto" role="region" aria-label="Kalkylrader" tabIndex={0}>
-            <table className="w-full min-w-max border-collapse text-xs tabular-nums" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+            <table onKeyDownCapture={handleCalculationTableKeyDown} className="w-full min-w-max border-collapse text-xs tabular-nums" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                 <thead>
                     <tr className="border-b border-gray-300 text-gray-500 text-tiny uppercase">
                         {columns.map(({ field, label, width }) => (
@@ -1292,6 +1289,29 @@ const CalculationRowsTable = ({
                     ) : rows.map((row) => (
                         <tr key={row.clientKey} className="border-b border-gray-100 text-gray-800 h-6">
                             {columns.map(({ field, width }) => {
+                                if (field === 'nrOfPallets') {
+                                    const disabled = row.archived || row.isDraft
+                                        || (!deactivateFreightCalculation && autoFreightCalc);
+                                    return (
+                                        <td key={field} style={{ width }} className="relative h-5 px-0 text-right">
+                                            <div className="absolute inset-0 flex items-stretch">
+                                                <div className={`min-w-0 flex-1 border border-transparent ${disabled ? 'bg-gray-100' : 'bg-white focus-within:border-blue-400'}`}>
+                                                    <NumberInput
+                                                        rowId={row.clientKey}
+                                                        field={field}
+                                                        value={row.nrOfPallets ?? ''}
+                                                        decimals={2}
+                                                        disabled={disabled}
+                                                        onChange={onFreightRowChange}
+                                                        className="h-full w-full border-0 px-2 text-right text-xs focus:outline-none"
+                                                        aria-label={`Ant pall, upplaga ${row.edition ?? 'ny rad'}`}
+                                                    />
+                                                </div>
+                                                <PalletEditionButtons row={row} editionPerPallet={editionPerPallet} onAdjustEdition={onAdjustEdition} />
+                                            </div>
+                                        </td>
+                                    );
+                                }
                                 const isEditable = editableFields.has(field);
                                 const isCalculated = calculatedFields.has(field);
                                 const disabled = row.archived
@@ -1360,7 +1380,7 @@ const CalculationRowsTable = ({
     );
 };
 
-const CalculationHistoryTable = ({ rows, purchaseDecimals, salesDecimals, isLoading, error }) => {
+const CalculationHistoryTable = ({ rows, purchaseDecimals, salesDecimals, isLoading, error, onEdit }) => {
     if (isLoading) {
         return <p className="py-4 text-center text-xs text-gray-400">Laddar historik...</p>;
     }
@@ -1379,7 +1399,7 @@ const CalculationHistoryTable = ({ rows, purchaseDecimals, salesDecimals, isLoad
         { field: 'date', label: 'Datum', width: '85px', align: 'left' },
         { field: 'supplierOrderNr', label: 'Best.nr', width: '70px', align: 'left' },
         { field: 'customerOrderNr', label: 'OE.nr', width: '70px', align: 'left' },
-        { field: 'deliveryTime', label: 'Lev.tid', width: '8px', align: 'left' },
+        { field: 'deliveryTime', label: 'Lev.tid', width: '80px', align: 'left' },
         { field: 'edition', label: 'Upplaga', width: '85px', align: 'right' },
         { field: 'purchasePrice', label: 'Ink pris', width: '85px', align: 'right' },
         { field: 'purchaseCurrency', label: 'Valuta', width: '90px', align: 'left' },
@@ -1393,6 +1413,7 @@ const CalculationHistoryTable = ({ rows, purchaseDecimals, salesDecimals, isLoad
         { field: 'salesCurrency', label: 'Valuta', width: '90px', align: 'left' },
         { field: 'tbTotalSek', label: 'TB tot SEK', width: '90px', align: 'right' },
         { field: 'info', label: '', width: '28px', align: 'center' },
+        { field: 'edit', label: '', width: '36px', align: 'center' },
     ];
     const alignmentClass = {
         left: 'text-left',
@@ -1402,7 +1423,7 @@ const CalculationHistoryTable = ({ rows, purchaseDecimals, salesDecimals, isLoad
 
     return (
         <div className="min-w-0 overflow-x-auto" role="region" aria-label="Historik" tabIndex={0}>
-            <table className="w-full min-w-max border-collapse text-xs tabular-nums" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+            <table className="w-full border-collapse text-xs tabular-nums" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                 <thead>
                     <tr className="border-b border-gray-300 text-gray-500 text-tiny uppercase">
                         {historyColumns.map(({ field, label, width, align }) => (
@@ -1414,7 +1435,7 @@ const CalculationHistoryTable = ({ rows, purchaseDecimals, salesDecimals, isLoad
                     {rows.map((row) => (
                         <tr
                             key={row.customerOrderId ? `customer-${row.customerOrderId}` : `supplier-${row.supplierOrderId}`}
-                            className="h-6 border-b border-gray-100 text-gray-800"
+                            className="h-6 border-b border-gray-100 odd:bg-white even:bg-gray-50 text-gray-800 transition-colors hover:bg-lime-100"
                         >
                             <td className={`px-2 py-1 ${alignmentClass.left}`}>{row.createdDate ?? ''}</td>
                             <td className={`px-2 py-1 ${alignmentClass.left}`}>
@@ -1466,6 +1487,19 @@ const CalculationHistoryTable = ({ rows, purchaseDecimals, salesDecimals, isLoad
                                     </button>
                                 ) : null}
                             </td>
+                            <td className="px-2 py-0 text-center">
+                                <button
+                                    type="button"
+                                    data-history-edit={row.customerOrderId ? `customer-${row.customerOrderId}` : `supplier-${row.supplierOrderId}`}
+                                    disabled={!row.supplierOrderId || !row.selectedCalculationRowId}
+                                    aria-label={`Redigera kalkylrad för beställning ${row.supplierOrderNr ?? row.supplierOrderId ?? ''}`}
+                                    title={row.supplierOrderId && row.selectedCalculationRowId ? 'Redigera kopplad kalkylrad' : 'Beställningen saknar en kopplad kalkylrad'}
+                                    onClick={() => onEdit(row)}
+                                    className="inline-flex items-center justify-center rounded-sm p-1 text-sky-700 hover:bg-sky-50 focus-visible:outline-2 focus-visible:outline-lime-700 disabled:text-gray-300 disabled:cursor-not-allowed"
+                                >
+                                    <Pencil size={14} aria-hidden="true" />
+                                </button>
+                            </td>
                         </tr>
                     ))}
                 </tbody>
@@ -1478,6 +1512,9 @@ const CalculationPage = ({ id, productId }) => {
     const navigate = useNavigate();
     const [result, setResult] = useState(null);
     const [historyResult, setHistoryResult] = useState(null);
+    const [historyRevision, setHistoryRevision] = useState(0);
+    const [editingHistoryRow, setEditingHistoryRow] = useState(null);
+    const historyFocusRef = useRef(null);
     const [unitOptions, setUnitOptions] = useState([]);
     const [currencyOptions, setCurrencyOptions] = useState([]);
     const [palletFormatOptions, setPalletFormatOptions] = useState([]);
@@ -1503,6 +1540,7 @@ const CalculationPage = ({ id, productId }) => {
     const [customerPickerReset, setCustomerPickerReset] = useState(0);
     const [messages, setMessages] = useState([]);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
+    const [freightWarning, setFreightWarning] = useState(null);
     const isSavingRef = useRef(false);
     const freightRefreshSequenceRef = useRef(0);
     const pendingAutoFreightRefreshRef = useRef(false);
@@ -1518,13 +1556,26 @@ const CalculationPage = ({ id, productId }) => {
     const validId = /^\d+$/.test(id ?? '') && Number(id) > 0 && Number(id) <= 2147483647;
     const validRequest = validId || (isNew && validProductId);
     const requestKey = isNew ? `calculation:new:${productId}:detail` : `calculation:${id}:detail`;
-    const historyKey = `calculation:${id}:history`;
+    const historyKey = `calculation:${id}:history:${historyRevision}`;
     const loading = validRequest && result?.key !== requestKey;
     const data = result?.key === requestKey ? result.data : null;
     const error = !validRequest ? 'Ogiltigt kalkyl- eller produktnummer.' : result?.key === requestKey ? result.error : '';
     const historyLoading = validId && historyResult?.key !== historyKey;
     const historyRows = historyResult?.key === historyKey ? historyResult.rows : EMPTY_ROWS;
     const historyError = historyResult?.key === historyKey ? historyResult.error : '';
+    const closeHistoryEditor = () => {
+        setEditingHistoryRow(null);
+        setHistoryRevision((value) => value + 1);
+    };
+
+    useEffect(() => {
+        if (historyLoading || editingHistoryRow || !historyFocusRef.current) return;
+        const trigger = document.querySelector(`[data-history-edit="${historyFocusRef.current}"]`);
+        if (trigger) {
+            trigger.focus();
+            historyFocusRef.current = null;
+        }
+    }, [historyLoading, editingHistoryRow, historyResult]);
     const baselineDraft = data ? createCalculationDraft(data) : null;
     const formDraft = draft ?? baselineDraft;
     const freightEditState = getFreightEditState(formDraft, data);
@@ -1673,14 +1724,37 @@ const CalculationPage = ({ id, productId }) => {
     }, [id, isNew, productId, replaceMessages, requestKey, validRequest]);
 
     useEffect(() => {
+        setFreightWarning(null);
+        if (!data?.supplier?.id || (data.autoFreightCalc !== false && data.autoFreightPrice !== false)) return undefined;
+
+        let active = true;
+        const supplierId = data.supplier.id;
+        getSharedRequest(`suppliers:${supplierId}:details`, () => apiClient.get(`/suppliers/${supplierId}/details`))
+            .then((response) => {
+                if (!active) return;
+                const message = getFreightWarningMessage(data, response.data.supplier);
+                if (message) setFreightWarning({ calculation: data, message });
+            })
+            .catch((lookupError) => {
+                if (!active) return;
+                console.error('Failed to check calculation transport responsibility:', lookupError);
+                appendMessage('error', 'Kunde inte kontrollera leverantörens transportansvar för fraktvarningen.');
+            });
+        return () => {
+            active = false;
+        };
+    }, [appendMessage, data]);
+
+    useEffect(() => {
         if (!validId) return;
         let active = true;
         getSharedRequest(historyKey, () => apiClient.get(`/calculations/${id}/history`))
             .then((response) => {
+                if (!Array.isArray(response.data)) throw new Error('Invalid calculation history response.');
                 if (active) {
                     setHistoryResult({
                         key: historyKey,
-                        rows: Array.isArray(response?.data) ? response.data : [],
+                        rows: response.data,
                         error: '',
                     });
                 }
@@ -1938,7 +2012,7 @@ const CalculationPage = ({ id, productId }) => {
     const openCalculationDocument = (path) => {
         const documentUrl = new URL(path, window.location.origin);
         documentUrl.searchParams.set('calculationId', String(data.id));
-        window.open(documentUrl.toString(), '_blank', 'noopener,noreferrer');
+        navigate(`${documentUrl.pathname}${documentUrl.search}`);
     };
 
     const getUnitMultiplier = (unitId) => unitOptions.find((unit) => Number(unit.id) === Number(unitId))?.multiplicator
@@ -2177,6 +2251,8 @@ const CalculationPage = ({ id, productId }) => {
         ? getOtherCostWarnings(formDraft.rows, otherCostUnitMultiplier, costContext)
         : '';
     const handleCalculationRowChange = (clientKey, field, value) => {
+        const targetRow = formDraft?.rows.find((row) => row.clientKey === clientKey);
+        if (!targetRow || targetRow.archived || (targetRow[field] ?? null) === (value ?? null)) return;
         const unitMultiplier = unitOptions.find((unit) => unit.id === formDraft?.unitId)?.multiplicator
             ?? data?.unitMultiplier
             ?? 1;
@@ -2215,6 +2291,8 @@ const CalculationPage = ({ id, productId }) => {
     };
 
     const handleFreightRowChange = (clientKey, field, value) => {
+        const targetRow = formDraft?.rows.find((row) => row.clientKey === clientKey);
+        if (!targetRow || targetRow.archived || (targetRow[field] ?? null) === (value ?? null)) return;
         const unitMultiplier = getUnitMultiplier(formDraft?.unitId);
         setDraft((previous) => {
             if (!previous) return previous;
@@ -2712,6 +2790,15 @@ const CalculationPage = ({ id, productId }) => {
     return (
         <div className="relative min-w-0 px-3 pb-10 md:px-8 py-2">
             <ConfirmationModal
+                isOpen={Boolean(freightWarning && freightWarning.calculation === data)}
+                onClose={() => setFreightWarning(null)}
+                onConfirm={() => setFreightWarning(null)}
+                title="Varning – fraktinställningar"
+                message={freightWarning?.message}
+                confirmText="OK"
+                cancelText=""
+            />
+            <ConfirmationModal
                 isOpen={showUnsavedWarning}
                 onClose={handleUnsavedWarningAbort}
                 onConfirm={handleUnsavedWarningConfirm}
@@ -2732,8 +2819,9 @@ const CalculationPage = ({ id, productId }) => {
                     className={`min-w-0 overflow-hidden lg:self-stretch lg:overflow-visible ${expanded ? 'lg:relative lg:after:absolute lg:after:top-8 lg:after:right-0 lg:after:bottom-0 lg:after:border-r lg:after:border-gray-300' : ''}`}
                 >
                     <aside
-                        className={`transform transition-all duration-300 ease-in-out lg:sticky lg:top-[calc(72px+1rem)] lg:z-10 lg:self-start ${expanded ? 'translate-x-0 opacity-100' : '-translate-x-4 opacity-0 pointer-events-none'}`}
+                        className={`transform transition-all duration-300 ease-in-out lg:sticky lg:top-[calc(72px+1rem)] lg:z-10 lg:max-h-[calc(100dvh-72px-1rem)] lg:overflow-y-auto lg:self-start ${expanded ? 'translate-x-0 opacity-100' : '-translate-x-4 opacity-0 pointer-events-none'}`}
                         aria-hidden={!expanded}
+                        inert={!expanded}
                     >
                         <div className="space-y-4 px-2 py-3">
                             <h2 className="text-center text-sm text-gray-500">Info</h2>
@@ -2757,6 +2845,14 @@ const CalculationPage = ({ id, productId }) => {
                                     </dd>
                                 </div>
                             </dl>
+                            <LabeledCheckbox
+                                id="calculation-is-archived"
+                                label="Arkiverad"
+                                checked={Boolean(formDraft?.isArchived)}
+                                onChange={updateField('isArchived')}
+                                disabled={!formDraft || isSaving}
+                                color="red"
+                            />
                             <div className="border-b border-gray-300" />
                             <section aria-labelledby="calculation-messages-heading" className="space-y-3">
                                 <h2 id="calculation-messages-heading" className="text-center text-sm text-gray-500">
@@ -2791,7 +2887,7 @@ const CalculationPage = ({ id, productId }) => {
                                     </ul>
                                 )}
                             </section>
-                            <div className="border-b border-gray-300" />
+                            {data && <CalculationNavigation key={id} calculation={data} />}
                             {/* {data ? (
                                 <section className="space-y-3" aria-labelledby="calculation-approvals-heading">
                                     <h2 id="calculation-approvals-heading" className="text-center text-sm text-gray-500">
@@ -2833,7 +2929,7 @@ const CalculationPage = ({ id, productId }) => {
                             {isNew ? 'Ny kalkyl' : `Kalkyl ${validId ? id : ''}`}
                         </h1>
                     </div>
-                    <div className="mb-3 flex flex-wrap items-center gap-6">
+                    <div className="mb-5 flex flex-wrap items-center gap-6">
                         <ActionButton label="Tillbaka" icon={ArrowLeft} onClick={handleBack} accent="slate" />
                         {/* <ActionButton
                             label="Läs in igen"
@@ -2966,7 +3062,7 @@ const CalculationPage = ({ id, productId }) => {
                                             />
                                         </div>
                                         <div className='mt-5'>
-                                            {headerFlag('Lås utpris', 'lockOutPrice')}
+                                            {headerFlag('Justera påslag', 'lockOutPrice')}
                                         </div>
 
                                     </div>
@@ -3106,13 +3202,17 @@ const CalculationPage = ({ id, productId }) => {
                                         salesDecimals={formDraft.salesDecimals}
                                         lockOutPrice={formDraft.lockOutPrice}
                                         deactivateFreightCalculation={formDraft.deactivateFreightCalculation}
+                                        autoFreightCalc={formDraft.autoFreightCalc}
+                                        editionPerPallet={formDraft.editionPerPallet}
                                         onRowChange={handleCalculationRowChange}
+                                        onFreightRowChange={handleFreightRowChange}
+                                        onAdjustEdition={handleAdjustFreightEdition}
                                         onDeleteRow={handleDeleteCalculationRow}
                                     />
                                 </div>
                             </CalculationSection>
 
-                            <CalculationSection title="Packning" {...sectionApprovalProps('packaging', 'approvePackaging')}>
+                            <CalculationSection title="Packning" initiallyOpen {...sectionApprovalProps('packaging', 'approvePackaging')}>
                                 <div className="min-w-0 space-y-4 pb-2">
 
                                     <div className="grid min-w-0 gap-12 @4xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(260px,0.75fr)]">
@@ -3513,6 +3613,10 @@ const CalculationPage = ({ id, productId }) => {
                                         salesDecimals={formDraft.salesDecimals}
                                         isLoading={historyLoading}
                                         error={historyError}
+                                        onEdit={(row) => {
+                                            historyFocusRef.current = row.customerOrderId ? `customer-${row.customerOrderId}` : `supplier-${row.supplierOrderId}`;
+                                            setEditingHistoryRow(row);
+                                        }}
                                     />
                                 </div>
                             </CalculationSection>
@@ -3520,6 +3624,14 @@ const CalculationPage = ({ id, productId }) => {
                     ) : null}
                 </main>
             </div>
+            {editingHistoryRow && (
+                <CalculationRowEditModal
+                    key={editingHistoryRow.supplierOrderId}
+                    supplierOrderId={editingHistoryRow.supplierOrderId}
+                    supplierOrderNr={editingHistoryRow.supplierOrderNr}
+                    onClose={closeHistoryEditor}
+                />
+            )}
         </div>
     );
 };

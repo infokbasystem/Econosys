@@ -72,9 +72,7 @@ namespace Econosys.Api.Controllers
             entity.EditedBy = legacyUser.Id;
 
             _dbContext.CustomerOrders.Add(entity);
-            await _dbContext.SaveChangesAsync();
-
-            await SyncOrderCostsAsync(entity.Id, request.OrderCosts);
+            await SyncOrderCostsAsync(entity, request.OrderCosts, isCreating: true);
             await _dbContext.SaveChangesAsync();
 
             var saved = await BuildDetailsQuery().FirstAsync(x => x.Id == entity.Id);
@@ -110,7 +108,7 @@ namespace Econosys.Api.Controllers
             entity.Edited = SwedishTime.Now;
             entity.EditedBy = legacyUser.Id;
 
-            await SyncOrderCostsAsync(entity.Id, request.OrderCosts);
+            await SyncOrderCostsAsync(entity, request.OrderCosts);
             await _dbContext.SaveChangesAsync();
 
             var saved = await BuildDetailsQuery().FirstAsync(x => x.Id == entity.Id);
@@ -691,7 +689,10 @@ namespace Econosys.Api.Controllers
                     .ThenInclude(x => x.InvoiceRows);
         }
 
-        private async Task SyncOrderCostsAsync(int customerOrderId, List<UpsertCustomerOrderOrderCostRequest>? requestedCosts)
+        private async Task SyncOrderCostsAsync(
+            CustomerOrder customerOrder,
+            List<UpsertCustomerOrderOrderCostRequest>? requestedCosts,
+            bool isCreating = false)
         {
             var requested = requestedCosts ?? new List<UpsertCustomerOrderOrderCostRequest>();
 
@@ -700,14 +701,28 @@ namespace Econosys.Api.Controllers
                 .Select(x => x.Id!.Value)
                 .ToHashSet();
 
-            var existing = await _dbContext.OrderCosts
-                .Where(x => x.CustomerOrderId == customerOrderId)
-                .ToListAsync();
+            var existing = isCreating && !customerOrder.SupplierOrderId.HasValue
+                ? new List<OrderCost>()
+                : await _dbContext.OrderCosts
+                    .Where(x => isCreating
+                        ? x.SupplierOrderId == customerOrder.SupplierOrderId
+                        : x.CustomerOrderId == customerOrder.Id)
+                    .ToListAsync();
 
-            var toDelete = existing.Where(x => !requestedIds.Contains(x.Id)).ToList();
+            var toDelete = isCreating
+                ? new List<OrderCost>()
+                : existing.Where(x => !requestedIds.Contains(x.Id)).ToList();
             if (toDelete.Count > 0)
             {
                 _dbContext.OrderCosts.RemoveRange(toDelete);
+            }
+
+            if (isCreating)
+            {
+                foreach (var cost in existing)
+                {
+                    cost.CustomerOrder = customerOrder;
+                }
             }
 
             foreach (var req in requested)
@@ -718,12 +733,16 @@ namespace Econosys.Api.Controllers
                     if (entity != null)
                     {
                         ApplyOrderCostRequest(entity, req);
+                        entity.CustomerOrder = customerOrder;
+                        if (isCreating) entity.SupplierOrderId = customerOrder.SupplierOrderId;
                     }
                 }
                 else if (req.CostId.HasValue)
                 {
-                    var entity = new OrderCost { CustomerOrderId = customerOrderId };
+                    var entity = new OrderCost();
                     ApplyOrderCostRequest(entity, req);
+                    entity.CustomerOrder = customerOrder;
+                    entity.SupplierOrderId ??= customerOrder.SupplierOrderId;
                     _dbContext.OrderCosts.Add(entity);
                 }
             }
@@ -731,7 +750,6 @@ namespace Econosys.Api.Controllers
 
         private static void ApplyOrderCostRequest(OrderCost entity, UpsertCustomerOrderOrderCostRequest req)
         {
-            entity.CustomerOrderId = req.CustomerOrderId;
             entity.SupplierOrderId = req.SupplierOrderId;
             entity.CostId = req.CostId;
             entity.DoDebit = req.DoDebit;
@@ -824,6 +842,8 @@ namespace Econosys.Api.Controllers
             entity.SalesPrice = request.SalesPrice;
             entity.PalletFormatId = request.PalletFormatId;
             entity.EurPallet = request.EurPallet;
+            entity.NrOfEurPallet = request.NrOfEurPallet;
+            entity.EurPalletValue = request.EurPalletValue;
         }
 
         private static void ApplyUpdateRequestToEntity(CustomerOrder entity, UpdateCustomerOrderRequest request)
@@ -860,6 +880,8 @@ namespace Econosys.Api.Controllers
             entity.SalesPrice = request.SalesPrice;
             entity.PalletFormatId = request.PalletFormatId;
             entity.EurPallet = request.EurPallet;
+            entity.NrOfEurPallet = request.NrOfEurPallet;
+            entity.EurPalletValue = request.EurPalletValue;
         }
 
         private static CustomerOrderDto MapToDto(CustomerOrder source)
