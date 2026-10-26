@@ -77,7 +77,7 @@ namespace Econosys.Api.Controllers
             invoice.InvoiceNumber = await GetNextInvoiceNumberAsync();
 
             invoice.InvoiceRows = BuildInvoiceRows(request.InvoiceRows, invoice.Id, legacyUser.CompanyId);
-            invoice.InvoiceAccountRows = BuildInvoiceAccountRows(request.InvoiceAccountRows, invoice.Id);
+            invoice.InvoiceAccountRows = BuildInvoiceAccountRows(request.InvoiceAccountRows, invoice.Id, legacyUser.CompanyId);
 
             _dbContext.Invoices.Add(invoice);
             await _dbContext.SaveChangesAsync();
@@ -127,7 +127,7 @@ namespace Econosys.Api.Controllers
             _dbContext.InvoiceAccountRows.RemoveRange(invoice.InvoiceAccountRows);
 
             invoice.InvoiceRows = BuildInvoiceRows(request.InvoiceRows, invoice.Id, legacyUser.CompanyId);
-            invoice.InvoiceAccountRows = BuildInvoiceAccountRows(request.InvoiceAccountRows, invoice.Id);
+            invoice.InvoiceAccountRows = BuildInvoiceAccountRows(request.InvoiceAccountRows, invoice.Id, legacyUser.CompanyId);
 
             await _dbContext.SaveChangesAsync();
 
@@ -735,6 +735,10 @@ namespace Econosys.Api.Controllers
                         CustomerOrderId = x.CustomerOrderId,
                         CustomerOrderNr = x.CustomerOrder != null ? x.CustomerOrder.CustomerOrderNr : null,
                         CostName = x.Cost != null ? x.Cost.Name : null,
+                        AccountNr = x.Cost == null ? null
+                            : customer.EU ? x.Cost.AccountEU
+                            : customer.Export ? x.Cost.AccountExport
+                            : x.Cost.AccountDomestic,
                         Quantity = x.NrOf,
                         UnitPrice = x.OutPrice ?? x.InPrice,
                         UnitId = x.CustomerOrder != null ? x.CustomerOrder.UnitId : null,
@@ -750,12 +754,37 @@ namespace Econosys.Api.Controllers
                 }
             }
 
-            var accountNrReceivable = customer.AccountNrAccountsReceivable.HasValue
-                ? customer.AccountNrAccountsReceivable.Value.ToString(CultureInfo.InvariantCulture)
-                : null;
-            var accountNrEarnings = customer.AccountNrEarnings.HasValue
-                ? customer.AccountNrEarnings.Value.ToString(CultureInfo.InvariantCulture)
-                : null;
+            var priceTypeAccounts = await _dbContext.PriceTypes
+                .AsNoTracking()
+                .Where(x => x.Id == 1 || x.Id == 12 || x.Id == 13)
+                .Include(x => x.Account)
+                .ToDictionaryAsync(x => x.Id, x => x.Account);
+            var receivableAccountNr = customer.AccountNrAccountsReceivable
+                ?? await _dbContext.Accounts
+                    .AsNoTracking()
+                    .Where(x => x.InvoicePayMethodId != null && x.InvoicePayMethodId.Contains("3"))
+                    .Select(x => x.AccountNr)
+                    .FirstOrDefaultAsync();
+            priceTypeAccounts.TryGetValue(1, out var productAccount);
+            priceTypeAccounts.TryGetValue(13, out var vatAccount);
+            priceTypeAccounts.TryGetValue(12, out var roundingAccount);
+            var earningsAccountNr = customer.AccountNrEarnings
+                ?? (customer.EU ? productAccount?.AccountNrEu
+                    : customer.Export ? productAccount?.AccountNrExport
+                    : productAccount?.AccountNr);
+
+            string? FormatAccountNr(int? accountNr, string source)
+            {
+                if (!accountNr.HasValue)
+                {
+                    _logger.LogWarning("No {AccountSource} account configured for invoice draft customer {CustomerId}.",
+                        source, customer.Id);
+                }
+
+                return accountNr?.ToString(CultureInfo.InvariantCulture);
+            }
+
+            var accountNrReceivable = FormatAccountNr(receivableAccountNr, "receivables");
 
             var invoiceRowRequests = new List<InvoiceRowMutationRequest>();
             var sortOrder = 1;
@@ -770,13 +799,14 @@ namespace Econosys.Api.Controllers
                     SortOrder = sortOrder,
                     DeliveryToCustomerId = delivery.Type == "DeliveryToCustomer" ? delivery.DeliveryId : null,
                     DeliveryFromStockId = delivery.Type == "DeliveryFromStock" ? delivery.DeliveryId : null,
+                    PriceTypeId = 1,
                     Text = BuildDraftDeliveryText(delivery),
                     NrOf = nrOf,
                     UnitPrice = unitPrice,
                     Sum = ComputeDraftRowSum(nrOf, unitPrice, delivery.UnitMultiplicator),
                     VatGround = true,
                     Calculate = true,
-                    AccountNr = accountNrEarnings,
+                    AccountNr = FormatAccountNr(earningsAccountNr, "delivery earnings"),
                     UnitId = delivery.UnitId,
                 });
 
@@ -792,13 +822,14 @@ namespace Econosys.Api.Controllers
                 {
                     SortOrder = sortOrder,
                     OrderCostId = orderCost.OrderCostId,
+                    PriceTypeId = 2,
                     Text = BuildDraftOrderCostText(orderCost),
                     NrOf = nrOf,
                     UnitPrice = unitPrice,
                     Sum = ComputeDraftRowSum(nrOf, unitPrice, orderCost.UnitMultiplicator),
                     VatGround = true,
                     Calculate = true,
-                    AccountNr = accountNrEarnings,
+                    AccountNr = FormatAccountNr(customer.AccountNrEarnings ?? orderCost.AccountNr, "order cost earnings"),
                     UnitId = orderCost.UnitId,
                 });
 
@@ -818,6 +849,7 @@ namespace Econosys.Api.Controllers
             {
                 SortOrder = sortOrder++,
                 PriceTypeId = 13,
+                AccountNr = FormatAccountNr(vatAccount?.AccountNr, "VAT"),
                 Text = "Moms",
                 Sum = vatValue,
                 VatGround = false,
@@ -828,6 +860,7 @@ namespace Econosys.Api.Controllers
             {
                 SortOrder = sortOrder,
                 PriceTypeId = 12,
+                AccountNr = FormatAccountNr(roundingAccount?.AccountNr, "rounding"),
                 Text = "Oresavrundning",
                 Sum = roundingValue,
                 VatGround = false,
@@ -1356,6 +1389,7 @@ namespace Econosys.Api.Controllers
             public int? CustomerOrderId { get; set; }
             public string? CustomerOrderNr { get; set; }
             public string? CostName { get; set; }
+            public int? AccountNr { get; set; }
             public decimal? Quantity { get; set; }
             public decimal? UnitPrice { get; set; }
             public int? UnitId { get; set; }
@@ -1598,12 +1632,13 @@ namespace Econosys.Api.Controllers
                 .ToList();
         }
 
-        private static List<InvoiceAccountRow> BuildInvoiceAccountRows(IEnumerable<InvoiceAccountRowMutationRequest>? rows, int invoiceId)
+        private static List<InvoiceAccountRow> BuildInvoiceAccountRows(IEnumerable<InvoiceAccountRowMutationRequest>? rows, int invoiceId, int companyId = 0)
         {
             return (rows ?? Enumerable.Empty<InvoiceAccountRowMutationRequest>())
                 .Select(row => new InvoiceAccountRow
                 {
                     AccountNr = row.AccountNr,
+                    CompanyId = companyId,
                     CostCenter = row.CostCenter,
                     InvoiceId = invoiceId > 0 ? invoiceId : null,
                     NrOf = row.NrOf,

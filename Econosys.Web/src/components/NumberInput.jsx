@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useLayoutEffect, useRef, useState } from "react";
 
 const NumberInput = ({
     rowId,
@@ -6,6 +6,7 @@ const NumberInput = ({
     value,
     disabled = false,
     decimals = 2,
+    maxDecimals,
     hideZeroDecimals = false,
     suffix = '',
     className,
@@ -15,6 +16,11 @@ const NumberInput = ({
     const [displayValue, setDisplayValue] = useState("");
     const [isFocused, setIsFocused] = useState(false);
     const editedSinceFocus = useRef(false);
+    const inputRef = useRef(null);
+
+    useLayoutEffect(() => {
+        if (isFocused) inputRef.current?.select();
+    }, [isFocused]);
 
     const getDecimalsFor = (num) => {
         if (!hideZeroDecimals || decimals === 0) return decimals;
@@ -86,6 +92,11 @@ const NumberInput = ({
         // Only allow digits, comma, and spaces while typing
         newVal = newVal.replace(/[^\d,]/g, "");
 
+        if (maxDecimals != null && newVal.includes(",")) {
+            const [integerPart, ...fractionParts] = newVal.split(",");
+            newVal = `${integerPart},${fractionParts.join("").slice(0, maxDecimals)}`;
+        }
+
         // Prevent decimals if decimals = 0
         if (decimals === 0) {
             newVal = newVal.replace(/,.*$/, "");
@@ -99,6 +110,7 @@ const NumberInput = ({
 
     return (
         <input
+            ref={inputRef}
             type="text"
             value={isFocused ? displayValue : formatNumber(value)}
             disabled={disabled}

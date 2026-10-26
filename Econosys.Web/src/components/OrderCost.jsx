@@ -10,6 +10,11 @@ import NumberInput from './NumberInput';
 
 const toInputValue = (value) => (value == null ? '' : String(value));
 
+const getDecimalPlaces = (value) => {
+    const decimalPart = toInputValue(value).trim().replace(',', '.').split('.')[1];
+    return Math.min(decimalPart?.length ?? 0, 2);
+};
+
 const parseNullableInt = (value) => {
     if (value == null || value === '') return null;
     const parsed = Number.parseInt(String(value), 10);
@@ -489,10 +494,11 @@ const OrderCost = ({
                                     </select>
                                 </td>
                                 <td className="py-[1px] px-[1px]">
-                                    <input
-                                        type="text"
-                                        value={toInputValue(nrOfEurPallet)}
-                                        onChange={(event) => patchPallet({ nrOfEurPallet: parseNullableInt(event.target.value) })}
+                                    <NumberInput
+                                        field="nrOfEurPallet"
+                                        value={nrOfEurPallet ?? null}
+                                        decimals={0}
+                                        onChange={(_rowId, _field, value) => patchPallet({ nrOfEurPallet: value })}
                                         className="w-full rounded-sm border border-gray-300 bg-white px-2 py-1 text-right"
                                     />
                                 </td>
@@ -501,10 +507,11 @@ const OrderCost = ({
                                 <td className="py-[1px] px-[1px]" />
                                 <td className="py-[1px] px-[1px]" />
                                 <td className="py-[1px] px-[1px]">
-                                    <input
-                                        type="text"
-                                        value={toInputValue(eurPalletValue)}
-                                        onChange={(event) => patchPallet({ eurPalletValue: parseNullableDecimal(event.target.value) })}
+                                    <NumberInput
+                                        rowId="pallet"
+                                        field="eurPalletValue"
+                                        value={eurPalletValue ?? null}
+                                        onChange={(_rowId, _field, value) => patchPallet({ eurPalletValue: value })}
                                         className="w-full rounded-sm border border-gray-300 px-2 py-1 text-right bg-gray-100 text-gray-500 cursor-not-allowed"
                                         disabled
                                     />
@@ -568,19 +575,25 @@ const OrderCost = ({
                                         </select>
                                     </td>
                                     <td className="py-0 px-[1px]">
-                                        <input
-                                            type="text"
-                                            value={toInputValue(row.nrOf)}
-                                            onChange={(event) => patchRow(row.localId, { nrOf: event.target.value })}
+                                        <NumberInput
+                                            rowId={row.localId}
+                                            field="nrOf"
+                                            value={parseNullableDecimal(row.nrOf)}
+                                            decimals={0}
+                                            onChange={(rowId, _field, value) => patchRow(rowId, { nrOf: value })}
                                             disabled={nrOfDisabled}
                                             className={`w-full rounded-sm border border-gray-300 px-2 py-1 text-right ${nrOfDisabled ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`}
                                         />
                                     </td>
                                     <td className="py-0 px-[1px]">
-                                        <input
-                                            type="text"
-                                            value={toInputValue(row.inPrice)}
-                                            onChange={(event) => patchRow(row.localId, { inPrice: event.target.value })}
+                                        <NumberInput
+                                            rowId={row.localId}
+                                            field="inPrice"
+                                            value={parseNullableDecimal(row.inPrice)}
+                                            decimals={Math.max(1, getDecimalPlaces(row.inPrice))}
+                                            maxDecimals={2}
+                                            hideZeroDecimals
+                                            onChange={(rowId, _field, value) => patchRow(rowId, { inPrice: value })}
                                             className="w-full rounded-sm border border-gray-300 bg-white px-2 py-1 text-right"
                                         />
                                     </td>
@@ -634,10 +647,14 @@ const OrderCost = ({
                                                     {toInputValue(row.nrOf)} *
                                                 </span>
                                             )}
-                                            <input
-                                                type="text"
-                                                value={toInputValue(row.outPrice)}
-                                                onChange={(event) => patchRow(row.localId, { outPrice: event.target.value })}
+                                            <NumberInput
+                                                rowId={row.localId}
+                                                field="outPrice"
+                                                value={parseNullableDecimal(row.outPrice)}
+                                                decimals={Math.max(1, getDecimalPlaces(row.outPrice))}
+                                                maxDecimals={2}
+                                                hideZeroDecimals
+                                                onChange={(rowId, _field, value) => patchRow(rowId, { outPrice: value })}
                                                 className="w-full rounded-sm border border-gray-300 bg-white px-2 py-1 text-right"
                                             />
                                             {(row.invoiceRowId != null || row.invoiceId != null) && (
@@ -770,9 +787,10 @@ const OrderCost = ({
                                                 <span>Attest. belopp</span>
                                                 <span className="text-center">x</span>
                                                 <NumberInput
-                                                    type="text"
+                                                    rowId={detailsDraft.id ?? detailsRow.localId}
+                                                    field="inPriceAttested"
                                                     value={parseNullableDecimal(detailsDraft.inPriceAttested)}
-                                                    onChange={(rowId, field, value) => patchDetailsDraft({ inPriceAttested: value })}
+                                                    onChange={(_rowId, _field, value) => patchDetailsDraft({ inPriceAttested: value })}
                                                     disabled={detailsSaving || detailsAttesting}
                                                     className="w-full rounded-sm border border-gray-300 bg-white px-2 py-1 text-right"
                                                 />

@@ -1543,6 +1543,7 @@ const CalculationPage = ({ id, productId }) => {
     const [freightWarning, setFreightWarning] = useState(null);
     const isSavingRef = useRef(false);
     const freightRefreshSequenceRef = useRef(0);
+    const currencyRefreshSequenceRef = useRef({ purchase: 0, sales: 0 });
     const pendingAutoFreightRefreshRef = useRef(false);
     const manualFreightDestinationRef = useRef(false);
     const rowDraftSequenceRef = useRef(0);
@@ -1695,6 +1696,7 @@ const CalculationPage = ({ id, productId }) => {
     useEffect(() => {
         if (!validRequest) return;
         let active = true;
+        const currencyRefreshSequence = currencyRefreshSequenceRef.current;
         getSharedRequest(requestKey, () => apiClient.get(isNew
             ? `/calculations/from-product/${productId}/draft`
             : `/calculations/${id}/aggregate`))
@@ -1720,6 +1722,8 @@ const CalculationPage = ({ id, productId }) => {
             });
         return () => {
             active = false;
+            ++currencyRefreshSequence.purchase;
+            ++currencyRefreshSequence.sales;
         };
     }, [id, isNew, productId, replaceMessages, requestKey, validRequest]);
 
@@ -2164,6 +2168,7 @@ const CalculationPage = ({ id, productId }) => {
         freightEditState.recalculateGeometry]);
 
     const handleCalculationCustomerSelect = (customer) => {
+        ++currencyRefreshSequenceRef.current.sales;
         manualFreightDestinationRef.current = false;
         setDraft((previous) => {
             if (!previous) return previous;
@@ -2179,9 +2184,13 @@ const CalculationPage = ({ id, productId }) => {
                 deliveryAddressPostalNr: null,
             };
         });
+        if (customer?.currencyId != null) {
+            void handleCurrencyChange('sales', customer.currencyId);
+        }
     };
 
     const handleCalculationSupplierSelect = (supplier) => {
+        ++currencyRefreshSequenceRef.current.purchase;
         setDraft((previous) => {
             if (!previous) return previous;
             const nextSupplier = supplier ? { id: supplier.id, name: supplier.name ?? '' } : null;
@@ -2190,6 +2199,9 @@ const CalculationPage = ({ id, productId }) => {
             }
             return { ...previous, supplier: nextSupplier, supplierFactoryId: null };
         });
+        if (supplier?.currencyId != null) {
+            void handleCurrencyChange('purchase', supplier.currencyId);
+        }
     };
 
     const handleSupplierFactoryChange = (value) => {
@@ -2418,6 +2430,7 @@ const CalculationPage = ({ id, productId }) => {
     };
 
     const refreshCurrencyRate = async (kind, currencyId) => {
+        const sequence = ++currencyRefreshSequenceRef.current[kind];
         if (currencyId == null) {
             applyRegistryCurrencyRate(kind, 0);
             return;
@@ -2425,8 +2438,10 @@ const CalculationPage = ({ id, productId }) => {
 
         try {
             const response = await apiClient.get(`/currencies/${currencyId}`);
+            if (currencyRefreshSequenceRef.current[kind] !== sequence) return;
             applyRegistryCurrencyRate(kind, response?.data?.rateToSek);
         } catch (currencyError) {
+            if (currencyRefreshSequenceRef.current[kind] !== sequence) return;
             console.error('Failed to refresh calculation currency rate:', currencyError);
             appendMessage('error', 'Valutakursen kunde inte hämtas från registret.');
         }
@@ -2434,7 +2449,7 @@ const CalculationPage = ({ id, productId }) => {
 
     const handleCurrencyChange = async (kind, value) => {
         const idField = kind === 'purchase' ? 'purchaseCurrencyId' : 'salesCurrencyId';
-        const currencyId = value === '' ? null : Number(value);
+        const currencyId = value == null || value === '' ? null : Number(value);
         updateDraft(idField, currencyId);
         await refreshCurrencyRate(kind, currencyId);
     };

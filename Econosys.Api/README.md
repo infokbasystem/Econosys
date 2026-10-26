@@ -85,6 +85,23 @@ purchase exchange rate. Customer order responses expose these as
 `supplierOrderPurchaseCurrencyName` and `supplierOrderPurchaseCurrencyRate`.
 Missing supplier values remain blank rather than falling back to sales values.
 
+## Invoice drafts from deliveries and order costs
+
+`POST /api/invoices/draft/from-selection` assigns accounts using the legacy rules:
+customer receivables and earnings overrides take precedence; otherwise receivables
+use the account configured for invoice payment method `3`, delivery earnings use
+price type `1`, and order costs use their cost definition's account. Earnings use
+the domestic, EU, or export account according to the customer (EU takes precedence).
+VAT and rounding always use the domestic accounts configured for price types `13`
+and `12`, independently of customer overrides. These accounts are also copied to
+the draft's accounting rows and retained when saved. Missing account configuration
+is logged as a warning and leaves the affected account blank for manual completion.
+
+Invoice creation and updates assign `CompanyId` on both invoice rows and accounting
+rows from the authenticated user's resolved legacy account. The accounting row
+mapping includes the existing required `InvoiceAccountRow.CompanyId` column;
+no database migration is needed.
+
 ## Order history
 
 The authenticated `GET /api/orderhistory/supplierorders/{id}` and

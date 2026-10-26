@@ -26,13 +26,6 @@ import { getSharedRequest } from '../../helpers/sharedRequest';
 
 const toArray = (value) => (Array.isArray(value) ? value : []);
 const toInputValue = (value) => (value == null ? '' : String(value));
-const parseGoodsMarking = (value) => new Set(
-    String(value || '')
-        .split(/[;,|]/)
-        .map((part) => part.trim().toLowerCase())
-        .filter(Boolean),
-);
-const stringifyGoodsMarking = (flags) => Array.from(flags).join(';');
 const parseNullableDecimal = (value) => {
     if (value == null || value === '') return null;
     const normalized = String(value).trim().replace(',', '.');
@@ -350,7 +343,9 @@ const SupplierOrder = () => {
         format: source?.format || null,
         color: source?.color || null,
         construction: source?.construction || null,
-        goodsMarking: source?.goodsMarking || null,
+        goodsMarking: source?.hideCustomerInfoOnPrint || source?.hideCustomerNameOnPrint || source?.hideProductNameOnPrint
+            ? null
+            : source?.goodsMarking || null,
         preparation: source?.preparation || null,
         loadingInstruction: source?.loadingInstruction || null,
         unitId: parseNullableInt(source?.unitId),
@@ -686,31 +681,6 @@ const SupplierOrder = () => {
         updateSupplierOrder(patch);
     }, [updateSupplierOrder]);
 
-    const handleGoodsMarkingToggle = useCallback((flag, checked, patch = {}) => {
-        setMessages((prev) => prev.filter((message) => message.type !== 'success'));
-        setSupplierOrder((prev) => {
-            const nextFlags = parseGoodsMarking(prev?.goodsMarking);
-            if (checked) {
-                nextFlags.add(flag);
-            } else {
-                nextFlags.delete(flag);
-            }
-
-            const next = {
-                ...prev,
-                ...patch,
-                goodsMarking: stringifyGoodsMarking(nextFlags),
-            };
-
-            markStale();
-            if (showPdfPanel) {
-                closePdfPreview?.();
-            }
-
-            return next;
-        });
-    }, [closePdfPreview, markStale, setMessages, showPdfPanel]);
-
     const handleUnsavedWarningConfirm = () => {
         setShowUnsavedWarning(false);
         if (unsavedWarningReason === 'print') {
@@ -946,10 +916,6 @@ const SupplierOrder = () => {
         })
         : [];
 
-    const goodsMarkingFlags = parseGoodsMarking(supplierOrder?.goodsMarking);
-    const showProductInGoodsMarking = goodsMarkingFlags.has('produkt') || !supplierOrder?.hideProductNameOnPrint;
-    const showCustomerOrderNrInGoodsMarking = goodsMarkingFlags.has('kundordernr') || Boolean(supplierOrder?.customerOrderNr);
-    const showCustomerNameInGoodsMarking = goodsMarkingFlags.has('kundnamn') || !supplierOrder?.hideCustomerNameOnPrint;
     const unitLabel = supplierOrder?.unitName ?? (supplierOrder?.unitId ? `ID ${supplierOrder.unitId}` : '');
     const purchaseCurrencyLabel = supplierOrder?.purchaseCurrencyName ?? (supplierOrder?.purchaseCurrencyId ? `ID ${supplierOrder.purchaseCurrencyId}` : '');
     const editionLabel = formatNumber(supplierOrder?.edition, 0);
@@ -1322,8 +1288,8 @@ const SupplierOrder = () => {
                                             name="goodsMarkingProdukt"
                                             label="produkt"
                                             labelPosition="right"
-                                            value={showProductInGoodsMarking}
-                                            onChange={(rowId, field, checked) => handleGoodsMarkingToggle('produkt', checked, { hideProductNameOnPrint: !checked })}
+                                            value={Boolean(supplierOrder?.hideProductNameOnPrint)}
+                                            onChange={(rowId, field, checked) => updateSupplierOrder({ hideProductNameOnPrint: checked })}
                                             labelWidth="w-auto"
                                             marginTop={0}
                                         />
@@ -1332,8 +1298,8 @@ const SupplierOrder = () => {
                                             name="goodsMarkingKundordernr"
                                             label="kundordernr"
                                             labelPosition="right"
-                                            value={showCustomerOrderNrInGoodsMarking}
-                                            onChange={(rowId, field, checked) => handleGoodsMarkingToggle('kundordernr', checked)}
+                                            value={Boolean(supplierOrder?.hideCustomerInfoOnPrint)}
+                                            onChange={(rowId, field, checked) => updateSupplierOrder({ hideCustomerInfoOnPrint: checked })}
                                             labelWidth="w-auto"
                                             marginTop={0}
                                         />
@@ -1342,8 +1308,8 @@ const SupplierOrder = () => {
                                             name="goodsMarkingKundnamn"
                                             label="kundnamn"
                                             labelPosition="right"
-                                            value={showCustomerNameInGoodsMarking}
-                                            onChange={(rowId, field, checked) => handleGoodsMarkingToggle('kundnamn', checked, { hideCustomerNameOnPrint: !checked })}
+                                            value={Boolean(supplierOrder?.hideCustomerNameOnPrint)}
+                                            onChange={(rowId, field, checked) => updateSupplierOrder({ hideCustomerNameOnPrint: checked })}
                                             labelWidth="w-auto"
                                             marginTop={0}
                                         />

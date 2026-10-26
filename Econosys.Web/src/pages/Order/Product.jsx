@@ -17,6 +17,52 @@ import OrderDetailLayout from '../../components/OrderDetailLayout';
 import OrderNavigationTree from '../../components/OrderNavigationTree';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 
+const MATERIALS_PAGE_SIZE = 1000;
+
+const fetchAllMaterials = async () => {
+    const orderBy = [
+        { field: 'name', direction: 'asc' },
+        { field: 'id', direction: 'asc' },
+    ];
+    const fetchPage = (pageNumber) => apiClient.post('/materials/search', {
+        pagination: { pageNumber, pageSize: MATERIALS_PAGE_SIZE },
+        orderBy,
+    });
+
+    const firstPage = await getSharedRequest(
+        'materials:search:product-form',
+        () => fetchPage(1)
+    );
+    const totalPages = firstPage?.data?.totalPages ?? 1;
+    const remainingPages = await Promise.all(
+        Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => fetchPage(index + 2))
+    );
+
+    return [firstPage, ...remainingPages].flatMap((response) => response?.data?.items ?? []);
+};
+
+const fetchAllConstructions = async () => {
+    const orderBy = [
+        { field: 'name', direction: 'asc' },
+        { field: 'id', direction: 'asc' },
+    ];
+    const fetchPage = (pageNumber) => apiClient.post('/constructions/search', {
+        pagination: { pageNumber, pageSize: MATERIALS_PAGE_SIZE },
+        orderBy,
+    });
+
+    const firstPage = await getSharedRequest(
+        'constructions:search:product-form',
+        () => fetchPage(1)
+    );
+    const totalPages = firstPage?.data?.totalPages ?? 1;
+    const remainingPages = await Promise.all(
+        Array.from({ length: Math.max(0, totalPages - 1) }, (_, index) => fetchPage(index + 2))
+    );
+
+    return [firstPage, ...remainingPages].flatMap((response) => response?.data?.items ?? []);
+};
+
 const createNewProductModel = () => ({
     id: 0,
     name: '',
@@ -123,25 +169,19 @@ const Product = () => {
 
             try {
                 const [materialsRes, constructionsRes, varnishesRes] = await Promise.all([
-                    getSharedRequest('materials:search:product-form', () => apiClient.post('/materials/search', {
-                        pagination: { pageNumber: 1, pageSize: 200 },
-                        orderBy: [{ field: 'name', direction: 'asc' }],
-                    })),
-                    getSharedRequest('constructions:search:product-form', () => apiClient.post('/constructions/search', {
-                        pagination: { pageNumber: 1, pageSize: 200 },
-                        orderBy: [{ field: 'name', direction: 'asc' }],
-                    })),
+                    fetchAllMaterials(),
+                    fetchAllConstructions(),
                     getSharedRequest('varnishes:search:product-form', () => apiClient.get('/varnishes/search')),
                 ]);
                 if (!isActive) return;
 
-                const mappedMaterials = (materialsRes?.data?.items ?? []).map((item) => ({
+                const mappedMaterials = materialsRes.map((item) => ({
                     id: item.id,
                     name: item.name,
                     isActive: item.active,
                 }));
 
-                const mappedConstructions = (constructionsRes?.data?.items ?? []).map((item) => ({
+                const mappedConstructions = constructionsRes.map((item) => ({
                     id: item.id,
                     name: item.name,
                     isActive: item.active,

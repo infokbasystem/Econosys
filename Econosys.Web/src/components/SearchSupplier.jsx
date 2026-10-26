@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ExternalLink, Search } from 'lucide-react'
 import { searchSuppliers } from '../helpers/supplierApi'
+import useSearchPopupPosition from '../hooks/useSearchPopupPosition'
 
 export default function SearchSupplier({
     onSupplierSelect,
@@ -15,6 +17,7 @@ export default function SearchSupplier({
     className = '',
 }) {
     const containerRef = useRef(null)
+    const popupRef = useRef(null)
     const requestRef = useRef(0)
     const [query, setQuery] = useState(selectedSupplierName ?? '')
     const [hasEditedSinceSelection, setHasEditedSinceSelection] = useState(false)
@@ -22,10 +25,13 @@ export default function SearchSupplier({
     const [isSearching, setIsSearching] = useState(false)
     const [isOpen, setIsOpen] = useState(false)
     const mayHaveMoreMatches = !isSearching && take > 0 && matches.length >= take
+    const showMatches = isOpen && (query.trim() === '**' || query.trim().length >= minQueryLength)
+
+    useSearchPopupPosition(showMatches, containerRef, popupRef)
 
     useEffect(() => {
         function handleDocumentMouseDown(event) {
-            if (!containerRef.current?.contains(event.target)) {
+            if (!containerRef.current?.contains(event.target) && !popupRef.current?.contains(event.target)) {
                 setIsOpen(false)
             }
         }
@@ -120,9 +126,9 @@ export default function SearchSupplier({
                 <Search className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-500" />
             </div>
 
-            {isOpen && (query.trim() === '**' || query.trim().length >= minQueryLength) && (
-                <div className="absolute left-[calc(100%+8px)] top-0 z-50 max-h-90 w-[400px] overflow-hidden overscroll-none rounded-sm border border-stone-400 bg-stone-50 shadow-lg isolate">
-                    <div className="max-h-90 overflow-x-hidden overflow-y-auto overscroll-contain bg-stone-50 [-webkit-overflow-scrolling:touch] [overscroll-behavior-y:contain]">
+            {showMatches && createPortal(
+                <div ref={popupRef} className="fixed z-50 overflow-x-hidden overflow-y-auto overscroll-contain rounded-sm border border-stone-400 bg-stone-50 shadow-lg isolate [-webkit-overflow-scrolling:touch]">
+                    <div className="bg-stone-50">
                         <ul className="divide-y divide-stone-300">
                             {matches.map((supplier) => {
                                 const reference = supplier.reference?.trim() || supplier.email?.trim()
@@ -162,7 +168,8 @@ export default function SearchSupplier({
                             </div>
                         )}
                     </div>
-                </div>
+                </div>,
+                document.body,
             )}
         </div>
     )
