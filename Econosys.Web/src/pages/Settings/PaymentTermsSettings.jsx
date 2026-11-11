@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react';
 import { Save, Trash2 } from 'lucide-react';
 import SwitchSelector from 'react-switch-selector';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledSwitch from '../../components/LabeledSwitch';
@@ -164,6 +165,7 @@ const PaymentTermsSettings = () => {
         if (isLoadingDetails) return false;
         return JSON.stringify(normalizeFormForCompare(form)) !== JSON.stringify(normalizeFormForCompare(originalForm));
     }, [form, originalForm, isLoadingDetails]);
+    useAppUpdateGuard(hasUnsavedChanges);
 
     const loadList = async () => {
         setIsLoadingList(true);

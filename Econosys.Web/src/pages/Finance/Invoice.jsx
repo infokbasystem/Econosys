@@ -8,18 +8,24 @@ import { usePdf } from '../../contexts/PdfContext';
 import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledInput from '../../components/LabeledInput';
+import SearchCustomer from '../../components/SearchCustomer';
+import OrderDetailLayout from '../../components/OrderDetailLayout';
+import useOrderDetailState from '../../hooks/useOrderDetailState';
 import SelectCircleCheckbox from '../../components/SelectCircleCheckbox';
 import LabeledSelect from '../../components/LabeledSelect';
 import LabeledSwitch from '../../components/LabeledSwitch';
 import LabeledTextArea from '../../components/LabeledTextArea';
 import NumberInput from '../../components/NumberInput';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { formatDateTime } from '../../helpers/dateUtils';
 import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
 import { parseNullableInt, parseNullableNumber, roundTo2 } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import {
     createNewInvoiceModel,
+    getInvoiceCustomerFields,
+    isInvoiceCustomerLocked,
     toDateInputValue,
     autoResizeTextarea,
     applyInvoiceDerivedRows,
@@ -27,6 +33,9 @@ import {
     ROUNDING_PRICE_TYPE_ID,
 } from '../../helpers/invoiceUtils';
 
+
+// Backend column is smallint.
+const MAX_INVOICE_DAYS = 32767;
 
 const getInvoiceRowIdentity = (row) => ((Number(row?.id) || 0) > 0 ? row.id : row.tempId);
 
@@ -83,13 +92,16 @@ const Invoice = () => {
     const [unsavedWarningReason, setUnsavedWarningReason] = useState('navigate');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [loading, setLoading] = useState(true);
-    const [messages, setMessages] = useState([]);
+    const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
 
     const [invoice, setInvoice] = useState(null);
     const [originalInvoice, setOriginalInvoice] = useState(null);
     const [currencies, setCurrencies] = useState([]);
     const [units, setUnits] = useState([]);
+    const [paymentTerms, setPaymentTerms] = useState([]);
+    const [customerSelectionPending, setCustomerSelectionPending] = useState(false);
     const skipUnsavedCheckRef = useRef(false);
+    const customerSelectionDisabled = isInvoiceCustomerLocked(originalInvoice) || isInvoiceCustomerLocked(invoice);
 
     const hasUnsavedChanges = useCallback(() => {
         if (skipUnsavedCheckRef.current) return false;
@@ -98,6 +110,7 @@ const Invoice = () => {
     }, [invoice, originalInvoice]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(() => hasUnsavedChanges() || Boolean(isNewInvoice && invoice));
 
     useEffect(() => {
         return () => {
@@ -209,6 +222,19 @@ const Invoice = () => {
                 [field]: value,
             };
         });
+
+        if (showPdfPanel) {
+            closePdfPreview();
+        }
+    };
+
+    const handleCustomerSelect = (customer) => {
+        if (customerSelectionDisabled) return;
+
+        markStale();
+        setMessages((prev) => prev.filter((msg) => msg.type !== 'success' && msg.type !== 'warning'));
+        setCustomerSelectionPending(false);
+        setInvoice((prev) => prev ? { ...prev, ...getInvoiceCustomerFields(customer) } : prev);
 
         if (showPdfPanel) {
             closePdfPreview();
@@ -403,6 +429,23 @@ const Invoice = () => {
     const handleSave = async () => {
         if (!invoice) return;
 
+        if (customerSelectionPending) {
+            setMessages((prev) => [
+                ...prev.filter((msg) => msg.type !== 'success' && msg.type !== 'warning'),
+                { type: 'warning', text: 'Välj en kund i sökresultatet innan du sparar fakturan.' },
+            ]);
+            return;
+        }
+
+        const invoiceDays = parseNullableInt(invoice?.invoiceDays);
+        if (invoiceDays != null && (invoiceDays < 0 || invoiceDays > MAX_INVOICE_DAYS)) {
+            setMessages((prev) => [
+                ...prev.filter((msg) => msg.type !== 'success' && msg.type !== 'error' && msg.type !== 'warning'),
+                { type: 'error', text: `Fakt.dagar måste vara mellan 0 och ${MAX_INVOICE_DAYS}.` },
+            ]);
+            return;
+        }
+
         try {
             const payload = buildInvoicePayload(invoice);
             const invoiceId = parseNullableInt(invoice?.id);
@@ -432,9 +475,30 @@ const Invoice = () => {
             console.error('Failed to save invoice:', error);
 
             const status = error?.response?.status;
-            const text = status === 404 || status === 405
-                ? 'Sparfunktionen for faktura ar inte tillganglig i API:et an.'
-                : 'Kunde inte spara fakturan.';
+            const data = error?.response?.data;
+            const serverMessage = typeof data === 'string'
+                ? data
+                : data?.message;
+            const validationText = data?.errors && typeof data.errors === 'object'
+                ? Object.entries(data.errors)
+                    .filter(([field]) => field !== 'request')
+                    .map(([field, fieldErrors]) => `${field.replace(/^\$\./, '')}: ${[].concat(fieldErrors).join(', ')}`)
+                    .join(' | ')
+                : '';
+            const detailText = Array.isArray(data?.details)
+                ? data.details
+                    .map((detail) => `${detail.type}: ${detail.message}`)
+                    .join(' | ')
+                : validationText;
+
+            let text = 'Kunde inte spara fakturan.';
+            if (status === 404 || status === 405) {
+                text = 'Sparfunktionen for faktura ar inte tillganglig i API:et an.';
+            } else if (detailText) {
+                text = `Kunde inte spara fakturan: ${detailText}`;
+            } else if (serverMessage) {
+                text = `Kunde inte spara fakturan: ${serverMessage}`;
+            }
 
             setMessages((prev) => [
                 ...prev.filter((msg) => msg.type !== 'error' && msg.type !== 'warning'),
@@ -465,6 +529,34 @@ const Invoice = () => {
             ]);
         }
     };
+
+    useEffect(() => {
+        let isActive = true;
+
+        const loadPaymentTerms = async () => {
+            try {
+                const response = await getSharedRequest('termsofpayment:search:invoice-form', () => apiClient.get('/termsofpayment/search'));
+                if (!Array.isArray(response.data)) {
+                    throw new Error('Invalid payment terms response.');
+                }
+                if (isActive) {
+                    setPaymentTerms(response.data.filter((term) => term.active && term.name?.trim()));
+                }
+            } catch (error) {
+                console.error('Failed loading invoice payment terms:', error);
+                if (!isActive) return;
+                setMessages((prev) => [
+                    ...prev,
+                    { type: 'warning', text: 'Kunde inte ladda betalningsvillkor. Du kan fortfarande skriva villkoren manuellt.' },
+                ]);
+            }
+        };
+
+        void loadPaymentTerms();
+        return () => {
+            isActive = false;
+        };
+    }, [setMessages]);
 
     useEffect(() => {
         let isActive = true;
@@ -638,7 +730,7 @@ const Invoice = () => {
         : null;
 
     return (
-        <div className="relative flex flex-col h-full">
+        <div className="relative flex min-h-full flex-col">
             <ConfirmationModal
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
@@ -665,494 +757,479 @@ const Invoice = () => {
                 isDestructive={false}
             />
 
-            <h2 className="ml-96 text-sm pt-8 pb-2 text-gray-500 tracking-[0.10em] font-semibold uppercase">
-                {invoice?.id ? (
+            <OrderDetailLayout
+                title={invoice?.id ? (
                     <>Faktura <span className="ml-2">{invoice.invoiceNumber ?? invoice.id}</span></>
                 ) : (
                     'Ny faktura'
                 )}
-            </h2>
-
-            <div className="flex h-full items-stretch">
-
-                {/* Left panel */}
-                <div className="flex flex-col w-80 shrink-0 border-r border-gray-300 px-2 py-2 mb-5 mr-5">
+                messages={messages}
+                isInfoPanelExpanded={isInfoPanelExpanded}
+                isInfoPanelUsingResponsiveDefault={isInfoPanelUsingResponsiveDefault}
+                onToggleInfoPanel={toggleInfoPanel}
+                mainMaxWidthClass=""
+                infoContent={(
                     <div className="space-y-3">
-                        <h2 className="text-sm text-center text-gray-700">Info</h2>
+                        <h2 className="text-sm text-center text-gray-500">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
                             {renderInvoiceMetaRow('Skapad:', invoice?.created, invoice?.createdByUserName)}
                             {renderInvoiceMetaRow('Redigerad:', invoice?.edited, invoice?.editedByUserName)}
-                            {invoice.invoiceNumber && (
-                                <div className="grid grid-cols-20 gap-4 mx-2">
-                                    <div className="col-span-4"><span className="font-medium">Fakt.nr:</span></div>
-                                    <div className="col-span-7">{invoice.invoiceNumber}{invoice.invoiceTypeCode == 5 ? <span className='ml-3 text-red-500'>KREDIT, krediterar {invoice.creditingInvoiceNumber}</span> : ""}</div>
-                                </div>
-                            )}
+                            <div className="grid grid-cols-21 gap-1 mt-3 mx-2">
+                                <div className="col-span-5"><span className="font-medium">Fakt.nr:</span></div>
+                                <div className="col-span-8">{invoice.invoiceNumber}{invoice.invoiceTypeCode == 5 ? <span className='ml-3 text-red-500'>KREDIT, krediterar {invoice.creditingInvoiceNumber}</span> : ""}</div>
+                            </div>
                             {invoice.invoiceDate && (
-                                <div className="grid grid-cols-20 gap-4 mx-2">
-                                    <div className="col-span-4"><span className="font-medium">Fakt.dag:</span></div>
-                                    <div className="col-span-7">{toDateInputValue(invoice.invoiceDate)}</div>
+                                <div className="grid grid-cols-21 gap-1 mx-2">
+                                    <div className="col-span-5"><span className="font-medium">Fakt.dag:</span></div>
+                                    <div className="col-span-8">{toDateInputValue(invoice.invoiceDate)}</div>
                                 </div>
                             )}
                             {dueDate && (
-                                <div className="grid grid-cols-20 gap-4 mx-2">
-                                    <div className="col-span-4"><span className="font-medium">Förfaller:</span></div>
-                                    <div className="col-span-7">{dueDate.toLocaleDateString('sv-SE')}</div>
+                                <div className="grid grid-cols-21 gap-1 mx-2">
+                                    <div className="col-span-5"><span className="font-medium">Förfaller:</span></div>
+                                    <div className="col-span-8">{dueDate.toLocaleDateString('sv-SE')}</div>
                                 </div>
                             )}
-                            <div className="grid grid-cols-20 gap-4 mx-2">
-                                <div className="col-span-4"><span className="font-medium">Bokförd:</span></div>
-                                <div className="col-span-7">
+                            <div className="grid grid-cols-21 gap-1 mx-2">
+                                <div className="col-span-5"><span className="font-medium">Bokförd:</span></div>
+                                <div className="col-span-8">
                                     {invoice.accountDate ? toDateInputValue(invoice.accountDate) : <span className="text-gray-400 italic">Ej bokförd</span>}
                                 </div>
                             </div>
 
                         </div>
                     </div>
+                )}
+            >
+                <div className="flex justify-between w-full mb-5">
+                    <div className="flex items-center gap-6">
+                        <ActionButton
+                            label="Tillbaka"
+                            icon={ArrowLeft}
+                            onClick={handleBackClick}
+                            accent="slate"
+                        />
+                        <ActionButton
+                            label="Spara"
+                            icon={Save}
+                            onClick={handleSave}
+                            accent="lime"
+                        />
+                        {invoice?.id !== 0 && (
+                            <ActionButton
+                                label="Skriv ut"
+                                icon={Printer}
+                                onClick={getPdf}
+                                accent="sky"
+                            />
+                        )}
+                    </div>
 
-                    <hr className="mt-5 border-gray-300" />
-                    <h2 className="text-sm text-center text-gray-700 mt-5">Meddelanden</h2>
-                    {messages.length === 0 ? (
-                        <p className="text-xs text-center font-light mt-4">Inga meddelanden</p>
-                    ) : (
-                        <ul className="mt-2 space-y-2">
-                            {messages.map((message, index) => (
-                                <li
-                                    key={index}
-                                    className={`text-center text-xs p-2 rounded border border-gray-200 ${message.type === 'error'
-                                        ? 'bg-red-100 text-red-700'
-                                        : message.type === 'warning'
-                                            ? 'bg-yellow-100 text-yellow-800'
-                                            : 'bg-green-100 text-green-700'
-                                        }`}
-                                >
-                                    {message.text}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
+                    <div className="flex items-center gap-6">
+                        {invoice?.id !== 0 && (
+                            <ActionButton
+                                label="Radera"
+                                icon={Trash2}
+                                onClick={() => setShowDeleteConfirm(true)}
+                                accent="rose"
+                            />
+                        )}
+                    </div>
                 </div>
 
-                <div className="flex-grow ps-10 pe-10 py-2">
-                    <div className="flex justify-between w-full mb-5">
-                        <div className="flex items-center gap-6">
-                            <ActionButton
-                                label="Tillbaka"
-                                icon={ArrowLeft}
-                                onClick={handleBackClick}
-                                accent="slate"
+                <div className="mt-8 flex flex-wrap items-start gap-x-15 gap-y-8">
+                    <div className="w-[350px] max-w-full min-w-0">
+                        <div className="flex items-center mb-[1px]">
+                            <span className="w-20 shrink-0 text-xs text-gray-500">Kund</span>
+                            <SearchCustomer
+                                key={`${invoice?.id}-${invoice?.customerId ?? ''}-${invoice?.customerName ?? ''}`}
+                                selectedCustomerName={invoice?.customerName ?? ''}
+                                selectedCustomerId={invoice?.customerId}
+                                disabled={customerSelectionDisabled}
+                                onCustomerSelect={handleCustomerSelect}
+                                onPendingSelectionChange={setCustomerSelectionPending}
+                                width="w-full"
+                                className="min-w-0 flex-1"
                             />
-                            <ActionButton
-                                label="Spara"
-                                icon={Save}
-                                onClick={handleSave}
-                                accent="lime"
+                        </div>
+                        <LabeledInput
+                            label="Adress"
+                            value={invoice?.address || ''}
+                            onChange={(value) => handleChange('address', value)}
+                            labelWidth="w-20"
+                            margintop="2"
+                        />
+                        <LabeledInput
+                            label=""
+                            value={invoice?.address2 || ''}
+                            onChange={(value) => handleChange('address2', value)}
+                            labelWidth="w-20"
+                            margintop="0"
+                        />
+                        <div className='flex space-x-1 w-full mt-[0px]'>
+                            <LabeledInput
+                                label="Postnr"
+                                value={invoice?.postalNr || ''}
+                                onChange={(value) => handleChange('postalNr', value)}
+                                labelWidth="w-20"
+                                margintop="0"
                             />
-                            {invoice?.id !== 0 && (
-                                <ActionButton
-                                    label="Skriv ut"
-                                    icon={Printer}
-                                    onClick={getPdf}
-                                    accent="sky"
-                                />
-                            )}
+                            <input
+                                name="city"
+                                value={invoice?.postalAddress || ''}
+                                onChange={(e) => handleChange('postalAddress', e.target.value)}
+                                className='text-xs w-2/3 border border-gray-300 rounded-sm mb-[1px] px-2 py-1 focus:outline-none bg-white' />
                         </div>
-
-                        <div className="flex items-center gap-6">
-                            {invoice?.id !== 0 && (
-                                <ActionButton
-                                    label="Radera"
-                                    icon={Trash2}
-                                    onClick={() => setShowDeleteConfirm(true)}
-                                    accent="rose"
-                                />
-                            )}
-                        </div>
+                        <LabeledInput
+                            label="Land"
+                            value={invoice?.country || ''}
+                            onChange={(value) => handleChange('country', value)}
+                            labelWidth="w-20"
+                            margintop="0"
+                        />
+                        <LabeledInput
+                            label="Momsreg.nr"
+                            value={invoice?.vatNr || ''}
+                            onChange={(value) => handleChange('vatNr', value)}
+                            labelWidth="w-20"
+                            margintop="0"
+                        />
                     </div>
-
-                    <div className="mt-8 grid grid-cols-[350px_350px_180px_1fr] gap-x-15 gap-y-8">
-                        <div>
-                            <LabeledInput
-                                label="Kund"
-                                value={invoice?.customerName || ''}
-                                onChange={(value) => handleChange('customerName', value)}
-                                labelWidth="w-20"
-                                margintop="0"
-                            />
-                            <LabeledInput
-                                label="Adress"
-                                value={invoice?.address || ''}
-                                onChange={(value) => handleChange('address', value)}
-                                labelWidth="w-20"
-                                margintop="0"
-                            />
-                            <LabeledInput
-                                label=""
-                                value={invoice?.address2 || ''}
-                                onChange={(value) => handleChange('address2', value)}
-                                labelWidth="w-20"
-                                margintop="0"
-                            />
-                            <div className='flex space-x-1 w-full mt-[0px]'>
-                                <LabeledInput
-                                    label="Postnr"
-                                    value={invoice?.postalNr || ''}
-                                    onChange={(value) => handleChange('postalNr', value)}
-                                    labelWidth="w-20"
-                                    margintop="0"
-                                />
-                                <input
-                                    name="city"
-                                    value={invoice?.postalAddress || ''}
-                                    onChange={(e) => handleChange('postalAddress', e.target.value)}
-                                    className='text-xs w-2/3 border border-gray-300 rounded-sm mb-[1px] px-2 py-1 focus:outline-none bg-white' />
-                            </div>
-                            <LabeledInput
-                                label="Land"
-                                value={invoice?.country || ''}
-                                onChange={(value) => handleChange('country', value)}
-                                labelWidth="w-20"
-                                margintop="0"
-                            />
-                            <LabeledInput
-                                label="Momsreg.nr"
-                                value={invoice?.vatNr || ''}
-                                onChange={(value) => handleChange('vatNr', value)}
-                                labelWidth="w-20"
-                                margintop="0"
-                            />
-                        </div>
-                        <div>
-                            <LabeledInput
-                                label="Var referens"
-                                value={invoice?.ourReference || ''}
-                                onChange={(value) => handleChange('ourReference', value)}
-                                labelWidth="w-25"
-                                margintop="0"
-                            />
-                            <LabeledInput
-                                label="Er referens"
-                                value={invoice?.yourReference || ''}
-                                onChange={(value) => handleChange('yourReference', value)}
-                                labelWidth="w-25"
-                                margintop="0"
-                            />
-                            <LabeledInput
-                                label="Ert ordernr."
-                                value={invoice?.yourOrderNr || ''}
-                                onChange={(value) => handleChange('yourOrderNr', value)}
-                                labelWidth="w-25"
-                                margintop="0"
-                            />
-                            <LabeledTextArea
-                                label="Vårt ordernr."
-                                value={invoice?.ourOrderNrFreeInvoice || ''}
-                                onChange={(value) => handleChange('ourOrderNrFreeInvoice', value)}
-                                labelWidth="w-25"
-                                margintop="0"
-                                height="h-12"
-                            />
-                        </div>
-                        <div>
-                            <LabeledSelect
-                                label="Valuta"
-                                value={invoice?.salesCurrencyId || ''}
-                                onChange={(value) => handleChange('salesCurrencyId', value)}
-                                labelWidth="w-20"
-                                margintop="0"
-                                items={currencies}
-                                disabled={currencies.length === 0}
-                            />
-                            <LabeledInput
-                                label="Fakt.dagar"
-                                value={invoice?.invoiceDays ?? ''}
-                                onChange={(value) => handleChange('invoiceDays', value)}
-                                labelWidth="w-20"
-                                margintop="0"
-                                type='number'
-                                decimals='0'
-                                integerOnly='true'
-                            />
-                            <LabeledInput
-                                label="Konto kundf."
-                                value={invoice?.account || ''}
-                                onChange={(value) => handleChange('account', value)}
-                                labelWidth="w-20"
-                                margintop="0"
-                            />
-                            <LabeledInput
-                                label="Konto moms"
-                                value={totals?.vatAccount || ''}
-                                onChange={(value) => handleChange('vatAccount', value)}
-                                labelWidth="w-20"
-                                margintop="0"
-                            />
-                            <LabeledSwitch
-                                field="invoiceOk"
-                                name="invoiceOk"
-                                label="Godkänd for bokf."
-                                value={Boolean(invoice?.invoiceOk)}
-                                onChange={(rowId, field, checked) => handleChange(field, checked)}
-                                labelWidth="w-20"
-                                marginTop={0}
-                            />
-                        </div>
-                        <div>
-                            <LabeledTextArea
-                                label="Bet.villkor"
-                                value={invoice?.termsOfPayment || ''}
-                                onChange={(value) => handleChange('termsOfPayment', value)}
-                                labelWidth="w-15"
-                                margintop="0"
-                                height="h-20"
-                            />
-                            <LabeledTextArea
-                                label="Intern not"
-                                value={invoice?.noteInternal || ''}
-                                onChange={(value) => handleChange('noteInternal', value)}
-                                labelWidth="w-15"
-                                margintop="0"
-                                height="h-10"
-                            />
-                        </div>
+                    <div className="w-[300px] max-w-full min-w-0">
+                        <LabeledInput
+                            label="Vår referens"
+                            value={invoice?.ourReference || ''}
+                            onChange={(value) => handleChange('ourReference', value)}
+                            labelWidth="w-25"
+                            margintop="0"
+                        />
+                        <LabeledInput
+                            label="Er referens"
+                            value={invoice?.yourReference || ''}
+                            onChange={(value) => handleChange('yourReference', value)}
+                            labelWidth="w-25"
+                            margintop="0"
+                        />
+                        <LabeledInput
+                            label="Ert ordernr."
+                            value={invoice?.yourOrderNr || ''}
+                            onChange={(value) => handleChange('yourOrderNr', value)}
+                            labelWidth="w-25"
+                            margintop="0"
+                        />
+                        <LabeledTextArea
+                            label="Vårt ordernr."
+                            value={invoice?.ourOrderNrFreeInvoice || ''}
+                            onChange={(value) => handleChange('ourOrderNrFreeInvoice', value)}
+                            labelWidth="w-25"
+                            margintop="0"
+                            height="h-12"
+                        />
                     </div>
+                    <div className="w-[150px] max-w-full min-w-0">
+                        <LabeledSelect
+                            label="Valuta"
+                            value={invoice?.salesCurrencyId || ''}
+                            onChange={(value) => handleChange('salesCurrencyId', value)}
+                            labelWidth="w-20"
+                            margintop="0"
+                            items={currencies}
+                            disabled={currencies.length === 0}
+                        />
+                        <LabeledInput
+                            label="Fakt.dagar"
+                            value={invoice?.invoiceDays ?? ''}
+                            onChange={(value) => handleChange('invoiceDays', value)}
+                            labelWidth="w-20"
+                            margintop="0"
+                            type='number'
+                            decimals='0'
+                            integerOnly='true'
+                        />
+                        <LabeledInput
+                            label="Konto kundf."
+                            value={invoice?.account || ''}
+                            onChange={(value) => handleChange('account', value)}
+                            labelWidth="w-20"
+                            margintop="0"
+                        />
+                        <LabeledInput
+                            label="Konto moms"
+                            value={totals?.vatAccount || ''}
+                            onChange={(value) => handleChange('vatAccount', value)}
+                            labelWidth="w-20"
+                            margintop="0"
+                        />
+                        <LabeledSwitch
+                            field="invoiceOk"
+                            name="invoiceOk"
+                            label="Godkänd for bokf."
+                            value={Boolean(invoice?.invoiceOk)}
+                            onChange={(rowId, field, checked) => handleChange(field, checked)}
+                            labelWidth="w-20"
+                            marginTop={0}
+                        />
+                    </div>
+                    <div className="min-w-0 basis-[150px] grow">
+                        <LabeledTextArea
+                            label="Bet.villkor"
+                            value={invoice?.termsOfPayment || ''}
+                            onChange={(value) => handleChange('termsOfPayment', value)}
+                            popupItems={paymentTerms}
+                            popupOnSelect={(term) => {
+                                handleChange('termsOfPayment', term.name ?? '');
+                                handleChange('invoiceDays', term.paymentDays ?? null);
+                            }}
+                            labelWidth="w-12"
+                            margintop="0"
+                            height="h-20"
+                        />
+                        <LabeledTextArea
+                            label="Intern not"
+                            value={invoice?.noteInternal || ''}
+                            onChange={(value) => handleChange('noteInternal', value)}
+                            labelWidth="w-19"
+                            margintop="0"
+                            height="h-10"
+                        />
+                    </div>
+                </div>
 
-                    <div className="mt-8 flex items-start gap-6">
-                        <div className="min-w-0 flex-1">
-                            <table className="w-full table-fixed text-xs border-collapse" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
-                                <thead>
-                                    <tr className="border-b border-gray-300">
-                                        <th className="w-[3%] py-2 text-center text-tiny font-medium text-gray-400">Sort</th>
-                                        <th className="w-[24%] px-4 py-2 text-left text-tiny font-medium text-gray-400">Text</th>
-                                        <th className="w-[7%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Vikt</th>
-                                        <th className="w-[7%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Antal</th>
-                                        <th className="w-[8%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">APris</th>
-                                        <th className="w-[8%] pr-4 py-2 text-right text-tiny font-medium text-gray-400">Enhet</th>
-                                        <th className="w-[9%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Summa</th>
-                                        <th className="w-[8%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Konto</th>
-                                        <th className="w-[8%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Res.enh</th>
-                                        <th className="w-[5%] px-2 py-2 text-center text-tiny font-medium text-gray-400">Moms</th>
-                                        <th className="w-[7%] px-2 py-2 text-center text-tiny font-medium text-gray-400">Atgard</th>
+                <div className="mt-8 flex items-start gap-6 pb-20">
+                    <div className="min-w-0 flex-1">
+                        <table className="w-full table-fixed text-xs border-collapse" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                            <thead>
+                                <tr className="border-b border-gray-300">
+                                    <th className="w-[3%] py-2 text-center text-tiny font-medium text-gray-400">Sort</th>
+                                    <th className="w-[24%] px-4 py-2 text-left text-tiny font-medium text-gray-400">Text</th>
+                                    <th className="w-[7%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Vikt</th>
+                                    <th className="w-[7%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Antal</th>
+                                    <th className="w-[8%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">APris</th>
+                                    <th className="w-[8%] pr-4 py-2 text-right text-tiny font-medium text-gray-400">Enhet</th>
+                                    <th className="w-[9%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Summa</th>
+                                    <th className="w-[8%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Konto</th>
+                                    <th className="w-[8%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Res.enh</th>
+                                    <th className="w-[5%] px-2 py-2 text-center text-tiny font-medium text-gray-400">Moms</th>
+                                    <th className="w-[7%] px-2 py-2 text-center text-tiny font-medium text-gray-400">Atgard</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white">
+                                {visibleInvoiceRows.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={11} className="px-2 py-4 text-center text-gray-400">Inga rader registrerade.</td>
                                     </tr>
-                                </thead>
-                                <tbody className="bg-white">
-                                    {visibleInvoiceRows.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={11} className="px-2 py-4 text-center text-gray-400">Inga rader registrerade.</td>
-                                        </tr>
-                                    ) : (
-                                        visibleInvoiceRows.map((row, index) => {
-                                            const idOrTempId = getInvoiceRowIdentity(row);
+                                ) : (
+                                    visibleInvoiceRows.map((row, index) => {
+                                        const idOrTempId = getInvoiceRowIdentity(row);
 
-                                            return (
-                                                <tr key={idOrTempId} className="border-b border-gray-100">
-                                                    <td className="py-0 text-xs text-center text-gray-600">{row.sortOrder}</td>
-                                                    <td className="p-0">
-                                                        <textarea
-                                                            value={row.text ?? ''}
-                                                            onChange={(e) => {
-                                                                handleInvoiceRowChange(idOrTempId, 'text', e.target.value);
-                                                                autoResizeTextarea(e.target);
-                                                            }}
-                                                            onInput={(e) => autoResizeTextarea(e.target)}
-                                                            ref={(element) => autoResizeTextarea(element)}
-                                                            rows={1}
-                                                            className="w-full h-full text-xs mb-[-4px] px-3 py-1 bg-transparent border-0 focus:outline-none focus:bg-white focus:border focus:border-blue-400 resize-none overflow-hidden leading-4"
+                                        return (
+                                            <tr key={idOrTempId} className="border-b border-gray-100">
+                                                <td className="py-0 text-xs text-center text-gray-600">{row.sortOrder}</td>
+                                                <td className="p-0">
+                                                    <textarea
+                                                        value={row.text ?? ''}
+                                                        onChange={(e) => {
+                                                            handleInvoiceRowChange(idOrTempId, 'text', e.target.value);
+                                                            autoResizeTextarea(e.target);
+                                                        }}
+                                                        onInput={(e) => autoResizeTextarea(e.target)}
+                                                        ref={(element) => autoResizeTextarea(element)}
+                                                        rows={1}
+                                                        className="w-full h-full text-xs mb-[-4px] px-3 py-1 bg-transparent border-0 focus:outline-none focus:bg-white focus:border focus:border-blue-400 resize-none overflow-hidden leading-4"
+                                                    />
+                                                </td>
+                                                <td className="p-0 relative">
+                                                    <div className="absolute inset-0 border border-transparent bg-white focus-within:border-blue-400">
+                                                        <NumberInput
+                                                            rowId={idOrTempId}
+                                                            field="weight"
+                                                            value={row.weight ?? ''}
+                                                            decimals={0}
+                                                            onChange={(rowId, field, value) => handleInvoiceRowChange(rowId, field, value)}
+                                                            className="w-full h-full text-xs border-0 text-right focus:outline-none"
                                                         />
-                                                    </td>
-                                                    <td className="p-0 relative">
-                                                        <div className="absolute inset-0 border border-transparent bg-white focus-within:border-blue-400">
-                                                            <NumberInput
-                                                                rowId={idOrTempId}
-                                                                field="weight"
-                                                                value={row.weight ?? ''}
-                                                                decimals={0}
-                                                                onChange={(rowId, field, value) => handleInvoiceRowChange(rowId, field, value)}
-                                                                className="w-full h-full text-xs border-0 text-right focus:outline-none"
-                                                            />
-                                                        </div>
-                                                    </td>
-                                                    <td className="p-0 relative">
-                                                        <div className="absolute inset-0 border border-transparent bg-white focus-within:border-blue-400">
-                                                            <NumberInput
-                                                                rowId={idOrTempId}
-                                                                field="nrOf"
-                                                                value={row.nrOf ?? ''}
-                                                                decimals={0}
-                                                                onChange={(rowId, field, value) => handleInvoiceRowChange(rowId, field, value)}
-                                                                className="w-full h-full text-xs border-0 text-right focus:outline-none"
-                                                            />
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-0 relative">
-                                                        <div className="absolute inset-0 border border-transparent bg-white focus-within:border-blue-400">
-                                                            <NumberInput
-                                                                rowId={idOrTempId}
-                                                                field="unitPrice"
-                                                                value={row.unitPrice ?? ''}
-                                                                decimals={2}
-                                                                onChange={(rowId, field, value) => handleInvoiceRowChange(rowId, field, value)}
-                                                                className="w-full h-full text-xs border-0 text-right focus:outline-none"
-                                                            />
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-0 relative">
-                                                        <div className="absolute inset-0 border border-transparent bg-white focus-within:border-blue-400">
-                                                            <select
-                                                                value={row.unitId || ''}
-                                                                onChange={(e) => handleInvoiceRowChange(idOrTempId, 'unitId', e.target.value)}
-                                                                className="w-full h-full text-xs text-right border-0 focus:outline-none"
-                                                            >
-                                                                <option value=""></option>
-                                                                {units.map((unit) => (
-                                                                    <option key={unit.id} value={unit.id}>{unit.name}</option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-0 relative">
-                                                        <div className="absolute inset-0 border border-transparent bg-white focus-within:border-blue-400">
-                                                            <NumberInput
-                                                                rowId={idOrTempId}
-                                                                field="sum"
-                                                                value={row.sum ?? ''}
-                                                                decimals={2}
-                                                                onChange={(rowId, field, value) => handleInvoiceRowChange(rowId, field, value)}
-                                                                className="w-full h-full text-xs border-0 text-right focus:outline-none"
-                                                            />
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-0 relative">
-                                                        <div className="absolute inset-0 border border-transparent bg-white focus-within:border-blue-400">
-                                                            <input
-                                                                value={row.accountNr ?? ''}
-                                                                onChange={(e) => handleInvoiceRowChange(idOrTempId, 'accountNr', e.target.value)}
-                                                                className="w-full h-full text-xs pr-2 border-0 text-right focus:outline-none"
-                                                            />
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-0 relative">
-                                                        <div className="absolute inset-0 border border-transparent bg-white focus-within:border-blue-400">
-                                                            <input
-                                                                value={row.costCenter ?? ''}
-                                                                onChange={(e) => handleInvoiceRowChange(idOrTempId, 'costCenter', e.target.value)}
-                                                                className="w-full h-full text-xs pr-2 border-0 text-right focus:outline-none"
-                                                            />
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-0 relative">
-                                                        <div className="absolute inset-0 flex items-center justify-center border border-transparent bg-white focus-within:border-blue-400">
-                                                            <SelectCircleCheckbox
-                                                                checked={Boolean(row.vatGround)}
-                                                                onChange={() => handleInvoiceRowChange(idOrTempId, 'vatGround', !row.vatGround)}
-                                                                ariaLabel="Momsgrund"
-                                                            />
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-0 relative">
-                                                        <div className="absolute inset-0 flex items-center justify-center border border-transparent bg-white focus-within:border-blue-400">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => removeInvoiceRow(idOrTempId)}
-                                                                className="text-red-600 hover:underline"
-                                                            >
-                                                                Ta bort
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })
-                                    )}
-                                    {/* Empty row for adding new entries */}
-                                    <tr className="border-b border-gray-100">
-                                        <td className="px-2 py-0.5 text-xs text-gray-400"></td>
-                                        <td colSpan="10" className="px-2 py-2">
-                                            <button
-                                                type="button"
-                                                onClick={addInvoiceRow}
-                                                className="text-xs text-gray-400 hover:text-gray-600"
-                                            >
-                                                + Lägg till rad
-                                            </button>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                            {/* Summary Section */}
-                            {visibleInvoiceRows.length > 0 && (
-                                <div className="flex justify-end mt-6">
-                                    <div className="border border-gray-300 bg-yellow-50 px-6 py-3">
-                                        <div className="grid grid-cols-4 gap-8 text-xs">
-                                            <div className="text-left">
-                                                <div className="text-gray-500 font-medium mb-1">BELOPP</div>
-                                                <div className=" text-gray-800 font-semibold">
-                                                    {totals.sumExVat.toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SEK
-                                                </div>
+                                                    </div>
+                                                </td>
+                                                <td className="p-0 relative">
+                                                    <div className="absolute inset-0 border border-transparent bg-white focus-within:border-blue-400">
+                                                        <NumberInput
+                                                            rowId={idOrTempId}
+                                                            field="nrOf"
+                                                            value={row.nrOf ?? ''}
+                                                            decimals={0}
+                                                            onChange={(rowId, field, value) => handleInvoiceRowChange(rowId, field, value)}
+                                                            className="w-full h-full text-xs border-0 text-right focus:outline-none"
+                                                        />
+                                                    </div>
+                                                </td>
+                                                <td className="px-0 relative">
+                                                    <div className="absolute inset-0 border border-transparent bg-white focus-within:border-blue-400">
+                                                        <NumberInput
+                                                            rowId={idOrTempId}
+                                                            field="unitPrice"
+                                                            value={row.unitPrice ?? ''}
+                                                            decimals={2}
+                                                            onChange={(rowId, field, value) => handleInvoiceRowChange(rowId, field, value)}
+                                                            className="w-full h-full text-xs border-0 text-right focus:outline-none"
+                                                        />
+                                                    </div>
+                                                </td>
+                                                <td className="px-0 relative">
+                                                    <div className="absolute inset-0 border border-transparent bg-white focus-within:border-blue-400">
+                                                        <select
+                                                            value={row.unitId || ''}
+                                                            onChange={(e) => handleInvoiceRowChange(idOrTempId, 'unitId', e.target.value)}
+                                                            className="w-full h-full text-xs text-right border-0 focus:outline-none"
+                                                        >
+                                                            <option value=""></option>
+                                                            {units.map((unit) => (
+                                                                <option key={unit.id} value={unit.id}>{unit.name}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                </td>
+                                                <td className="px-0 relative">
+                                                    <div className="absolute inset-0 border border-transparent bg-white focus-within:border-blue-400">
+                                                        <NumberInput
+                                                            rowId={idOrTempId}
+                                                            field="sum"
+                                                            value={row.sum ?? ''}
+                                                            decimals={2}
+                                                            onChange={(rowId, field, value) => handleInvoiceRowChange(rowId, field, value)}
+                                                            className="w-full h-full text-xs border-0 text-right focus:outline-none"
+                                                        />
+                                                    </div>
+                                                </td>
+                                                <td className="px-0 relative">
+                                                    <div className="absolute inset-0 border border-transparent bg-white focus-within:border-blue-400">
+                                                        <input
+                                                            value={row.accountNr ?? ''}
+                                                            onChange={(e) => handleInvoiceRowChange(idOrTempId, 'accountNr', e.target.value)}
+                                                            className="w-full h-full text-xs pr-2 border-0 text-right focus:outline-none"
+                                                        />
+                                                    </div>
+                                                </td>
+                                                <td className="px-0 relative">
+                                                    <div className="absolute inset-0 border border-transparent bg-white focus-within:border-blue-400">
+                                                        <input
+                                                            value={row.costCenter ?? ''}
+                                                            onChange={(e) => handleInvoiceRowChange(idOrTempId, 'costCenter', e.target.value)}
+                                                            className="w-full h-full text-xs pr-2 border-0 text-right focus:outline-none"
+                                                        />
+                                                    </div>
+                                                </td>
+                                                <td className="px-0 relative">
+                                                    <div className="absolute inset-0 flex items-center justify-center border border-transparent bg-white focus-within:border-blue-400">
+                                                        <SelectCircleCheckbox
+                                                            checked={Boolean(row.vatGround)}
+                                                            onChange={() => handleInvoiceRowChange(idOrTempId, 'vatGround', !row.vatGround)}
+                                                            ariaLabel="Momsgrund"
+                                                        />
+                                                    </div>
+                                                </td>
+                                                <td className="px-0 relative">
+                                                    <div className="absolute inset-0 flex items-center justify-center border border-transparent bg-white focus-within:border-blue-400">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeInvoiceRow(idOrTempId)}
+                                                            className="text-red-600 hover:underline"
+                                                        >
+                                                            Ta bort
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+                                {/* Empty row for adding new entries */}
+                                <tr className="border-b border-gray-100">
+                                    <td className="px-2 py-0.5 text-xs text-gray-400"></td>
+                                    <td colSpan="10" className="px-2 py-2">
+                                        <button
+                                            type="button"
+                                            onClick={addInvoiceRow}
+                                            className="text-xs text-gray-400 hover:text-gray-600"
+                                        >
+                                            + Lägg till rad
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        {/* Summary Section */}
+                        {visibleInvoiceRows.length > 0 && (
+                            <div className="flex justify-end mt-6">
+                                <div className="border border-gray-300 bg-lime-50 px-6 py-3 rounded-sm shadow-sm">
+                                    <div className="grid grid-cols-4 gap-8 text-xs">
+                                        <div className="text-left">
+                                            <div className="text-gray-500 font-medium mb-1">BELOPP</div>
+                                            <div className=" text-gray-800 font-semibold">
+                                                {totals.sumExVat.toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SEK
                                             </div>
-                                            <div className="text-left">
-                                                <div className="text-gray-500 font-medium mb-1">MOMS</div>
-                                                <div className="text-gray-800 font-semibold">
-                                                    {totals.vat.toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SEK
-                                                </div>
+                                        </div>
+                                        <div className="text-left">
+                                            <div className="text-gray-500 font-medium mb-1">MOMS</div>
+                                            <div className="text-gray-800 font-semibold">
+                                                {totals.vat.toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SEK
                                             </div>
-                                            <div className="text-left">
-                                                <div className="text-gray-500 font-medium mb-1">ÖRESUTJ.</div>
-                                                <div className="text-gray-800 font-semibold">
-                                                    {totals.roundingValue.toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SEK
-                                                </div>
+                                        </div>
+                                        <div className="text-left">
+                                            <div className="text-gray-500 font-medium mb-1">ÖRESUTJ.</div>
+                                            <div className="text-gray-800 font-semibold">
+                                                {totals.roundingValue.toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SEK
                                             </div>
-                                            <div className="text-left">
-                                                <div className="text-gray-500 font-medium mb-1">ATT BETALA</div>
-                                                <div className="text-gray-800 font-semibold">
-                                                    {totals.sumInclVat.toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SEK
-                                                </div>
+                                        </div>
+                                        <div className="text-left">
+                                            <div className="text-gray-500 font-medium mb-1">ATT BETALA</div>
+                                            <div className="text-gray-800 font-semibold">
+                                                {totals.sumInclVat.toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SEK
                                             </div>
                                         </div>
                                     </div>
                                 </div>
-                            )}
-                        </div>
-
-                        <div className="w-[350px] shrink-0">
-                            <table className="w-full table-fixed text-xs border-collapse" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
-                                <thead>
-                                    <tr className="border-b border-gray-300">
-                                        <th className="w-[44%] px-2 py-2 text-left text-tiny font-medium text-gray-400">Bokf.rad</th>
-                                        <th className="w-[26%] px-2 py-2 text-right text-tiny font-medium text-gray-400">Summa</th>
-                                        <th className="w-[18%] px-2 py-2 text-right text-tiny font-medium text-gray-400">Konto</th>
-                                        <th className="w-[12%] px-2 py-2 text-right text-tiny font-medium text-gray-400">Res</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="bg-white">
-                                    {(invoice?.invoiceAccountRows ?? []).length === 0 ? (
-                                        <tr>
-                                            <td colSpan={4} className="px-2 py-4 text-center text-gray-400">Inga bokföringsrader.</td>
-                                        </tr>
-                                    ) : (
-                                        (invoice.invoiceAccountRows ?? []).map((row) => {
-                                            const accountRowKey = (Number(row?.id) || 0) > 0
-                                                ? row.id
-                                                : (row.tempKey ?? `${row.text ?? ''}-${row.accountNr ?? ''}-${row.costCenter ?? ''}`);
-                                            const sum = parseNullableNumber(row.sum) ?? 0;
-
-                                            return (
-                                                <tr key={accountRowKey} className="border-b border-gray-100">
-                                                    <td className="px-2 py-1 text-gray-700">{row.text ?? ''}</td>
-                                                    <td className="px-2 py-1 text-right text-gray-800">{sum.toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                                    <td className="px-2 py-1 text-right text-gray-700">{row.accountNr ?? ''}</td>
-                                                    <td className="px-2 py-1 text-right text-gray-700">{row.costCenter ?? ''}</td>
-                                                </tr>
-                                            );
-                                        })
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
+                            </div>
+                        )}
                     </div>
 
+                    <div className="w-[350px] shrink-0">
+                        <table className="w-full table-fixed text-xs border-collapse" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                            <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
+                                <tr className="border-b border-gray-300">
+                                    <th className="w-[44%] px-2 py-2 text-left text-tiny font-medium text-gray-400">Bokf.rad</th>
+                                    <th className="w-[26%] px-2 py-2 text-right text-tiny font-medium text-gray-400">Summa</th>
+                                    <th className="w-[18%] px-2 py-2 text-right text-tiny font-medium text-gray-400">Konto</th>
+                                    <th className="w-[12%] px-2 py-2 text-right text-tiny font-medium text-gray-400">Res</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white">
+                                {(invoice?.invoiceAccountRows ?? []).length === 0 ? (
+                                    <tr>
+                                        <td colSpan={4} className="px-2 py-4 text-center text-gray-400">Inga bokföringsrader.</td>
+                                    </tr>
+                                ) : (
+                                    (invoice.invoiceAccountRows ?? []).map((row, index) => {
+                                        const accountRowKey = (Number(row?.id) || 0) > 0
+                                            ? row.id
+                                            : (row.tempKey ?? `${row.text ?? ''}-${row.accountNr ?? ''}-${row.costCenter ?? ''}`);
+                                        const sum = parseNullableNumber(row.sum) ?? 0;
+
+                                        return (
+                                            <tr key={accountRowKey} className={`border-b border-gray-100 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}>
+                                                <td className="px-2 py-1 text-gray-700">{row.text ?? ''}</td>
+                                                <td className="px-2 py-1 text-right text-gray-800">{sum.toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                                <td className="px-2 py-1 text-right text-gray-700">{row.accountNr ?? ''}</td>
+                                                <td className="px-2 py-1 text-right text-gray-700">{row.costCenter ?? ''}</td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
+
+            </OrderDetailLayout>
         </div>
     );
 };

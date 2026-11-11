@@ -4,6 +4,7 @@ import ActionButton from '../../components/ActionButton'
 import LabeledInput from '../../components/LabeledInput'
 import LabeledTextArea from '../../components/LabeledTextArea'
 import apiClient from '../../config/apiClient'
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard'
 
 const pageSize = 100
 const tableFontStyle = { fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }
@@ -26,6 +27,7 @@ const PalletFactors = () => {
     const [savingIds, setSavingIds] = useState([])
     const [message, setMessage] = useState(null)
     const requestNumber = useRef(0)
+    useAppUpdateGuard(savingIds.length > 0 || items.some((item) => item.palletFactors !== item.originalPalletFactors))
 
     const loadPage = async (searchFilters, nextPage) => {
         const currentRequestNumber = ++requestNumber.current
@@ -223,7 +225,7 @@ const PalletFactors = () => {
                             <col style={{ width: '50%' }} />
                             <col style={{ width: '14%' }} />
                         </colgroup>
-                        <thead>
+                        <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                             <tr className="text-tiny text-gray-500 text-left">
                                 <th scope="col" className="px-2 pt-1 pb-2 text-tiny font-medium text-gray-500">Längd från</th>
                                 <th scope="col" className="px-2 pt-1 pb-2 text-tiny font-medium text-gray-500">Längd till</th>
@@ -234,12 +236,12 @@ const PalletFactors = () => {
                             </tr>
                         </thead>
                         <tbody className={`${!loading && items.length > 0 ? 'bg-white' : 'bg-transparent'}`}>
-                            {items.map((item) => {
+                            {items.map((item, index) => {
                                 const isSaving = savingIds.includes(item.id)
                                 const hasChanges = item.palletFactors !== item.originalPalletFactors
 
                                 return (
-                                    <tr key={item.id} className="h-6 border-b border-gray-100 hover:bg-lime-200/70">
+                                    <tr key={item.id} className={`h-6 border-b border-gray-100 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-lime-200/70`}>
                                         <td className="truncate px-2 py-1 align-middle text-gray-800">{item.lengthFrom.toLocaleString('sv-SE')}</td>
                                         <td className="truncate px-2 py-1 align-middle text-gray-800">{item.lengthTo.toLocaleString('sv-SE')}</td>
                                         <td className="truncate px-2 py-1 align-middle text-gray-800">{item.widthFrom.toLocaleString('sv-SE')}</td>

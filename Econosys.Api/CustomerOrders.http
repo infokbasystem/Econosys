@@ -1,0 +1,11 @@
+@baseUrl = https://localhost:5001
+@token = replace-with-access-token
+@customerOrderId = 1
+
+### Customer order acknowledgement PDF in the customer's language
+GET {{baseUrl}}/api/pdf/customerorder/{{customerOrderId}}
+Authorization: Bearer {{token}}
+
+### Unknown customer order PDF returns 404
+GET {{baseUrl}}/api/pdf/customerorder/2147483647
+Authorization: Bearer {{token}}

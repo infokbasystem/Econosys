@@ -1,9 +1,9 @@
 import { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getOrderFlowSections } from './orderFlowNavigationSections.js';
+import { getOrderFlowSections, getVisibleOrderFlowItems } from './orderFlowNavigationSections.js';
 
 const FlowRow = ({ item, section, isCurrent }) => {
-    const number = item.number || String(item.id);
+    const number = item.number || (['supplierOrder', 'customerOrder'].includes(item.type) ? '-' : String(item.id));
     const text = item.type === 'product'
         ? item.name || String(item.id)
         : [item.type !== 'calculation' ? number : '', item.supplierName, item.customerName, item.displayDate]
@@ -40,7 +40,8 @@ const FlowSection = ({ section, currentEntityType, currentEntityId }) => {
     const [showAll, setShowAll] = useState(false);
     const headingId = useId();
     const listId = useId();
-    const visibleItems = showAll || !section.limit ? section.items : section.items.slice(0, section.limit);
+    const visibleItems = getVisibleOrderFlowItems(section, currentEntityType, currentEntityId, showAll);
+    const hasHiddenItems = visibleItems.length < section.items.length;
 
     return (
         <section aria-labelledby={headingId}>
@@ -54,7 +55,7 @@ const FlowSection = ({ section, currentEntityType, currentEntityId }) => {
                     </li>
                 ))}
             </ul>
-            {section.limit && section.items.length > section.limit && (
+            {section.limit && (showAll || hasHiddenItems) && (
                 <button
                     type="button"
                     className="rounded-sm px-1 py-1 text-xs text-red-600 hover:underline focus-visible:outline-2 focus-visible:outline-lime-700"

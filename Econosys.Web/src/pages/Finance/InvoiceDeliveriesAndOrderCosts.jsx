@@ -1266,7 +1266,7 @@ const InvoiceDeliveriesAndOrderCosts = () => {
             {viewMode === 'list' && (
                 <div className="border-t border-gray-300 py-1 mt-4 flex-1 overflow-auto" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                     <table className="w-full border-collapse text-xs">
-                        <thead>
+                        <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                             <tr>
                                 {listColumns.map((column) => (
                                     <th
@@ -1292,12 +1292,12 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                         <tbody className="divide-y divide-gray-100 bg-white">
                             {showSkeleton ? (
                                 <InvoiceTableSkeleton mode="list" />
-                            ) : sortedListRows.map((row) => {
+                            ) : sortedListRows.map((row, index) => {
                                 const rowSelectionIds = row.selectionKeys?.length ? row.selectionKeys : [buildSelectionKey(row.type, row.id)];
                                 const rowChecked = rowSelectionIds.every((id) => checkedDeliveries[id]);
 
                                 return (
-                                    <tr key={row.rowKey} className={'h-7 cursor-pointer border-b border-gray-100 hover:bg-amber-50 ' + (rowChecked ? 'bg-red-50 hover:bg-red-100' : '')}>
+                                    <tr key={row.rowKey} className={`h-7 cursor-pointer border-b border-gray-100 ${rowChecked ? 'bg-red-50 hover:bg-red-100' : `${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-amber-50`}`}>
                                         <td className="px-4 ">
                                             <SelectCircleCheckbox
                                                 checked={rowChecked}

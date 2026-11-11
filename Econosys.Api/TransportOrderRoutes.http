@@ -1,0 +1,19 @@
+@baseUrl = http://localhost:5000
+@transportOrderId = 1
+@deliveryId = 1
+
+### Preview unsaved delivery ordering without replacing saved legs
+POST {{baseUrl}}/api/transportorder/{{transportOrderId}}/route-preview
+Content-Type: application/json
+
+{
+  "deliveries": [
+    { "id": {{deliveryId}}, "sortOrder": 1 }
+  ]
+}
+
+### Recalculate and persist the saved transport order's legs
+POST {{baseUrl}}/api/transportorder/{{transportOrderId}}/route/recalculate
+
+### Invalid transport order
+POST {{baseUrl}}/api/transportorder/999999999/route/recalculate

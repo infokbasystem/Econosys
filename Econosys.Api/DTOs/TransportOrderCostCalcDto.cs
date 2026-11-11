@@ -21,6 +21,7 @@ namespace Econosys.Api.DTOs
         public int Id { get; set; }
         public int? TransportOrderCostCalcId { get; set; }
         public int? SupplierOrderId { get; set; }
+        public string? SupplierOrderNr { get; set; }
         public decimal? CaclulationInternationalCost { get; set; }
         public decimal? CaclulationDomesticCost { get; set; }
         public decimal? CaclulationFtl { get; set; }

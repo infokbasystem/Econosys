@@ -2,10 +2,26 @@
   "navigationFallback": {
     "rewrite": "/index.html",
     "exclude": [
+      "/version.json",
       "/*.{css,js,map,png,jpg,jpeg,gif,svg,ico,webp,woff,woff2,ttf,eot}"
     ]
   },
+  "globalHeaders": {
+    "Cache-Control": "no-store, max-age=0"
+  },
   "routes": [
+    {
+      "route": "/assets/*",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
+    },
+    {
+      "route": "/version.json",
+      "headers": {
+        "Cache-Control": "no-store, max-age=0"
+      }
+    },
     {
       "route": "/*",
       "allowedRoles": ["anonymous"]

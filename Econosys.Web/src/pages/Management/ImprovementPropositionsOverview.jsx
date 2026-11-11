@@ -244,10 +244,10 @@ const ImprovementPropositionsOverview = () => {
         return base + 'hover:bg-gray-50';
     };
 
-    const getClosedRowClass = (row) => {
+    const getClosedRowClass = (row, index) => {
         const base = 'cursor-pointer border-b border-gray-100 transition-colors ';
         if (row.id === selectedClosedId) return base + 'bg-blue-50';
-        return base + 'hover:bg-gray-50';
+        return base + `${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100`;
     };
 
     const showOpenSkeleton = openLoading;
@@ -406,7 +406,7 @@ const ImprovementPropositionsOverview = () => {
                                 <col key={col.key} {...(col.width ? { style: { width: col.width } } : {})} />
                             ))}
                         </colgroup>
-                        <thead>
+                        <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                             <tr>
                                 {closedColumns.map((col) => (
                                     <th
@@ -446,11 +446,11 @@ const ImprovementPropositionsOverview = () => {
                                     </td>
                                 </tr>
                             ) : (
-                                closedRows.map((item) => (
+                                closedRows.map((item, index) => (
                                     <tr
                                         key={item.id}
                                         onClick={() => setSelectedClosedId((prev) => (prev === item.id ? null : item.id))}
-                                        className={getClosedRowClass(item)}
+                                        className={getClosedRowClass(item, index)}
                                     >
                                         <td className="truncate px-2 py-1 text-gray-800">
                                             <button

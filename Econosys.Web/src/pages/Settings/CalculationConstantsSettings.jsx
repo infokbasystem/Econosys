@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Save } from 'lucide-react';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import LabeledInput from '../../components/LabeledInput';
 import ActionButton from '../../components/ActionButton';
 
@@ -54,9 +55,11 @@ const mapFormToPayload = (form) => ({
 
 const CalculationConstantsSettings = () => {
     const [form, setForm] = useState(defaultForm);
+    const [originalForm, setOriginalForm] = useState(defaultForm);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState(null);
+    useAppUpdateGuard(isSaving || JSON.stringify(form) !== JSON.stringify(originalForm));
 
     const updateField = (field, value) => {
         setForm((prev) => ({ ...prev, [field]: value }));
@@ -68,9 +71,11 @@ const CalculationConstantsSettings = () => {
         try {
             const response = await apiClient.get('/calculationvariables');
             setForm(mapDtoToForm(response.data));
+            setOriginalForm(mapDtoToForm(response.data));
         } catch (error) {
             if (error.response?.status === 404) {
                 setForm(defaultForm);
+                setOriginalForm(defaultForm);
             } else {
                 setMessage({ type: 'error', text: 'Kunde inte hämta kalkylkonstanter.' });
             }
@@ -90,6 +95,7 @@ const CalculationConstantsSettings = () => {
             const payload = mapFormToPayload(form);
             const response = await apiClient.put('/calculationvariables', payload);
             setForm(mapDtoToForm(response.data));
+            setOriginalForm(mapDtoToForm(response.data));
             setMessage({ type: 'success', text: 'Kalkylkonstanter sparades.' });
         } catch (error) {
             console.error('Failed to save calculation variables:', error);

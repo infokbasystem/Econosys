@@ -1,14 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft, Printer, Save } from 'lucide-react';
 import { useBlocker, useLocation, useNavigate, useParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import ConfirmationModal from '../../components/ConfirmationModal';
 import ActionButton from '../../components/ActionButton';
-import OrderNavigationTree from '../../components/OrderNavigationTree';
+import EntityOrderFlowNavigation from '../../components/EntityOrderFlowNavigation';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
+import useDocumentTitle from '../../hooks/useDocumentTitle';
 import OrderCost from '../../components/OrderCost';
 import OrderHistory from '../../components/OrderHistory';
 import LabeledDatePicker from '../../components/LabeledDatePicker';
@@ -18,9 +19,12 @@ import LabeledReactSelect from '../../components/LabeledReactSelect';
 import LabeledTextArea from '../../components/LabeledTextArea';
 import NumberInput from '../../components/NumberInput';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { formatDateTime } from '../../helpers/dateUtils';
 import { parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
+import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
+import { usePdf } from '../../contexts/PdfContext';
 
 const toArray = (value) => (Array.isArray(value) ? value : []);
 const toInputValue = (value) => (value == null ? '' : String(value));
@@ -91,6 +95,7 @@ const buildOrderCostPayload = (row) => ({
 const createNewCustomerOrderModel = () => ({
     id: 0,
     customerOrderNr: '',
+    yourOrderNr: '',
     supplierOrderId: null,
     supplierOrderNr: '',
     customerId: null,
@@ -128,8 +133,8 @@ const renderMetaRow = (label, value, userName) => {
 
     return (
         <div className="grid grid-cols-21 gap-1 mx-2">
-            <div className="col-span-5"><span className="font-medium">{label}</span></div>
-            <div className="col-span-8">{formatDateTime(value)}</div>
+            <div className="col-span-5"><span>{label}</span></div>
+            <div className="col-span-8 font-semibold">{formatDateTime(value)}</div>
             <div className="col-span-8 text-gray-500">{userName && `av ${userName}`}</div>
         </div>
     );
@@ -148,11 +153,18 @@ const CustomerOrder = () => {
     const { id } = useParams();
     const isNewCustomerOrder = id === 'new' || id == null;
 
+    const [customerOrder, setCustomerOrder] = useState(null);
+    useDocumentTitle(isNewCustomerOrder ? 'Nytt ordererkännande' : `Ordererkännande ${customerOrder?.customerOrderNr || '-'}`);
+
     const [loading, setLoading] = useState(true);
     const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
+    const [showPrintWarning, setShowPrintWarning] = useState(false);
+    const [isPrinting, setIsPrinting] = useState(false);
+    const { openPdfPreview, closePdfPreview, markStale } = usePdf();
+    const pdfRequestRef = useRef(0);
+    const pdfObjectUrlRef = useRef(null);
 
-    const [customerOrder, setCustomerOrder] = useState(null);
     const [originalCustomerOrder, setOriginalCustomerOrder] = useState(null);
     const [selectedCustomerDetails, setSelectedCustomerDetails] = useState(null);
     const [, setSelectedDeliveryAddressOption] = useState('');
@@ -179,6 +191,7 @@ const CustomerOrder = () => {
     }, [customerOrder, originalCustomerOrder]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(() => hasUnsavedChanges() || Boolean(isNewCustomerOrder && customerOrder));
 
     useEffect(() => {
         const handleBeforeUnload = (event) => {
@@ -202,10 +215,58 @@ const CustomerOrder = () => {
         skipUnsavedCheckRef.current = false;
     }, [id]);
 
+    useEffect(() => {
+        closePdfPreview();
+        setIsPrinting(false);
+        setShowPrintWarning(false);
+        return () => {
+            pdfRequestRef.current += 1;
+            if (pdfObjectUrlRef.current) {
+                URL.revokeObjectURL(pdfObjectUrlRef.current);
+                pdfObjectUrlRef.current = null;
+            }
+        };
+    }, [id, closePdfPreview]);
+
+    const getPdf = async () => {
+        if (!(customerOrder?.id > 0) || isPrinting) return;
+        if (hasUnsavedChanges()) {
+            setShowPrintWarning(true);
+            return;
+        }
+
+        const requestId = ++pdfRequestRef.current;
+        setIsPrinting(true);
+        closePdfPreview();
+        try {
+            const response = await apiClient.get(`/pdf/customerorder/${customerOrder.id}`, { responseType: 'blob' });
+            if (requestId !== pdfRequestRef.current) return;
+            const fileName = getFileNameFromContentDisposition(response.headers['content-disposition'])
+                || `customerorder_${customerOrder.customerOrderNr || customerOrder.id}.pdf`;
+            if (pdfObjectUrlRef.current) URL.revokeObjectURL(pdfObjectUrlRef.current);
+            const url = URL.createObjectURL(response.data);
+            pdfObjectUrlRef.current = url;
+            openPdfPreview(url, fileName);
+        } catch (error) {
+            if (requestId !== pdfRequestRef.current) return;
+            console.error('Failed to load customer order PDF:', error);
+            setMessages((previous) => [
+                ...previous.filter((message) => message.type !== 'error'),
+                { type: 'error', text: 'Kunde inte ladda ordererkännande-PDF.' },
+            ]);
+        } finally {
+            if (requestId === pdfRequestRef.current) setIsPrinting(false);
+        }
+    };
+
     const updateCustomerOrder = useCallback((patch) => {
+        pdfRequestRef.current += 1;
+        setIsPrinting(false);
+        markStale();
+        closePdfPreview();
         setMessages((prev) => prev.filter((message) => message.type !== 'success'));
         setCustomerOrder((prev) => ({ ...prev, ...patch }));
-    }, [setMessages]);
+    }, [closePdfPreview, markStale, setMessages]);
 
     const handleCustomerDeliveryAddressChange = useCallback((value) => {
         const selectedAddress = selectedCustomerDetails?.deliveryAddresses?.find(
@@ -228,6 +289,7 @@ const CustomerOrder = () => {
         quotationId: parseNullableInt(source?.quotationId),
         supplierOrderId: parseNullableInt(source?.supplierOrderId),
         customerOrderNr: source?.customerOrderNr || null,
+        yourOrderNr: source?.yourOrderNr || null,
         customerId: parseNullableInt(source?.customerId),
         customerName: source?.customerName || null,
         deliveryAddressName: source?.deliveryAddressName || null,
@@ -534,6 +596,15 @@ const CustomerOrder = () => {
     return (
         <div className="relative flex min-h-full flex-col">
             <ConfirmationModal
+                isOpen={showPrintWarning}
+                onClose={() => setShowPrintWarning(false)}
+                onConfirm={() => setShowPrintWarning(false)}
+                title="Osparade ändringar"
+                message="Ordererkännandet har osparade ändringar. Spara innan du skriver ut."
+                confirmText=""
+                cancelText="Stäng"
+            />
+            <ConfirmationModal
                 isOpen={showUnsavedWarning}
                 onClose={handleUnsavedWarningAbort}
                 onConfirm={handleUnsavedWarningConfirm}
@@ -545,14 +616,14 @@ const CustomerOrder = () => {
             />
 
             <OrderDetailLayout
-                title={customerOrder?.id ? <>Ordererkännande <span className="ml-2">{customerOrder.id}</span></> : 'Nytt ordererkännande'}
+                title={customerOrder?.id ? <>Ordererkännande <span className="ml-2">{customerOrder.customerOrderNr || '-'}</span></> : 'Nytt ordererkännande'}
                 messages={messages}
                 isInfoPanelExpanded={isInfoPanelExpanded}
                 isInfoPanelUsingResponsiveDefault={isInfoPanelUsingResponsiveDefault}
                 onToggleInfoPanel={toggleInfoPanel}
                 infoContent={(
                     <div className="space-y-3">
-                        <h2 className="text-sm text-center text-gray-700">Info</h2>
+                        <h2 className="text-sm text-center text-gray-500">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
                             {renderMetaRow('Skapad:', customerOrder?.created, customerOrder?.createdByUserName)}
                             {renderMetaRow('Redigerad:', customerOrder?.edited, customerOrder?.editedByUserName)}
@@ -560,7 +631,7 @@ const CustomerOrder = () => {
                     </div>
                 )}
                 infoFooter={(
-                    <OrderNavigationTree
+                    <EntityOrderFlowNavigation
                         entityType="customerOrder"
                         entityId={Number.isInteger(customerOrder?.id) && customerOrder.id > 0 ? customerOrder.id : null}
                     />
@@ -580,10 +651,19 @@ const CustomerOrder = () => {
                             onClick={handleSave}
                             accent="lime"
                         />
+                        {customerOrder.id > 0 && (
+                            <ActionButton
+                                label={isPrinting ? 'Laddar PDF...' : 'Skriv ut'}
+                                icon={Printer}
+                                onClick={() => void getPdf()}
+                                disabled={isPrinting}
+                                accent="slate"
+                            />
+                        )}
                     </div>
                 </div>
 
-                <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-gradient-to-br from-slate-50 via-white to-slate-100 px-5 py-4 shadow-sm">
+                <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-[#e8eeed] px-5 py-4 shadow-sm">
                     <div className="grid grid-cols-[3fr_1fr]">
                         <div className="mt-0 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                             {renderReadOnlyInfoRow('Produkt', customerOrder?.product)}
@@ -657,8 +737,8 @@ const CustomerOrder = () => {
                                 />
                                 <LabeledInput
                                     label="Kunds onr"
-                                    value={customerOrder?.customerOrderNr || ''}
-                                    onChange={(value) => updateCustomerOrder({ customerOrderNr: value })}
+                                    value={customerOrder?.yourOrderNr || ''}
+                                    onChange={(value) => updateCustomerOrder({ yourOrderNr: value })}
                                     labelWidth="w-20"
                                     margintop="3"
                                 />
@@ -795,6 +875,7 @@ const CustomerOrder = () => {
                                 <OrderCost
                                     customerOrderId={customerOrder?.id}
                                     supplierOrderId={customerOrder?.supplierOrderId}
+                                    supplierOrderNr={customerOrder?.supplierOrderNr}
                                     rows={customerOrder?.orderCosts ?? []}
                                     costOptions={orderCostOptions}
                                     currencyOptions={currencyOptions}

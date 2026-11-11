@@ -157,13 +157,13 @@ export default function PdfPanel({ onOpenFileModal = null }) {
     return (
         <>
             <div
-                className={`absolute right-0 w-[560px] overflow-hidden border-l border-slate-200/80 bg-yellow-50/95 shadow-2xl z-50 pl-7 pr-10 py-10 backdrop-blur-sm
+                className={`absolute right-0 flex min-h-0 w-[560px] flex-col overflow-hidden border-l border-slate-200/80 bg-yellow-50/95 shadow-2xl z-50 pl-7 pr-10 py-10 backdrop-blur-sm
                     transform-gpu transition-[translate,scale,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform
                     ${!mounted ? 'hidden' : visible ? 'translate-x-0 scale-100 opacity-100 pointer-events-auto' : 'translate-x-full scale-[0.985] opacity-0 pointer-events-none'}`}
                 aria-hidden={!visible}
                 style={{ top: 0, bottom: 0 }}
             >
-                <div className="flex items-center pb-3 pl-5">
+                <div className="flex shrink-0 items-center pb-3 pl-5">
                     <div className="flex items-center gap-6">
                         <ActionButton
                             label="Stäng"
@@ -188,7 +188,7 @@ export default function PdfPanel({ onOpenFileModal = null }) {
                     </div>
                 </div>
 
-                <div className="relative">
+                <div className="relative flex min-h-0 flex-1 flex-col">
                     
                     {/* {Array.isArray(badges) && badges.length > 0 && (
                         <div className="flex items-center px-3 py-2">
@@ -207,7 +207,7 @@ export default function PdfPanel({ onOpenFileModal = null }) {
                         </div>
                     )} */}
 
-                    <div className="pb-3 overflow-auto" style={{ height: 'calc(100% - 100px)' }}>
+                    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
                         {showPdfPanel && !pdfUrl ? null : null}
 
                         {pdfUrl && (

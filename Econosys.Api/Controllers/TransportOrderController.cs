@@ -20,13 +20,48 @@ namespace Econosys.Api.Controllers
         private readonly ApplicationDbContext _dbContext;
         private readonly ILegacyUserResolutionService _legacyUserResolution;
         private readonly ITransportOrderCostCalculationService _costCalculationService;
+        private readonly ITransportOrderRouteService _routeService;
 
-        public TransportOrderController(ApplicationDbContext dbContext, ILegacyUserResolutionService legacyUserResolution, ITransportOrderCostCalculationService costCalculationService)
+        public TransportOrderController(ApplicationDbContext dbContext, ILegacyUserResolutionService legacyUserResolution, ITransportOrderCostCalculationService costCalculationService, ITransportOrderRouteService routeService)
         {
             _dbContext = dbContext;
             _legacyUserResolution = legacyUserResolution;
             _costCalculationService = costCalculationService;
+            _routeService = routeService;
         }
+
+        /// <summary>Previews route legs for the proposed delivery selection and order.</summary>
+        [HttpPost("{id:int}/route-preview")]
+        public async Task<ActionResult<CallOffRouteResponseDto>> PreviewRoute(int id, [FromBody] TransportOrderRoutePreviewRequest request, CancellationToken cancellationToken)
+        {
+            if (!await _dbContext.TransportOrders.AnyAsync(x => x.Id == id, cancellationToken)) return NotFound();
+            var requested = request?.Deliveries;
+            if (requested is null || requested.Any(x => x.Id <= 0) || requested.Select(x => x.Id).Distinct().Count() != requested.Count)
+                return BadRequest("Leveranserna är ogiltiga.");
+            var rows = await _dbContext.TransportOrderDeliveries.AsNoTracking().Where(x => x.TransportOrderId == id)
+                .ToDictionaryAsync(x => x.Id, cancellationToken);
+            if (requested.Any(x => !rows.ContainsKey(x.Id))) return BadRequest("En leverans tillhör inte transportordern.");
+            var stops = requested.Select(x => ToRouteStop(rows[x.Id]) with { SortOrder = x.SortOrder }).ToList();
+            var result = await _routeService.PreviewTransportOrderAsync(stops, cancellationToken);
+            return Ok(new CallOffRouteResponseDto { DeliveryLegs = result.DeliveryLegs, RouteCalculation = MapRouteCalculation(result) });
+        }
+
+        /// <summary>Recalculates and stores route legs for a saved transport order.</summary>
+        [HttpPost("{id:int}/route/recalculate")]
+        public async Task<ActionResult<CallOffRouteResponseDto>> RecalculateRoute(int id, CancellationToken cancellationToken)
+        {
+            if (!await _dbContext.TransportOrders.AnyAsync(x => x.Id == id, cancellationToken)) return NotFound();
+            var result = await _routeService.RecalculateTransportOrderAsync(id, cancellationToken);
+            var legs = GetOkValue(await GetDeliveryLegsByTransportOrderId(id));
+            return Ok(new CallOffRouteResponseDto { DeliveryLegs = legs, RouteCalculation = MapRouteCalculation(result) });
+        }
+
+        private static TransportOrderRouteStop ToRouteStop(TransportOrderDelivery row) =>
+            new(row.Id, row.SortOrder ?? 0, row.DeliveryFromStockId, row.DeliveryToCustomerId, row.DeliveryToStockId,
+                row.SupplierOrderId, row.ForcedOmlastStatus, row.OmlastInventoryId);
+
+        private static CallOffRouteCalculationDto MapRouteCalculation(CallOffRouteResult result) =>
+            new() { Status = result.Status, Message = result.Message };
 
         [HttpPost("search")]
         public async Task<ActionResult<List<HeaderSearchResultDto>>> Search([FromBody] HeaderSearchRequest? request)
@@ -510,7 +545,7 @@ namespace Econosys.Api.Controllers
         }
 
         [HttpPut("{id:int}/aggregate")]
-        public async Task<ActionResult<TransportOrderAggregateDto>> SaveAggregateById(int id, [FromBody] SaveTransportOrderAggregateRequest request)
+        public async Task<ActionResult<TransportOrderAggregateDto>> SaveAggregateById(int id, [FromBody] SaveTransportOrderAggregateRequest request, CancellationToken cancellationToken = default)
         {
             if (request is null || string.IsNullOrWhiteSpace(request.Version))
             {
@@ -558,6 +593,7 @@ namespace Econosys.Api.Controllers
                 .Where(x => x.TransportOrderId == id)
                 .OrderBy(x => x.Id)
                 .ToListAsync();
+            var previousRouteInputs = existingDeliveryList.Select(ToRouteStop).OrderBy(x => x.Id).ToList();
 
             var currentVersion = CalculateVersion(transportOrder, existingDeliveryList, existingPalletList);
             if (!CryptographicOperations.FixedTimeEquals(
@@ -701,6 +737,13 @@ namespace Econosys.Api.Controllers
                 childDelivery.CustomerYourOrderNr = parentTransportDelivery.CustomerYourOrderNr;
             }
 
+            var routeInputsChanged = !previousRouteInputs.SequenceEqual(mappedDeliveryList.Select(ToRouteStop).OrderBy(x => x.Id));
+            if (routeInputsChanged)
+            {
+                var oldLegs = await _dbContext.DeliveryLegs.Where(x => x.TransportOrderId == id).ToListAsync(cancellationToken);
+                _dbContext.DeliveryLegs.RemoveRange(oldLegs);
+            }
+
             var incomingIdSet = incomingExistingIds.ToHashSet();
             _dbContext.TransportOrderDeliveryPallets.RemoveRange(activePalletList.Where(x => !incomingIdSet.Contains(x.Id)));
 
@@ -731,6 +774,13 @@ namespace Econosys.Api.Controllers
 
             await _dbContext.SaveChangesAsync();
             await transaction.CommitAsync();
+            await transaction.DisposeAsync();
+
+            CallOffRouteCalculationDto? routeCalculation = null;
+            var hasDeliveries = await _dbContext.TransportOrderDeliveries.AnyAsync(x => x.TransportOrderId == id, cancellationToken);
+            var hasLegs = await _dbContext.DeliveryLegs.AnyAsync(x => x.TransportOrderId == id, cancellationToken);
+            if (routeInputsChanged || (hasDeliveries && !hasLegs))
+                routeCalculation = MapRouteCalculation(await _routeService.RecalculateTransportOrderAsync(id, cancellationToken));
 
             if (prevDeliveryStatus != request.DeliveryStatus)
             {
@@ -744,7 +794,9 @@ namespace Econosys.Api.Controllers
                 .Include(x => x.EditedByUser)
                 .FirstOrDefaultAsync(x => x.Id == id);
 
-            return Ok(await BuildAggregateDtoAsync(updatedTransportOrder ?? transportOrder));
+            var aggregate = await BuildAggregateDtoAsync(updatedTransportOrder ?? transportOrder);
+            aggregate.RouteCalculation = routeCalculation;
+            return Ok(aggregate);
         }
 
         [HttpGet("form-options")]
@@ -766,6 +818,80 @@ namespace Econosys.Api.Controllers
             return Ok(new TransportOrderFormOptionsDto
             {
                 Transporters = transporters,
+            });
+        }
+
+        [HttpGet("{id:int}/pdf-recipients")]
+        public async Task<ActionResult<TransportOrderPdfRecipientOptionsDto>> GetPdfRecipientOptions(int id, CancellationToken cancellationToken)
+        {
+            var transportOrderExists = await _dbContext.TransportOrders
+                .AsNoTracking()
+                .AnyAsync(x => x.Id == id, cancellationToken);
+
+            if (!transportOrderExists)
+            {
+                return NotFound();
+            }
+
+            var deliveryRecipients = await _dbContext.TransportOrderDeliveries
+                .AsNoTracking()
+                .Where(x => x.TransportOrderId == id)
+                .Select(x => new
+                {
+                    SupplierFactoryId = x.SupplierOrder != null ? x.SupplierOrder.SupplierFactoryId : null,
+                    SupplierName = x.SupplierOrder != null ? x.SupplierOrder.SupplierName : null,
+                    InventoryId = x.DeliveryToStock != null ? x.DeliveryToStock.InventoryId : null,
+                })
+                .ToListAsync(cancellationToken);
+
+            var supplierFactoryIds = deliveryRecipients
+                .Where(x => x.SupplierFactoryId.HasValue)
+                .Select(x => x.SupplierFactoryId!.Value)
+                .Distinct()
+                .ToList();
+            var supplierNamesByFactoryId = deliveryRecipients
+                .Where(x => x.SupplierFactoryId.HasValue && !string.IsNullOrWhiteSpace(x.SupplierName))
+                .GroupBy(x => x.SupplierFactoryId!.Value)
+                .ToDictionary(group => group.Key, group => group.First().SupplierName!);
+
+            var supplierFactoryRows = await _dbContext.SupplierFactories
+                .AsNoTracking()
+                .Where(x => supplierFactoryIds.Contains(x.Id))
+                .OrderBy(x => x.Name)
+                .ThenBy(x => x.Id)
+                .Select(x => new { x.Id, x.Name })
+                .ToListAsync(cancellationToken);
+            var supplierFactories = supplierFactoryRows.Select(x => new FilterOptionDto<int>
+            {
+                Id = x.Id,
+                Name = supplierNamesByFactoryId.TryGetValue(x.Id, out var supplierName)
+                    ? supplierName + " - " + (x.Name ?? string.Empty)
+                    : x.Name ?? string.Empty,
+                IsActive = true,
+            }).ToList();
+
+            var inventoryIds = deliveryRecipients
+                .Where(x => x.InventoryId.HasValue)
+                .Select(x => x.InventoryId!.Value)
+                .Distinct()
+                .ToList();
+            var inventories = await _dbContext.Inventories
+                .AsNoTracking()
+                .Where(x => inventoryIds.Contains(x.Id))
+                .OrderBy(x => x.Name)
+                .ThenBy(x => x.Id)
+                .Select(x => new FilterOptionDto<int>
+                {
+                    Id = x.Id,
+                    Name = x.Name ?? string.Empty,
+                    IsActive = true,
+                })
+                .ToListAsync(cancellationToken);
+
+            return Ok(new TransportOrderPdfRecipientOptionsDto
+            {
+                SupplierFactories = supplierFactories,
+                Inventories = inventories,
             });
         }
 
@@ -807,11 +933,17 @@ namespace Econosys.Api.Controllers
                 .Where(x => x.TransportOrderId == transportOrder.Id)
                 .OrderBy(x => x.Id)
                 .ToListAsync();
+            var hasRouteDeliveries = await _dbContext.TransportOrderDeliveries.AsNoTracking()
+                .AnyAsync(x => x.TransportOrderId == transportOrder.Id
+                    && !(x.DeliveryToCustomer != null && x.DeliveryToCustomer.IsSlattPallet)
+                    && !(x.DeliveryToStock != null && x.DeliveryToStock.IsSlattPallet)
+                    && !(x.DeliveryFromStock != null && x.DeliveryFromStock.IsSlattPallet));
 
             return new TransportOrderAggregateDto
             {
                 TransportOrder = MapToDto(transportOrder),
                 DeliveryLegs = deliveryLegs,
+                IsRouteMissing = hasRouteDeliveries && deliveryLegs.DeliveryLegGroupedList.Count == 0 && deliveryLegs.DistributionDeliveryLegGroupedList.Count == 0,
                 DeliveryOverview = deliveryOverview,
                 TruckPlan = truckPlan,
                 Version = CalculateVersion(transportOrder, deliveryList, truckPlan.PalletList),

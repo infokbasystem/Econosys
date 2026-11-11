@@ -162,6 +162,7 @@ namespace Econosys.Api.DTOs
         public int? QuotationId { get; set; }
         public int? SupplierOrderId { get; set; }
         public string? CustomerOrderNr { get; set; }
+        public string? YourOrderNr { get; set; }
         public int? CustomerId { get; set; }
         public string? CustomerName { get; set; }
         public string? DeliveryAddressName { get; set; }

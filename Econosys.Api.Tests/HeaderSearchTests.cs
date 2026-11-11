@@ -28,7 +28,7 @@ public class HeaderSearchTests
         });
         await context.SaveChangesAsync();
 
-        var controller = new TransportOrderController(context, null!, null!);
+        var controller = new TransportOrderController(context, null!, null!, null!);
         var numericResults = GetItems(await controller.Search(new HeaderSearchRequest { SearchTerm = "43410" }));
         var textResults = GetItems(await controller.Search(new HeaderSearchRequest { SearchTerm = "Forest" }));
 
@@ -69,7 +69,7 @@ public class HeaderSearchTests
         context.CallOffs.AddRange(customerOrderCallOff, stockDeliveryCallOff);
         await context.SaveChangesAsync();
 
-        var controller = new CallOffController(context, null!);
+        var controller = new CallOffController(context, null!, null!);
         var results = GetItems(await controller.Search(new HeaderSearchRequest { SearchTerm = "SO-ALPHA" }));
 
         Assert.Equal(2, results.Count);

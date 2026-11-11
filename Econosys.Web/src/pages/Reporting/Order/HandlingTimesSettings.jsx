@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import apiClient from '../../../config/apiClient'
+import useAppUpdateGuard from '../../../hooks/useAppUpdateGuard'
 import LabeledInput from '../../../components/LabeledInput'
 
 const COMPANY_ID = 1
@@ -46,10 +47,12 @@ const mapFormToPayload = (form) => ({
 
 function HandlingTimesSettings() {
   const [form, setForm] = useState(defaultForm)
+  const [originalForm, setOriginalForm] = useState(defaultForm)
   const [hasExisting, setHasExisting] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [message, setMessage] = useState(null)
+  useAppUpdateGuard(isSaving || JSON.stringify(form) !== JSON.stringify(originalForm))
 
   const updateField = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -62,10 +65,12 @@ function HandlingTimesSettings() {
     try {
       const response = await apiClient.get(`/companysettings/${COMPANY_ID}`)
       setForm(mapDtoToForm(response.data))
+      setOriginalForm(mapDtoToForm(response.data))
       setHasExisting(true)
     } catch (error) {
       if (error.response?.status === 404) {
         setForm(defaultForm)
+        setOriginalForm(defaultForm)
         setHasExisting(false)
       } else {
         setMessage({ type: 'error', text: 'Kunde inte hämta inställningarna.' })
@@ -90,6 +95,7 @@ function HandlingTimesSettings() {
         : await apiClient.post('/companysettings', payload)
 
       setForm(mapDtoToForm(response.data))
+      setOriginalForm(mapDtoToForm(response.data))
       setHasExisting(true)
       setMessage({ type: 'success', text: 'Hanteringstidsinställningarna sparades.' })
     } catch (error) {

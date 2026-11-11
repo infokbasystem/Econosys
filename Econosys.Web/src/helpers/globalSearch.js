@@ -1,4 +1,4 @@
-import apiClient from '../config/apiClient';
+import apiClient from '../config/apiClient.js';
 
 const PAGE_SIZE = 5;
 
@@ -70,7 +70,7 @@ export const searchHeader = async (searchText) => {
         }));
     }
 
-    if (isNumeric) {
+    if (isNumeric || term.length >= 5) {
         searches.push(createGroup({
             key: 'customerOrders',
             label: 'KUNDORDER',

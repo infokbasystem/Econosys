@@ -812,7 +812,10 @@ namespace Econosys.Api.Services
 
             await _dbContext.SaveChangesAsync();
 
-            return target;
+            return await _dbContext.TransportOrderCostCalcs
+                .Include(x => x.TransportOrderCostCalcSupplierOrders)
+                    .ThenInclude(x => x.SupplierOrder)
+                .FirstAsync(x => x.Id == target.Id);
         }
     }
 }

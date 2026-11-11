@@ -3,6 +3,7 @@ import { ArrowDownToLine } from 'lucide-react';
 
 const LabeledTextArea = ({
     label,
+    labelAction,
     labelWidth,
     inputWidth,
     margintop,
@@ -93,7 +94,14 @@ const LabeledTextArea = ({
     return (
         <div className={`flex items-center w-full pb-[1px] mt-${margintop}`} ref={wrapperRef}>
             <div className={`relative flex items-center flex-none justify-between`}>
-                <label className={`text-xs text-gray-700 ${labelWidth || ''}`}>{label}</label>
+                {labelAction ? (
+                    <div className={labelWidth || ''}>
+                        <label className="block text-xs text-gray-700">{label}</label>
+                        {labelAction}
+                    </div>
+                ) : (
+                    <label className={`text-xs text-gray-700 ${labelWidth || ''}`}>{label}</label>
+                )}
                 {popupItems && Array.isArray(popupItems) && (
                     <button
                         type="button"

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { registerAppUpdateGuard } from '../helpers/appUpdateGuards.js';
 import { DEMO_API_URL, getApiBaseUrl, getBackendMode, getBackendRevision, setBackendMode } from './backend.js';
 
 const SLOW_REQUEST_THRESHOLD_MS = 1000;
@@ -193,6 +194,7 @@ apiClient.interceptors.request.use(
       requestId,
       startedAt,
       backendRevision: getBackendRevision(),
+      releaseUpdateGuard: registerAppUpdateGuard(() => true),
     };
 
     console.log('[API][RequestStart]', {
@@ -211,6 +213,7 @@ apiClient.interceptors.request.use(
 // Handle response errors globally
 apiClient.interceptors.response.use(
   (response) => {
+    response.config.metadata?.releaseUpdateGuard?.();
     if (response.config.metadata?.backendRevision !== getBackendRevision()) {
       return Promise.reject(new axios.CanceledError('Backend session changed.', response.config));
     }
@@ -241,6 +244,7 @@ apiClient.interceptors.response.use(
     return response;
   },
   (error) => {
+    error.config?.metadata?.releaseUpdateGuard?.();
     const requestId = error.config?.metadata?.requestId || 'unknown';
     const durationMs = toDurationMs(error.config?.metadata?.startedAt);
     const payload = {

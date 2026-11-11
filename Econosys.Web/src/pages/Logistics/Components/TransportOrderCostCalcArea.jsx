@@ -6,6 +6,7 @@ import ActionButton from '../../../components/ActionButton';
 import LabeledCheckbox from '../../../components/LabeledCheckbox';
 import LabeledReactSelect from '../../../components/LabeledReactSelect';
 import apiClient from '../../../config/apiClient';
+import useAppUpdateGuard from '../../../hooks/useAppUpdateGuard';
 import {
     distributeResultInternationalCost,
     recalculateCostCalcRow,
@@ -119,6 +120,7 @@ const buildDraftFromVersion = (version) => {
         rows: version.supplierOrders.map((row) => ({
             id: row.id,
             supplierOrderId: row.supplierOrderId,
+            supplierOrderNr: row.supplierOrderNr,
             totalNrOfItems: row.totalNrOfItems,
             totalNrOfPalletPlaces: row.totalNrOfPalletPlaces,
             totalPalletArea: row.totalPalletArea,
@@ -218,6 +220,8 @@ const TransportOrderCostCalcArea = forwardRef(function TransportOrderCostCalcAre
     }, [loadVersions]);
 
     const selectedVersion = useMemo(() => versions.find((v) => v.id === selectedId) ?? null, [versions, selectedId]);
+    useAppUpdateGuard(saving || Boolean(draft && selectedVersion
+        && JSON.stringify(buildUpdatePayload(draft)) !== JSON.stringify(buildUpdatePayload(buildDraftFromVersion(selectedVersion)))));
     const statusNames = useMemo(() => buildStatusNames(versions), [versions]);
     // Mirrors legacy: IsEnabled is only ever set on the freshly loaded latest version, so older versions are always read-only.
     const latestVersionId = useMemo(() => {
@@ -517,7 +521,7 @@ const TransportOrderCostCalcArea = forwardRef(function TransportOrderCostCalcAre
                 <tbody>
                     {draft.rows.map((row) => (
                         <tr key={row.id} className="h-5.5 border-t border-gray-200" title={row.calculationCalcInfo || ''}>
-                            <td className={cellClassLeft}>{row.supplierOrderId}</td>
+                            <td className={cellClassLeft}>{row.supplierOrderNr || '-'}</td>
                             <td className={cellClassCenter}>{formatNumber(row.totalNrOfItems)}</td>
                             <td className={cellClassCenter}>{formatNumber(row.totalNrOfPalletPlaces)}</td>
                             <td className={cellClassRight}>{formatNumber(row.caclulationInternationalCost)}</td>
@@ -580,7 +584,7 @@ const TransportOrderCostCalcArea = forwardRef(function TransportOrderCostCalcAre
                 <tbody>
                     {draft.rows.map((row) => (
                         <tr key={row.id} className="h-5.5 border-t border-gray-200" title={row.transportOrderCalcInfo || ''}>
-                            <td className={cellClassLeft}>{row.supplierOrderId}</td>
+                            <td className={cellClassLeft}>{row.supplierOrderNr || '-'}</td>
                             <td className={cellClassCenter}>{formatNumber(row.totalNrOfItems)}</td>
                             <td className={cellClassCenter}>{formatNumber(row.totalNrOfPalletPlaces)}</td>
                             {draft.isLTL ? <td className={cellClassCenter}>{formatDecimal(row.totalPalletArea)}</td> : null}
@@ -646,7 +650,7 @@ const TransportOrderCostCalcArea = forwardRef(function TransportOrderCostCalcAre
                 <tbody>
                     {draft.rows.map((row) => (
                         <tr key={row.id} className="h-5.5 border-t border-gray-200">
-                            <td className={cellClassLeft}>{row.supplierOrderId}</td>
+                            <td className={cellClassLeft}>{row.supplierOrderNr || '-'}</td>
                             <td className={cellClassCenter}>{formatNumber(row.totalNrOfItems)}</td>
                             <td className={cellClassCenter}>{formatNumber(row.totalNrOfPalletPlaces)}</td>
                             <td className={cellClassCenter}>{formatNumber(row.resultInternationalCost)}</td>

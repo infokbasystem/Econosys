@@ -1,11 +1,173 @@
 import { useEffect, useState } from 'react';
-import { Save } from 'lucide-react';
+import { RefreshCw, Save } from 'lucide-react';
+import { useBlocker } from 'react-router-dom';
 import apiClient from '../../config/apiClient';
+import { getSharedRequest } from '../../helpers/sharedRequest';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledTextArea from '../../components/LabeledTextArea';
+import LabeledReactSelect from '../../components/LabeledReactSelect';
+import ConfirmationModal from '../../components/ConfirmationModal';
 import ActionButton from '../../components/ActionButton';
 
 const COMPANY_ID = 1;
+
+const normalizeDocumentLanguage = (code) => {
+    const normalized = String(code || 'SV').trim().toUpperCase();
+    if (['SW', 'SWE', 'SV-SE'].includes(normalized)) return 'SV';
+    return normalized === 'ENG' ? 'EN' : normalized;
+};
+
+const DocumentTextSettings = () => {
+    const [definitions, setDefinitions] = useState([]);
+    const [languages, setLanguages] = useState([]);
+    const [entries, setEntries] = useState([]);
+    const [originalEntries, setOriginalEntries] = useState([]);
+    const [language, setLanguage] = useState('');
+    const [textCode, setTextCode] = useState(-1103);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+    const [message, setMessage] = useState(null);
+    const [loadVersion, setLoadVersion] = useState(0);
+    const isDirty = JSON.stringify(entries) !== JSON.stringify(originalEntries);
+    useAppUpdateGuard(isDirty || isSaving);
+    const blocker = useBlocker(isDirty || isSaving);
+
+    useEffect(() => {
+        let isActive = true;
+        getSharedRequest('document-text-settings', () => apiClient.get('/translationitems/document-texts'))
+            .then(({ data }) => {
+                if (!isActive) return;
+                const nextEntries = data.languages.flatMap((langCode) => data.definitions.map((definition) => {
+                    const normalized = normalizeDocumentLanguage(langCode);
+                    const existing = data.items.find((item) => item.translationCode === definition.code
+                        && normalizeDocumentLanguage(item.langCode) === normalized && item.translation?.trim());
+                    const swedish = data.items.find((item) => item.translationCode === definition.code
+                        && normalizeDocumentLanguage(item.langCode) === 'SV' && item.translation?.trim());
+                    const isEnglish = ['EN', 'EN-GB', 'EN-US'].includes(normalized);
+                    let translation = existing?.translation
+                        ?? (isEnglish ? definition.english : swedish?.translation ?? definition.swedish);
+                    if (definition.code === -93 && translation.trim().toLowerCase() === 'quotationvaliditytext') {
+                        translation = '';
+                    }
+                    return {
+                        id: existing?.id ?? null,
+                        translationCode: definition.code,
+                        langCode,
+                        translation,
+                        translationHtml: existing?.translationHtml ?? null,
+                    };
+                }));
+                setDefinitions(data.definitions);
+                setLanguages(data.languages);
+                setLanguage(data.languages.find((code) => normalizeDocumentLanguage(code) === 'SV') ?? data.languages[0]);
+                setEntries(nextEntries);
+                setOriginalEntries(nextEntries);
+            })
+            .catch(() => {
+                if (isActive) setMessage({ type: 'error', text: 'Kunde inte ladda dokumenttexter.' });
+            })
+            .finally(() => {
+                if (isActive) setIsLoading(false);
+            });
+        return () => {
+            isActive = false;
+        };
+    }, [loadVersion]);
+
+    useEffect(() => {
+        if (!isDirty && !isSaving) return;
+        const handleBeforeUnload = (event) => {
+            event.preventDefault();
+            event.returnValue = '';
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    }, [isDirty, isSaving]);
+
+    const selectedEntry = entries.find((entry) => entry.langCode === language && entry.translationCode === Number(textCode));
+    const handleSaveTexts = async () => {
+        setIsSaving(true);
+        setMessage(null);
+        try {
+            const changed = entries.filter((entry, index) => entry.translation !== originalEntries[index]?.translation);
+            const { data } = await apiClient.post('/translationitems/batch-upsert', { items: changed });
+            const nextEntries = entries.map((entry) => {
+                const saved = data.find((item) => item.translationCode === entry.translationCode && item.langCode === entry.langCode);
+                return saved ? { ...entry, id: saved.id } : entry;
+            });
+            setEntries(nextEntries);
+            setOriginalEntries(nextEntries);
+            setMessage({ type: 'success', text: 'Dokumenttexter sparades.' });
+        } catch {
+            setMessage({ type: 'error', text: 'Kunde inte spara dokumenttexter.' });
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    return (
+        <section className="mt-8 border-t border-gray-300 pt-5 pb-8 max-w-3xl text-xs">
+            <h3 className="text-sm text-gray-700 mb-4">Dokumenttexter</h3>
+            <div className="flex flex-wrap gap-3 mb-4">
+                <ActionButton
+                    label={isSaving ? 'Sparar...' : 'Spara dokumenttexter'}
+                    icon={Save}
+                    onClick={handleSaveTexts}
+                    disabled={isLoading || isSaving || !isDirty}
+                    accent="lime"
+                />
+                <ActionButton
+                    label="Ladda om"
+                    icon={RefreshCw}
+                    disabled={isLoading || isSaving || isDirty}
+                    onClick={() => {
+                        setIsLoading(true);
+                        setMessage(null);
+                        setLoadVersion((previous) => previous + 1);
+                    }}
+                />
+            </div>
+            {isLoading ? <p>Laddar dokumenttexter...</p> : definitions.length > 0 && (
+                <div className="space-y-3">
+                    <LabeledReactSelect
+                        label="Språk" labelWidth="w-45" inputWidth="w-full" margintop="0"
+                        items={languages.map((code) => ({ id: code, name: code }))}
+                        value={language} onChange={setLanguage} isDisabled={isSaving} isClearable={false}
+                    />
+                    <LabeledReactSelect
+                        label="Text" labelWidth="w-45" inputWidth="w-full" margintop="0"
+                        items={definitions.map((definition) => ({ id: definition.code, name: definition.label }))}
+                        value={textCode} onChange={setTextCode} isDisabled={isSaving} isClearable={false}
+                    />
+                    <LabeledTextArea
+                        label="Översättning" labelWidth="w-45" inputWidth="w-full" margintop="0"
+                        height="h-28" maxLength={255} disabled={isSaving} value={selectedEntry?.translation ?? ''}
+                        onChange={(value) => {
+                            setMessage(null);
+                            setEntries((previous) => previous.map((entry) => entry === selectedEntry
+                                ? { ...entry, translation: value }
+                                : entry));
+                        }}
+                    />
+                </div>
+            )}
+            {message && (
+                <p role={message.type === 'error' ? 'alert' : 'status'} className={`mt-3 ${message.type === 'error' ? 'text-red-700' : 'text-green-700'}`}>
+                    {message.text}
+                </p>
+            )}
+            <ConfirmationModal
+                isOpen={blocker.state === 'blocked'}
+                title="Osparade dokumenttexter"
+                message="Du har osparade dokumenttexter. Vill du lämna sidan?"
+                confirmText="Lämna sidan" cancelText="Stanna kvar"
+                onConfirm={() => blocker.proceed?.()}
+                onClose={() => blocker.reset?.()}
+            />
+        </section>
+    );
+};
 
 const defaultForm = {
     companyName: '',
@@ -124,10 +286,12 @@ const mapFormToPayload = (form) => ({
 
 const CompanyInfoSettings = () => {
     const [form, setForm] = useState(defaultForm);
+    const [originalForm, setOriginalForm] = useState(defaultForm);
     const [hasExisting, setHasExisting] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState(null);
+    useAppUpdateGuard(isSaving || JSON.stringify(form) !== JSON.stringify(originalForm));
 
     const updateField = (field, value) => {
         setForm((prev) => ({ ...prev, [field]: value }));
@@ -140,10 +304,12 @@ const CompanyInfoSettings = () => {
         try {
             const response = await apiClient.get(`/companysettings/${COMPANY_ID}`);
             setForm(mapDtoToForm(response.data));
+            setOriginalForm(mapDtoToForm(response.data));
             setHasExisting(true);
         } catch (error) {
             if (error.response?.status === 404) {
                 setForm(defaultForm);
+                setOriginalForm(defaultForm);
                 setHasExisting(false);
             } else {
                 setMessage({ type: 'error', text: 'Kunde inte hamta foretagsinfo.' });
@@ -168,6 +334,7 @@ const CompanyInfoSettings = () => {
                 : await apiClient.post('/companysettings', payload);
 
             setForm(mapDtoToForm(response.data));
+            setOriginalForm(mapDtoToForm(response.data));
             setHasExisting(true);
             setMessage({ type: 'success', text: 'Foretagsinfo sparades.' });
         } catch (error) {
@@ -183,7 +350,7 @@ const CompanyInfoSettings = () => {
             <h2 className="ml-5 text-sm pt-2 pb-2 text-gray-700">Företagsinfo</h2>
 
             <div className="flex h-full items-stretch">
-                <div className="flex-grow ps-10 pe-10 py-2 max-w-350">
+                <div className="flex-grow min-w-0 ps-10 pe-10 py-2 max-w-350">
                     <div className="flex justify-between w-full mb-5">
                         <div className="flex items-center space-x-4">
                             <ActionButton
@@ -251,6 +418,7 @@ const CompanyInfoSettings = () => {
                             </span>
                         </div>
                     )}
+                    <DocumentTextSettings />
                 </div>
 
                 <div className="flex flex-col w-80 shrink-0 border-l border-gray-300 pl-4 py-2 mb-5">

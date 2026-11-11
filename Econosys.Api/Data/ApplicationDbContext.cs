@@ -44,6 +44,7 @@ namespace Econosys.Api.Data
         public DbSet<TermOfDelivery> TermsOfDelivery => Set<TermOfDelivery>();
         public DbSet<TermOfPayment> TermsOfPayment => Set<TermOfPayment>();
         public DbSet<Product> Products => Set<Product>();
+        public DbSet<ProductInternalInfo> ProductInternalInfos => Set<ProductInternalInfo>();
         public DbSet<PalletType> PalletTypes => Set<PalletType>();
         public DbSet<PalletFormat> PalletFormats => Set<PalletFormat>();
         public DbSet<PalletFactor> PalletFactors => Set<PalletFactor>();
@@ -602,6 +603,14 @@ namespace Econosys.Api.Data
                     .WithMany(x => x.Products)
                     .HasForeignKey(x => x.VarnishId)
                     .OnDelete(DeleteBehavior.NoAction);
+            });
+
+            builder.Entity<ProductInternalInfo>(entity =>
+            {
+                entity.HasOne(x => x.Product)
+                    .WithOne(x => x.InternalInfo)
+                    .HasForeignKey<ProductInternalInfo>(x => x.ProductId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             builder.Entity<PalletType>(entity =>

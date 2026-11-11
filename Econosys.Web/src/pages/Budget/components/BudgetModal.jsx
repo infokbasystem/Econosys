@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom';
+import useAppUpdateGuard from '../../../hooks/useAppUpdateGuard';
 
 const BudgetModal = ({
     isOpen,
@@ -11,6 +12,7 @@ const BudgetModal = ({
     widthClass = 'max-w-xl',
     children,
 }) => {
+    useAppUpdateGuard(isOpen);
     if (!isOpen) {
         return null;
     }
@@ -20,8 +22,7 @@ const BudgetModal = ({
             <div className="absolute inset-0 z-40 bg-black/50" />
             <div className="relative z-50 flex min-h-screen items-start justify-center pt-20" onClick={onClose}>
                 <div
-                    className={`relative mx-4 w-full ${widthClass} rounded-sm p-6 shadow-xl`}
-                    style={{ background: 'rgb(255, 255, 234)' }}
+                    className={`relative mx-4 w-full ${widthClass} rounded-sm bg-[#f4f3f2] p-6 shadow-xl`}
                     onClick={(event) => event.stopPropagation()}
                 >
                     <div className="relative mb-4 flex items-center justify-center">

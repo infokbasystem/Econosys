@@ -7,6 +7,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 import SegmentedFilter from '../../components/SegmentedFilter';
 import DateRangePicker from '../../components/DaterangePicker';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { useAuth } from '../../contexts/AuthContext';
 import { toSwedishDateBoundaryIso } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
@@ -83,6 +84,9 @@ const OrderCostAttest = () => {
     const [rows, setRows] = useState([]);
     const [attestInputs, setAttestInputs] = useState({});
     const [savingRowId, setSavingRowId] = useState(null);
+    useAppUpdateGuard(savingRowId != null || rows.some((row) => (
+        String(attestInputs[row.id] ?? '') !== String(row.inPriceAttested ?? '')
+    )));
     const [loading, setLoading] = useState(true);
     const [showSkeleton, setShowSkeleton] = useState(false);
 
@@ -338,7 +342,7 @@ const OrderCostAttest = () => {
                         <col style={{ width: '6%' }} />
                         <col style={{ width: 'auto' }} />
                     </colgroup>
-                    <thead>
+                    <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                         <tr className="text-tiny text-gray-500">
                             <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Skapad av</th>
                             <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Datum</th>
@@ -372,8 +376,8 @@ const OrderCostAttest = () => {
                                 </td>
                             </tr>
                         ) : (
-                            rows.map((row) => (
-                                <tr key={row.id} className="h-6 border-b border-gray-100 hover:bg-lime-200/70">
+                            rows.map((row, index) => (
+                                <tr key={row.id} className={`h-6 border-b border-gray-100 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-lime-200/70`}>
                                     <td className="truncate px-2 py-0 text-gray-800">{row.createdByName || ''}</td>
                                     <td className="truncate px-2 py-0 text-gray-800">{formatDate(row.createdDateTime)}</td>
                                     <td className="truncate px-2 py-0 text-gray-800">{row.customerOrderNr || ''}</td>

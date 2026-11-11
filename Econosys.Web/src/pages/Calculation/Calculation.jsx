@@ -18,6 +18,7 @@ import SearchCustomer from '../../components/SearchCustomer';
 import SearchSupplier from '../../components/SearchSupplier';
 import SegmentedFilter from '../../components/SegmentedFilter';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { formatDateTime } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import { calculatePackagesPerPallet, updateAutomaticLoadingInstruction } from './calculationPackaging';
@@ -25,6 +26,7 @@ import { applyApprovalRows, calculatePackagingCost, getApprovalText, getFreightF
 import { changeFreightMode, getAutomaticFreightGeometry, getFreightEditState, getFreightMode, getFreightWarningMessage, parseFreightFactors } from './calculationFreight';
 import CalculationNavigation from './CalculationNavigation';
 import { handleCalculationTableKeyDown } from './calculationTableNavigation';
+import useDocumentTitle from '../../hooks/useDocumentTitle';
 
 const EMPTY_ROWS = [];
 const INFO_PANEL_WIDE_QUERY = '(min-width: 96rem)';
@@ -622,8 +624,8 @@ const SavedFlag = ({ label, checked, editing = false, onChange }) => (
 
 const ProductInfoRow = ({ label, value, numeric = false }) => (
     <div className="min-w-0">
-        <dt className="text-tiny tracking-wide text-black">{label}</dt>
-        <dd className="mt-1 whitespace-pre-wrap break-words text-xs text-red-500">
+        <dt className="text-tiny tracking-wide text-black font-bold">{label}</dt>
+        <dd className="mt-1 whitespace-pre-wrap break-words text-xs text-black">
             {numeric ? numberText(value) : (value ?? '') === '' ? '' : value}
         </dd>
     </div>
@@ -703,7 +705,7 @@ const CalculationSection = ({ title, children, initiallyOpen = false, className 
 
     return (
         <section className={`min-w-0 mt-5 ${isOpen
-            ? 'rounded-sm border border-gray-200 bg-stone-50 px-5 pt-2 pb-1 shadow-sm'
+            ? 'rounded-sm border border-gray-200 bg-[#e8eeed] px-5 pt-2 pb-1 shadow-sm'
             : 'px-5 pt-2 pb-1'} ${className}`}>
             <div className={`mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 ${isOpen ? 'justify-between' : ''}`}>
                 <div className="flex items-center gap-2 w-150">
@@ -907,7 +909,7 @@ const FreightRowsTable = ({
                             palletCalcFactor: numberCell('palletCalcFactor', { decimals: 2 }),
                             freightUnloading: numberCell('freightUnloading', {
                                 decimals: salesDecimals,
-                                enabled: !isLocked && !isDeactivated,
+                                enabled: !isLocked && !isDeactivated && !isAutoPrice,
                             }),
                             totalFreightPerPlace: numberCell('totalFreightPerPlace', {
                                 decimals: salesDecimals,
@@ -1446,7 +1448,7 @@ const CalculationHistoryTable = ({ rows, purchaseDecimals, salesDecimals, isLoad
                                         rel="noopener noreferrer"
                                         className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                     >
-                                        {row.supplierOrderNr ?? row.supplierOrderId}
+                                        {row.supplierOrderNr || '-'}
                                     </Link>
                                 ) : null}
                             </td>
@@ -1458,7 +1460,7 @@ const CalculationHistoryTable = ({ rows, purchaseDecimals, salesDecimals, isLoad
                                         rel="noopener noreferrer"
                                         className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                     >
-                                        {row.customerOrderNr ?? row.customerOrderId}
+                                        {row.customerOrderNr || '-'}
                                     </Link>
                                 ) : null}
                             </td>
@@ -1492,7 +1494,7 @@ const CalculationHistoryTable = ({ rows, purchaseDecimals, salesDecimals, isLoad
                                     type="button"
                                     data-history-edit={row.customerOrderId ? `customer-${row.customerOrderId}` : `supplier-${row.supplierOrderId}`}
                                     disabled={!row.supplierOrderId || !row.selectedCalculationRowId}
-                                    aria-label={`Redigera kalkylrad för beställning ${row.supplierOrderNr ?? row.supplierOrderId ?? ''}`}
+                                    aria-label={`Redigera kalkylrad för beställning ${row.supplierOrderNr || '-'}`}
                                     title={row.supplierOrderId && row.selectedCalculationRowId ? 'Redigera kopplad kalkylrad' : 'Beställningen saknar en kopplad kalkylrad'}
                                     onClick={() => onEdit(row)}
                                     className="inline-flex items-center justify-center rounded-sm p-1 text-sky-700 hover:bg-sky-50 focus-visible:outline-2 focus-visible:outline-lime-700 disabled:text-gray-300 disabled:cursor-not-allowed"
@@ -1520,6 +1522,7 @@ const CalculationPage = ({ id, productId }) => {
     const [palletFormatOptions, setPalletFormatOptions] = useState([]);
     const [supplierFactoryOptions, setSupplierFactoryOptions] = useState([]);
     const [customerDeliveryAddressOptions, setCustomerDeliveryAddressOptions] = useState([]);
+    const [customerCalculationInfo, setCustomerCalculationInfo] = useState(null);
     const [expanded, setExpanded] = useState(() => window.matchMedia(INFO_PANEL_WIDE_QUERY).matches);
     const [rowView, setRowView] = useState('active');
     const [draft, setDraft] = useState(null);
@@ -1591,6 +1594,7 @@ const CalculationPage = ({ id, productId }) => {
         [isDirty, isNew, data],
     );
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(() => hasUnsavedChanges() || isSaving);
     const allRows = formDraft?.rows ?? EMPTY_ROWS;
     const rows = allRows.filter((row) => rowView === 'all' || row.archived === (rowView === 'archived'));
     const productDimensions = [data?.product?.length, data?.product?.width, data?.product?.height]
@@ -1901,6 +1905,7 @@ const CalculationPage = ({ id, productId }) => {
     }, [selectedCustomerId, selectedSupplierId]);
 
     useEffect(() => {
+        setCustomerCalculationInfo(null);
         if (!selectedCustomerId) {
             setCustomerDeliveryAddressOptions([]);
             return undefined;
@@ -1909,11 +1914,23 @@ const CalculationPage = ({ id, productId }) => {
         let active = true;
         getSharedRequest(`customers:${selectedCustomerId}`, () => apiClient.get(`/customers/${selectedCustomerId}`))
             .then((response) => {
-                if (active) setCustomerDeliveryAddressOptions(response?.data?.deliveryAddresses ?? []);
+                if (!active) return;
+                setCustomerDeliveryAddressOptions(response?.data?.deliveryAddresses ?? []);
+                setCustomerCalculationInfo({
+                    customerId: selectedCustomerId,
+                    text: response?.data?.customer?.importantCalculationInfo ?? '',
+                    error: '',
+                });
             })
             .catch((lookupError) => {
-                console.error('Failed to load calculation delivery addresses:', lookupError);
-                if (active) setCustomerDeliveryAddressOptions([]);
+                console.error('Failed to load calculation customer details:', lookupError);
+                if (!active) return;
+                setCustomerDeliveryAddressOptions([]);
+                setCustomerCalculationInfo({
+                    customerId: selectedCustomerId,
+                    text: '',
+                    error: 'Kundens viktiga kalkylinformation kunde inte hämtas.',
+                });
             });
 
         return () => {
@@ -2803,7 +2820,7 @@ const CalculationPage = ({ id, productId }) => {
     };
 
     return (
-        <div className="relative min-w-0 px-3 pb-10 md:px-8 py-2">
+        <div className="relative min-w-0 pb-10 py-2">
             <ConfirmationModal
                 isOpen={Boolean(freightWarning && freightWarning.calculation === data)}
                 onClose={() => setFreightWarning(null)}
@@ -2999,7 +3016,7 @@ const CalculationPage = ({ id, productId }) => {
                         </p>
                     ) : data ? (
                         <>
-                            <div className="mb-5 w-280 rounded-sm border border-gray-200 bg-gradient-to-br from-slate-50 via-white to-slate-100 px-5 pt-3 pb-3 shadow-sm">
+                            <div className="mb-5 w-280 rounded-sm border border-gray-200 bg-[#e8eeed] px-5 pt-3 pb-3 shadow-sm">
                                 <dl className="min-w-0 flex flex-row gap-5">
                                     <div className="w-60 space-y-2">
                                         <ProductInfoRow label="Produkt" value={data.product?.name} />
@@ -3063,6 +3080,17 @@ const CalculationPage = ({ id, productId }) => {
                                                 className="min-w-0 flex-1"
                                             />
                                         </div>
+                                        {customerCalculationInfo?.customerId === selectedCustomerId && customerCalculationInfo.error && (
+                                            <p role="alert" className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                                                {customerCalculationInfo.error}
+                                            </p>
+                                        )}
+                                        {customerCalculationInfo?.customerId === selectedCustomerId && customerCalculationInfo.text.trim() && (
+                                            <aside aria-label="Viktig information" className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                                <p className="font-semibold">Viktig information</p>
+                                                <p className="mt-1 whitespace-pre-wrap break-words">{customerCalculationInfo.text}</p>
+                                            </aside>
+                                        )}
                                         <div className="flex min-w-0 items-center gap-3">
                                             <span className="w-20 shrink-0 text-gray-500">Leverantör</span>
                                             <SearchSupplier
@@ -3082,7 +3110,7 @@ const CalculationPage = ({ id, productId }) => {
 
                                     </div>
 
-                                    <div className="w-150 shrink-0">
+                                    <div className="w-110 shrink-0">
                                         <div className="grid min-w-0 text-xs grid-cols-[90px_minmax(80px,1fr)_50px_70px_125px_minmax(180px,1.2fr)] space-x-1 items-center">
                                             <label htmlFor="calculation-unit" className="text-gray-500 @xl:col-start-1 @xl:row-start-1">Enhet</label>
                                             <CompactSelect
@@ -3123,14 +3151,13 @@ const CalculationPage = ({ id, productId }) => {
                                             <button
                                                 type="button"
                                                 onClick={() => handleCurrencyRefresh('purchase')}
-                                                className="inline-flex h-7 items-center justify-center gap-1 rounded-sm px-2 text-tiny font-semibold text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-700 col-start-5 row-start-2"
+                                                aria-label={purchaseCurrencyWarning ? `Uppdatera inköpskurs. ${purchaseCurrencyWarning}` : undefined}
+                                                title={purchaseCurrencyWarning || undefined}
+                                                className={`inline-flex h-6 items-center justify-center gap-1 rounded-sm px-2 text-tiny font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-700 col-start-5 row-start-2 ${purchaseCurrencyWarning ? 'bg-red-500 text-white hover:bg-red-700' : 'text-gray-700'}`}
                                             >
                                                 <RefreshCw size={14} aria-hidden="true" />
                                                 UPPDATERA
                                             </button>
-                                            <p className="min-w-0 text-xs text-red-600 @xl:col-start-6 @xl:row-start-2" role={purchaseCurrencyWarning ? 'status' : undefined}>
-                                                {purchaseCurrencyWarning}
-                                            </p>
 
                                             <label htmlFor="sales-currency" className="text-gray-500 col-start-1 row-start-3">Fsg.valuta</label>
                                             <CompactSelect
@@ -3159,14 +3186,13 @@ const CalculationPage = ({ id, productId }) => {
                                             <button
                                                 type="button"
                                                 onClick={() => handleCurrencyRefresh('sales')}
-                                                className="inline-flex h-7 items-center justify-center gap-1 rounded-sm px-2 text-tiny font-semibold text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-700 col-start-5 row-start-3"
+                                                aria-label={salesCurrencyWarning ? `Uppdatera försäljningskurs. ${salesCurrencyWarning}` : undefined}
+                                                title={salesCurrencyWarning || undefined}
+                                                className={`inline-flex h-6 items-center justify-center gap-1 rounded-sm px-2 text-tiny font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-700 col-start-5 row-start-3 ${salesCurrencyWarning ? 'bg-red-500 text-white hover:bg-red-700' : 'text-gray-700'}`}
                                             >
                                                 <RefreshCw size={14} aria-hidden="true" />
                                                 UPPDATERA
                                             </button>
-                                            <p className="min-w-0 text-xs text-red-600 @xl:col-start-6 @xl:row-start-3" role={salesCurrencyWarning ? 'status' : undefined}>
-                                                {salesCurrencyWarning}
-                                            </p>
 
                                             <label htmlFor="calculation-currency-rate" className="text-gray-500 col-start-1 row-start-4 col-span-2">Omräkning fr. inköpsvaluta</label>
                                             <CompactNumberInput
@@ -3180,12 +3206,12 @@ const CalculationPage = ({ id, productId }) => {
 
                                     </div>
 
-                                    <div className="w-60">
-                                        <label className="shrink-0 text-xs text-gray-500">Allmän info</label>
+                                    <div className="w-100">
+                                        {/* <label className="shrink-0 text-xs text-gray-500">Allmän info</label> */}
                                         <LabeledTextArea
                                             value={formDraft?.calculationFollowUp ?? ''}
                                             onChange={updateField('calculationFollowUp')}
-                                            height="h-16"
+                                            height="h-24"
                                             maxLength={255}
                                             margintop="1"
                                         />
@@ -3533,7 +3559,7 @@ const CalculationPage = ({ id, productId }) => {
                                                     label="Lossn/lev"
                                                     value={formDraft?.loadingPerDelivery}
                                                     onChange={handleFreightDefaultChange('loadingPerDelivery', 'freightUnloading')}
-                                                    disabled={Boolean(formDraft?.deactivateFreightCalculation)}
+                                                    disabled={Boolean(formDraft?.autoFreightPrice || formDraft?.deactivateFreightCalculation)}
                                                 />
                                                 <FreightHeaderField
                                                     label="Kr/bil"
@@ -3655,6 +3681,7 @@ const Calculation = () => {
     const { id } = useParams();
     const [searchParams] = useSearchParams();
     const productId = searchParams.get('productId');
+    useDocumentTitle(id && id !== 'new' ? `Kalkyl ${id}` : 'Ny kalkyl');
     return <CalculationPage key={`${id}:${productId ?? ''}`} id={id} productId={productId} />;
 };
 

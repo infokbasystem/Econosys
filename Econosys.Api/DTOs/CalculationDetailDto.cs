@@ -37,6 +37,7 @@ public sealed record CalculationDetailDto
     public string? DeliveryAddressCountryCode { get; init; }
     public int? DeliveryAddressPostalNr { get; init; }
     public int? PalletFormatId { get; init; }
+    public int? PalletType { get; init; }
     public string? PalletFormatName { get; init; }
     public int? PalletLength { get; init; }
     public int? PalletWidth { get; init; }

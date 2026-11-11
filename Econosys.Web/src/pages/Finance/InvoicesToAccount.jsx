@@ -231,7 +231,7 @@ const InvoicesToAccount = () => {
 
             <div className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
                 <table className="min-w-full table-fixed" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
-                    <thead className="">
+                    <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                         <tr>
                             <th className="w-10 px-2 py-1 text-left text-tiny font-medium tracking-wider text-gray-400">
                                 <SelectCircleCheckbox
@@ -255,10 +255,10 @@ const InvoicesToAccount = () => {
                             </tr>
                         )) : rows.length === 0 && !loading ? (
                             <tr><td colSpan="7" className="px-6 py-14 text-center text-sm text-gray-500">Inga fakturor att visa</td></tr>
-                        ) : rows.map((row) => {
+                        ) : rows.map((row, index) => {
                             const result = processingResults[row.invoiceId];
                             return (
-                                <tr key={row.invoiceId} className={`cursor-pointer border-b border-gray-100 ${row.selected ? 'bg-lime-100' : 'hover:bg-lime-50'}`} onClick={() => toggleInvoice(row.invoiceId)}>
+                                <tr key={row.invoiceId} className={`cursor-pointer border-b border-gray-100 ${row.selected ? 'bg-lime-100' : `${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-lime-50`}`} onClick={() => toggleInvoice(row.invoiceId)}>
                                     <td className="px-2 py-[4px]" onClick={(event) => event.stopPropagation()}><SelectCircleCheckbox checked={Boolean(row.selected)} onChange={() => toggleInvoice(row.invoiceId)} ariaLabel={`Markera faktura ${row.invoiceNumber}`} /></td>
                                     <td className="px-2 py-[6px] text-xs text-gray-800"><Link to={`/finance/invoice/${row.invoiceId}`} target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()} className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800">{row.invoiceNumber ?? row.invoiceId}</Link></td>
                                     <td className="px-2 py-[6px] text-xs text-gray-800">{row.customerName}</td>

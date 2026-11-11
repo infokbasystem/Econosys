@@ -86,6 +86,11 @@ namespace Econosys.Api.Models
 
         public DateTime? DeviationClosedToSupplier { get; set; }
 
+        public int? OverrideHandlingWorkdays { get; set; }
+
+        [MaxLength(4000)]
+        public string? HandlingWorkdaysOverrideReason { get; set; }
+
         public virtual CustomerOrder? CustomerOrder { get; set; }
         public virtual LegacyUser? CreatedByUser { get; set; }
         public virtual LegacyUser? EditedByUser { get; set; }

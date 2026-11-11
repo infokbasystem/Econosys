@@ -8,6 +8,7 @@ using Econosys.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -46,8 +47,9 @@ public class OrderCreationTests
     public async Task CustomerOrderCreateLinksExistingSupplierCostsWithoutDuplicatingThem(bool includeCostEdits)
     {
         using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
-        var supplierOrder = new SupplierOrder { Id = 10, CompanyId = 1 };
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)).Options);
+        var supplierOrder = new SupplierOrder { Id = 10, CompanyId = 1, SupplierOrderNr = "ABC-10" };
         var original = new OrderCost
         {
             Id = 20, SupplierOrderId = 10, CostId = 3, InPrice = 100,
@@ -315,7 +317,18 @@ public class OrderCreationTests
         int companyId, int? basedOnSupplierOrderId)
     {
         var interceptor = new StopBeforeSaveInterceptor();
-        using var context = CreateContext(interceptor);
+        var databaseName = Guid.NewGuid().ToString();
+        var databaseRoot = new InMemoryDatabaseRoot();
+        using (var seedContext = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName, databaseRoot).Options))
+        {
+            seedContext.Customers.Add(new Customer { Id = 1 });
+            await seedContext.SaveChangesAsync();
+        }
+        using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName, databaseRoot)
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .AddInterceptors(interceptor).Options);
         var controller = new SupplierOrdersController(
             context,
             NullLogger<SupplierOrdersController>.Instance,
@@ -325,6 +338,7 @@ public class OrderCreationTests
         await Assert.ThrowsAsync<SaveInterceptedException>(
             () => controller.Create(new CreateSupplierOrderRequest
             {
+                CustomerId = 1,
                 BasedOnSupplierOrderId = basedOnSupplierOrderId,
             }));
 
@@ -333,6 +347,85 @@ public class OrderCreationTests
         Assert.Equal(basedOnSupplierOrderId, order.BasedOnSupplierOrderId);
         Assert.Equal(42, order.CreatedBy);
         Assert.Equal(42, order.EditedBy);
+    }
+
+    [Theory]
+    [InlineData("ABC-", null)]
+    [InlineData("", null)]
+    [InlineData(null, null)]
+    [InlineData("ABC-", 123)]
+    public async Task SupplierOrderCreatePersistsCustomerPrefixAndGeneratedId(
+        string? prefix, int? basedOnSupplierOrderId)
+    {
+        using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)).Options);
+        context.Customers.Add(new Customer { Id = 1, OrderNrPrefix = prefix });
+        context.SupplierOrders.Add(new SupplierOrder { Id = 123, SupplierOrderNr = "ORIGINAL" });
+        await context.SaveChangesAsync();
+        var controller = new SupplierOrdersController(context,
+            NullLogger<SupplierOrdersController>.Instance,
+            new UserResolution(new LegacyUser { Id = 42, CompanyId = 7 }),
+            new PalletFormatOptionsService(context));
+
+        var result = await controller.Create(new CreateSupplierOrderRequest
+        {
+            CustomerId = 1,
+            BasedOnSupplierOrderId = basedOnSupplierOrderId,
+            SupplierOrderNr = "Must not copy the source number",
+        });
+
+        var created = Assert.IsType<SupplierOrderDto>(Assert.IsType<CreatedAtActionResult>(result.Result).Value);
+        Assert.True(created.Id > 123);
+        Assert.Equal(prefix + created.Id, created.SupplierOrderNr);
+        context.ChangeTracker.Clear();
+        var persisted = await context.SupplierOrders.SingleAsync(x => x.Id == created.Id);
+        Assert.Equal(7, persisted.CompanyId);
+        Assert.Equal(created.SupplierOrderNr, persisted.SupplierOrderNr);
+        Assert.Equal("ORIGINAL", (await context.SupplierOrders.SingleAsync(x => x.Id == 123)).SupplierOrderNr);
+    }
+
+    [Theory]
+    [InlineData(null, "ABC-50")]
+    [InlineData("", "ABC-50")]
+    [InlineData("OLD-50", "OLD-50")]
+    public async Task SupplierOrderUpdateFillsMissingNumberAndPreservesExistingNumber(
+        string? existingNumber, string expectedNumber)
+    {
+        using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        context.Customers.Add(new Customer { Id = 1, OrderNrPrefix = "ABC-" });
+        context.SupplierOrders.Add(new SupplierOrder { Id = 50, CustomerId = 1, SupplierOrderNr = existingNumber });
+        await context.SaveChangesAsync();
+        var controller = new SupplierOrdersController(context,
+            NullLogger<SupplierOrdersController>.Instance,
+            new UserResolution(new LegacyUser { Id = 42, CompanyId = 7 }),
+            new PalletFormatOptionsService(context));
+
+        var result = await controller.Update(50, new UpdateSupplierOrderRequest { Id = 50 });
+
+        var updated = Assert.IsType<SupplierOrderDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(expectedNumber, updated.SupplierOrderNr);
+        context.ChangeTracker.Clear();
+        Assert.Equal(expectedNumber, (await context.SupplierOrders.SingleAsync()).SupplierOrderNr);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(999)]
+    public async Task SupplierOrderCreateRejectsMissingCustomerWithoutSaving(int? customerId)
+    {
+        using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var controller = new SupplierOrdersController(context,
+            NullLogger<SupplierOrdersController>.Instance,
+            new UserResolution(new LegacyUser { Id = 42, CompanyId = 7 }),
+            new PalletFormatOptionsService(context));
+
+        var result = await controller.Create(new CreateSupplierOrderRequest { CustomerId = customerId });
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Empty(await context.SupplierOrders.ToListAsync());
     }
 
     private static ApplicationDbContext CreateContext(params IInterceptor[] interceptors) =>

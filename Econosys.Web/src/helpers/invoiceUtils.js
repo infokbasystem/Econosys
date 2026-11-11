@@ -1,8 +1,35 @@
-import { parseNullableNumber, roundTo2 } from './numberUtils';
-import { getSwedishTodayDateString, toSwedishDateInputValue } from './dateUtils';
+import { parseNullableNumber, roundTo2 } from './numberUtils.js';
+import { getSwedishTodayDateString, toSwedishDateInputValue } from './dateUtils.js';
 
 export const VAT_PRICE_TYPE_ID = 13;
 export const ROUNDING_PRICE_TYPE_ID = 12;
+
+export const isInvoiceCustomerLocked = (invoice) => (
+    Number(invoice?.deliveryToCustomerId) > 0
+    || Number(invoice?.deliveryFromStockId) > 0
+    || (invoice?.invoiceRows ?? []).some((row) => (
+        Number(row.deliveryToCustomerId) > 0
+        || Number(row.deliveryFromStockId) > 0
+        || Number(row.orderCostId) > 0
+    ))
+);
+
+export const getInvoiceCustomerFields = (customer) => ({
+    customerId: customer?.id ?? null,
+    customerName: customer?.name ?? '',
+    address: customer?.address ?? '',
+    address2: customer?.address2 ?? '',
+    postalNr: customer?.postalNr ?? '',
+    postalAddress: customer?.postalAddress ?? '',
+    country: customer?.country ?? '',
+    vatNr: customer?.vatNr ?? '',
+    yourReference: customer?.reference ?? '',
+    invoiceDays: customer?.paymentDays ?? 30,
+    termsOfPayment: customer?.termsOfPayment ?? '',
+    salesCurrencyId: customer?.currencyId ?? null,
+    languageId: customer?.languageId ?? null,
+    account: customer?.accountNrAccountsReceivable?.toString() ?? '',
+});
 
 export const createNewInvoiceModel = () => ({
     id: 0,

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Data;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -71,9 +72,35 @@ namespace Econosys.Api.Controllers
             entity.Edited = SwedishTime.Now;
             entity.EditedBy = legacyUser.Id;
 
+            await using var transaction = entity.SupplierOrderId.HasValue
+                ? await _dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable)
+                : null;
+            if (entity.SupplierOrderId.HasValue)
+            {
+                var supplierOrder = await _dbContext.SupplierOrders.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == entity.SupplierOrderId);
+                if (supplierOrder is null || string.IsNullOrWhiteSpace(supplierOrder.SupplierOrderNr))
+                {
+                    return BadRequest(new { message = "Beställningen saknas eller har inget beställningsnummer." });
+                }
+
+                var orderNumber = await _dbContext.CustomerOrders
+                    .CountAsync(x => x.SupplierOrderId == entity.SupplierOrderId) + 1;
+                entity.CustomerOrderNr = supplierOrder.SupplierOrderNr
+                    + (orderNumber > 1 ? "-" + orderNumber.ToString(CultureInfo.InvariantCulture) : string.Empty);
+                if (entity.CustomerOrderNr.Length > 50)
+                {
+                    return BadRequest(new { message = "Ordererkännandets nummer får inte vara längre än 50 tecken." });
+                }
+            }
+
             _dbContext.CustomerOrders.Add(entity);
             await SyncOrderCostsAsync(entity, request.OrderCosts, isCreating: true);
             await _dbContext.SaveChangesAsync();
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync();
+            }
 
             var saved = await BuildDetailsQuery().FirstAsync(x => x.Id == entity.Id);
             return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(saved));
@@ -809,6 +836,7 @@ namespace Econosys.Api.Controllers
             entity.QuotationId = request.QuotationId;
             entity.SupplierOrderId = request.SupplierOrderId;
             entity.CustomerOrderNr = request.CustomerOrderNr;
+            entity.YourOrderNr = request.YourOrderNr;
             entity.CustomerId = request.CustomerId;
             entity.CustomerName = request.CustomerName;
             entity.DeliveryAddressName = request.DeliveryAddressName;
@@ -849,6 +877,7 @@ namespace Econosys.Api.Controllers
         private static void ApplyUpdateRequestToEntity(CustomerOrder entity, UpdateCustomerOrderRequest request)
         {
             entity.CustomerOrderNr = request.CustomerOrderNr;
+            entity.YourOrderNr = request.YourOrderNr;
             entity.DeliveryAddressName = request.DeliveryAddressName;
             entity.DeliveryAddress = request.DeliveryAddress;
             entity.DeliveryPostalNr = request.DeliveryPostalNr;

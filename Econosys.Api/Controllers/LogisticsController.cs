@@ -1,6 +1,9 @@
 using System.Globalization;
+using Econosys.Api.Common;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
+using Econosys.Api.Models;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,10 +16,14 @@ namespace Econosys.Api.Controllers
     public class LogisticsController : ControllerBase
     {
         private readonly ApplicationDbContext _dbContext;
+        private readonly ILegacyUserResolutionService _legacyUserResolution;
+        private readonly ITransportOrderRouteService _routeService;
 
-        public LogisticsController(ApplicationDbContext dbContext)
+        public LogisticsController(ApplicationDbContext dbContext, ILegacyUserResolutionService legacyUserResolution, ITransportOrderRouteService routeService)
         {
             _dbContext = dbContext;
+            _legacyUserResolution = legacyUserResolution;
+            _routeService = routeService;
         }
 
         [HttpGet("/api/logistics/calloffoverview/top-table")]
@@ -461,6 +468,170 @@ namespace Econosys.Api.Controllers
             return NoContent();
         }
 
+        [HttpPost("plan")]
+        public async Task<ActionResult<PlanTransportOrderResponseDto>> PlanCustomerOrder([FromBody] PlanTransportOrderRequestDto? request, CancellationToken cancellationToken = default)
+        {
+            if (request is null || request.CustomerOrderId <= 0 || request.DeliveryId <= 0)
+            {
+                return BadRequest("Order och leverans måste anges.");
+            }
+
+            var deliveryType = request.DeliveryType?.Trim().ToLowerInvariant();
+            if (deliveryType is not ("deliveryfromstock" or "deliverytocustomer" or "deliverytostock"))
+            {
+                return BadRequest("Leveranstypen är ogiltig.");
+            }
+
+            var customerOrder = await _dbContext.CustomerOrders
+                .AsNoTracking()
+                .Where(x => x.Id == request.CustomerOrderId)
+                .Select(x => new { x.Id, x.SupplierOrderId })
+                .FirstOrDefaultAsync();
+            if (customerOrder is null)
+            {
+                return NotFound("Ordern kunde inte hittas.");
+            }
+
+            if (customerOrder.SupplierOrderId is not int supplierOrderId)
+            {
+                return BadRequest("Ordern saknar en leverantörsorder.");
+            }
+
+            var deliveryFromStock = deliveryType == "deliveryfromstock"
+                ? await _dbContext.DeliveryFromStocks
+                    .FirstOrDefaultAsync(x => x.Id == request.DeliveryId
+                        && x.CustomerOrderId == customerOrder.Id
+                        && x.ParentDeliveryId == null
+                        && !x.IsSlattPallet)
+                : null;
+            var deliveryToCustomer = deliveryType == "deliverytocustomer"
+                ? await _dbContext.DeliveryToCustomers
+                    .FirstOrDefaultAsync(x => x.Id == request.DeliveryId
+                        && x.CustomerOrderId == customerOrder.Id
+                        && x.SupplierOrderId == supplierOrderId
+                        && x.ParentDeliveryId == null
+                        && !x.IsSlattPallet)
+                : null;
+            var deliveryToStock = deliveryType == "deliverytostock"
+                ? await _dbContext.DeliveryToStocks
+                    .FirstOrDefaultAsync(x => x.Id == request.DeliveryId
+                        && x.SupplierOrderId == supplierOrderId
+                        && x.ParentDeliveryId == null
+                        && !x.IsSlattPallet)
+                : null;
+
+            if (deliveryFromStock is null && deliveryToCustomer is null && deliveryToStock is null)
+            {
+                return BadRequest("Leveransen kunde inte hittas för den valda ordern.");
+            }
+
+            var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+
+            var deliveryAlreadyPlanned = await _dbContext.TransportOrderDeliveries.AnyAsync(x =>
+                x.DeliveryFromStockId == request.DeliveryId && deliveryType == "deliveryfromstock"
+                || x.DeliveryToCustomerId == request.DeliveryId && deliveryType == "deliverytocustomer"
+                || x.DeliveryToStockId == request.DeliveryId && deliveryType == "deliverytostock");
+            if (deliveryAlreadyPlanned)
+            {
+                return Conflict("Leveransen finns redan på en transportorder.");
+            }
+
+            TransportOrder transportOrder;
+            if (request.TransportOrderId.HasValue)
+            {
+                var existingTransportOrder = await _dbContext.TransportOrders
+                    .FirstOrDefaultAsync(x => x.Id == request.TransportOrderId.Value);
+                if (existingTransportOrder is null)
+                {
+                    return NotFound("Den valda transportordern kunde inte hittas.");
+                }
+
+                transportOrder = existingTransportOrder;
+
+                if (transportOrder.DeliveryStatus != 0)
+                {
+                    return Conflict("Det går bara att lägga ordern på en transportorder i planering.");
+                }
+            }
+            else
+            {
+                var now = SwedishTime.Now;
+                var currentYearPrefix = now.Year % 100;
+                var maxTransportOrderNr = await _dbContext.TransportOrders
+                    .Select(x => (int?)x.TransportOrderNr)
+                    .MaxAsync() ?? 0;
+                var nextTransportOrderNr = maxTransportOrderNr == 0 || maxTransportOrderNr / 10000 < currentYearPrefix
+                    ? currentYearPrefix * 10000 + 1
+                    : maxTransportOrderNr + 1;
+
+                transportOrder = new TransportOrder
+                {
+                    TransportOrderNr = nextTransportOrderNr,
+                    SenderReference = legacyUser?.Name,
+                    DateCreated = now,
+                    DeliveryStatus = 0,
+                    CreatedByUserId = legacyUser?.Id,
+                    CreatedTimeStamp = legacyUser is null ? null : now,
+                    EditedByUserId = legacyUser?.Id,
+                    EditedTimeStamp = legacyUser is null ? null : now,
+                };
+                _dbContext.TransportOrders.Add(transportOrder);
+                await _dbContext.SaveChangesAsync();
+            }
+
+            var sortOrder = await _dbContext.TransportOrderDeliveries
+                .Where(x => x.TransportOrderId == transportOrder.Id)
+                .Select(x => (int?)x.SortOrder)
+                .MaxAsync() ?? 0;
+            _dbContext.TransportOrderDeliveries.Add(new TransportOrderDelivery
+            {
+                TransportOrderId = transportOrder.Id,
+                SortOrder = sortOrder + 1,
+                DeliveryFromStockId = deliveryFromStock?.Id,
+                DeliveryToCustomerId = deliveryToCustomer?.Id,
+                DeliveryToStockId = deliveryToStock?.Id,
+                SupplierOrderId = supplierOrderId,
+            });
+
+            var editedAt = SwedishTime.Now;
+            if (request.TransportOrderId.HasValue && legacyUser is not null)
+            {
+                transportOrder.EditedByUserId = legacyUser.Id;
+                transportOrder.EditedTimeStamp = editedAt;
+            }
+
+            if (deliveryFromStock is not null)
+            {
+                deliveryFromStock.DeliveryStatus = 0;
+                deliveryFromStock.DeliveryDate = transportOrder.DateDelivery;
+            }
+            else if (deliveryToCustomer is not null)
+            {
+                deliveryToCustomer.DeliveryStatus = 0;
+                deliveryToCustomer.DeliveryDate = transportOrder.DateDelivery;
+            }
+            else if (deliveryToStock is not null)
+            {
+                deliveryToStock.DeliveryStatus = 0;
+                deliveryToStock.DeliveryDate = transportOrder.DateDelivery;
+            }
+
+            var outdatedLegs = await _dbContext.DeliveryLegs.Where(x => x.TransportOrderId == transportOrder.Id).ToListAsync(cancellationToken);
+            _dbContext.DeliveryLegs.RemoveRange(outdatedLegs);
+            await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
+            await transaction.DisposeAsync();
+            var route = await _routeService.RecalculateTransportOrderAsync(transportOrder.Id, cancellationToken);
+
+            return Ok(new PlanTransportOrderResponseDto
+            {
+                TransportOrderId = transportOrder.Id,
+                TransportOrderNr = transportOrder.TransportOrderNr,
+                RouteCalculation = new CallOffRouteCalculationDto { Status = route.Status, Message = route.Message },
+            });
+        }
+
         [HttpGet("top-table")]
         public async Task<ActionResult<List<TransportOrderOverviewTopTableRowDto>>> GetTopTable(
             [FromQuery] bool includePlanned = true,
@@ -670,7 +841,9 @@ namespace Econosys.Api.Controllers
                         CustomerCity = customerCity,
                         ProductName = row.Product ?? string.Empty,
                         DeliveryTime = deliveryTime,
+                        DeliveryTimeSortDate = FormatDeliverySortDate(row.DeliveryDate, row.DeliveryDateWeekMode),
                         ConfirmedDeliveryTime = confirmedDelivery,
+                        ConfirmedDeliveryTimeSortDate = FormatDeliverySortDate(so?.ConfirmedDeliveryDate, so?.ConfirmedDeliveryDateWeekMode ?? false),
                         EditionOrdered = orderedEdition,
                         EditionProduced = producedEdition,
                         EditionCustomerOrder = row.Edition,
@@ -772,6 +945,23 @@ namespace Econosys.Api.Controllers
             public string TransporterName { get; set; } = string.Empty;
             public string LoadingCities { get; set; } = string.Empty;
             public string UnloadingCities { get; set; } = string.Empty;
+        }
+
+        private static string? FormatDeliverySortDate(DateTime? date, bool weekMode)
+        {
+            if (!date.HasValue)
+            {
+                return null;
+            }
+
+            var sortDate = date.Value;
+            if (weekMode)
+            {
+                var daysSinceMonday = ((int)sortDate.DayOfWeek + 6) % 7;
+                sortDate = sortDate.AddDays(-daysSinceMonday);
+            }
+
+            return sortDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         }
 
         private static string FormatDateInfo(DateTime? date, bool weekMode, string? fallback)

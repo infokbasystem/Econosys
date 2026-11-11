@@ -45,8 +45,7 @@ const InquirySelectionModal = ({ inquiries, onClose, onSelect, onCreate, isCreat
                     aria-labelledby="inquiry-selection-title"
                     aria-busy={isCreating}
                     tabIndex={-1}
-                    className="relative bg-white rounded-sm shadow-xl max-w-xl w-full mx-4 p-6"
-                    style={{ background: 'rgb(255, 255, 234)' }}
+                    className="relative bg-[#f4f3f2] rounded-sm shadow-xl max-w-xl w-full mx-4 p-6"
                     onClick={(event) => event.stopPropagation()}
                     onKeyDown={handleKeyDown}
                 >

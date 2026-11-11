@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useBlocker } from 'react-router-dom';
-import { ArrowLeft, Calculator, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Calculator, Check, Save, Trash2 } from 'lucide-react';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import ActionButton from '../../components/ActionButton';
 import LabeledInput from '../../components/LabeledInput';
@@ -14,8 +15,9 @@ import { formatDateTime } from '../../helpers/dateUtils';
 import { parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
-import OrderNavigationTree from '../../components/OrderNavigationTree';
+import EntityOrderFlowNavigation from '../../components/EntityOrderFlowNavigation';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
+import useDocumentTitle from '../../hooks/useDocumentTitle';
 
 const MATERIALS_PAGE_SIZE = 1000;
 
@@ -85,6 +87,10 @@ const createNewProductModel = () => ({
     materialGroup: null,
     active: true,
     isServicePackaging: false,
+    isOffset: false,
+    isDigital: false,
+    isFlexo: false,
+    ppwrUpdatedAt: null,
 });
 
 const renderProductMetaRow = (label, value, userName, userId) => {
@@ -110,7 +116,11 @@ const Product = () => {
     const { id } = useParams();
     const isNewProduct = id === 'new';
 
+    const [product, setProduct] = useState(null);
+    useDocumentTitle(isNewProduct ? 'Ny produkt' : `Produkt ${product?.productCode || product?.id || id}`);
+
     const [loading, setLoading] = useState(true);
+    const [isUpdatingPpwr, setIsUpdatingPpwr] = useState(false);
     const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showNewCalculationConfirm, setShowNewCalculationConfirm] = useState(false);
@@ -121,7 +131,6 @@ const Product = () => {
     const [constructions, setConstructions] = useState([]);
     const [varnishes, setVarnishes] = useState([]);
 
-    const [product, setProduct] = useState(null);
     const [originalProduct, setOriginalProduct] = useState(null);
     const skipUnsavedCheckRef = useRef(false);
 
@@ -132,6 +141,7 @@ const Product = () => {
     }, [product, originalProduct]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(() => hasUnsavedChanges() || Boolean(isNewProduct && product));
 
     useEffect(() => {
         const handleBeforeUnload = (event) => {
@@ -285,6 +295,9 @@ const Product = () => {
             materialGroup: parseNullableInt(source.materialGroup),
             active: Boolean(source.active),
             isServicePackaging: Boolean(source.isServicePackaging),
+            isOffset: Boolean(source.isOffset),
+            isDigital: Boolean(source.isDigital),
+            isFlexo: Boolean(source.isFlexo),
         };
     };
 
@@ -324,6 +337,28 @@ const Product = () => {
         if (saveResult.isCreatingNew && saveResult.savedProduct.id) {
             skipUnsavedCheckRef.current = true;
             navigate(`/order/products/${saveResult.savedProduct.id}`, { replace: true });
+        }
+    };
+
+    const handleMarkPpwrUpdated = async () => {
+        if (!product?.id || isUpdatingPpwr) return;
+
+        setIsUpdatingPpwr(true);
+        try {
+            const response = await apiClient.put(`/products/${product.id}/ppwr-updated`);
+            const ppwrUpdatedAt = response?.data?.ppwrUpdatedAt;
+            if (!ppwrUpdatedAt) {
+                throw new Error('The PPWR update response did not include a timestamp.');
+            }
+
+            setProduct((current) => ({ ...current, ppwrUpdatedAt }));
+            setOriginalProduct((current) => (current ? { ...current, ppwrUpdatedAt } : current));
+            setMessages([{ type: 'success', text: 'PPWR uppdaterad.' }]);
+        } catch (error) {
+            console.error('Failed to mark PPWR as updated:', error);
+            setMessages([{ type: 'error', text: 'Kunde inte registrera PPWR-uppdateringen.' }]);
+        } finally {
+            setIsUpdatingPpwr(false);
         }
     };
 
@@ -443,7 +478,7 @@ const Product = () => {
                 onToggleInfoPanel={toggleInfoPanel}
                 infoContent={(
                     <div className="space-y-3">
-                        <h2 className="text-sm text-center text-gray-700">Info</h2>
+                        <h2 className="text-sm text-center text-gray-500">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
                             {renderProductMetaRow('Skapad:', product?.createdAt, product?.createdByUserName, product?.createdBy)}
                             {renderProductMetaRow('Redigerad:', product?.editedAt, product?.editedByUserName, product?.editedBy)}
@@ -451,212 +486,260 @@ const Product = () => {
                     </div>
                 )}
                 infoFooter={(
-                    <OrderNavigationTree
+                    <EntityOrderFlowNavigation
                         entityType="product"
                         entityId={Number.isInteger(product?.id) && product.id > 0 ? product.id : null}
                     />
                 )}
             >
-                    <div className="flex justify-between w-full mb-5">
-                        <div className="flex items-center gap-6">
+                <div className="flex justify-between w-full mb-5">
+                    <div className="flex items-center gap-6">
+                        <ActionButton
+                            label="Tillbaka"
+                            icon={ArrowLeft}
+                            onClick={handleBackClick}
+                            accent="slate"
+                        >
+                        </ActionButton>
+                        <ActionButton
+                            label="Spara"
+                            icon={Save}
+                            onClick={handleSave}
+                            accent="lime"
+                        >
+                        </ActionButton>
+                        <ActionButton
+                            label="Ny kalkyl"
+                            icon={Calculator}
+                            onClick={handleNewCalculationClick}
+                            disabled={isCreatingCalculation}
+                            accent="teal"
+                        >
+                        </ActionButton>
+                    </div>
+                    <div>
+                        <div className="flex items-center gap-1">
                             <ActionButton
-                                label="Tillbaka"
-                                icon={ArrowLeft}
-                                onClick={handleBackClick}
-                                accent="slate"
-                            >
-                            </ActionButton>
-                            <ActionButton
-                                label="Spara"
-                                icon={Save}
-                                onClick={handleSave}
-                                accent="lime"
-                            >
-                            </ActionButton>
-                            <ActionButton
-                                label="Ny kalkyl"
-                                icon={Calculator}
-                                onClick={handleNewCalculationClick}
-                                disabled={isCreatingCalculation}
+                                label="PPWR uppdaterad"
+                                icon={Check}
+                                onClick={handleMarkPpwrUpdated}
+                                disabled={!product?.id || isUpdatingPpwr}
                                 accent="teal"
+                            />
+                            <span className="text-[10px] text-gray-500">
+                                Senast: {product?.ppwrUpdatedAt ? formatDateTime(product.ppwrUpdatedAt) : 'Aldrig'}
+                            </span>
+                        </div>
+
+                    </div>
+                    <div className="flex items-center gap-6">
+                        {product?.id !== 0 && (
+                            <ActionButton
+                                label="Radera"
+                                icon={Trash2}
+                                onClick={() => setShowDeleteConfirm(true)}
+                                accent="rose"
                             >
                             </ActionButton>
-                        </div>
-                        <div className="flex items-center gap-6">
-                            {product?.id !== 0 && (
-                                <ActionButton
-                                    label="Radera"
-                                    icon={Trash2}
-                                    onClick={() => setShowDeleteConfirm(true)}
-                                    accent="rose"
-                                >
-                                </ActionButton>
-                            )}
-                        </div>
+                        )}
                     </div>
+                </div>
 
-                    <div className="mt-8 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-18">
-                        <span>
-                            <div className="grid grid-cols-[420px_350px] gap-x-16 gap-y-4">
-                                <span>
-                                    <LabeledInput
-                                        label="Produktnr"
-                                        value={product?.id || ''}
-                                        disabled
-                                        labelWidth="w-22"
-                                        margintop="0"
+                <div className="mt-8 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-18">
+                    <span>
+                        <div className="grid grid-cols-[420px_350px] gap-x-16 gap-y-4">
+                            <span>
+                                <LabeledInput
+                                    label="Produktnr"
+                                    value={product?.id || ''}
+                                    disabled
+                                    labelWidth="w-22"
+                                    margintop="0"
+                                />
+                                <LabeledInput
+                                    label="Namn"
+                                    value={product?.name || ''}
+                                    onChange={(value) => handleChange('name', value)}
+                                    labelWidth="w-22"
+                                    margintop="0"
+                                />
+                                <div className="mt-2">
+                                    <div className="ml-2 mb-1 text-xs text-gray-700">Not. intern</div>
+                                    <textarea
+                                        value={product.noteInternal || ''}
+                                        onChange={(event) => handleChange('noteInternal', event.target.value)}
+                                        className="text-xs w-full border border-gray-300 rounded-sm px-2 py-1 focus:outline-none bg-white h-25"
                                     />
-                                    <LabeledInput
-                                        label="Namn"
-                                        value={product?.name || ''}
-                                        onChange={(value) => handleChange('name', value)}
-                                        labelWidth="w-22"
-                                        margintop="0"
+                                </div>
+                                <div className="mt-2">
+                                    <div className="ml-2 mb-1 text-xs text-gray-700">Notering, visas externt mot kund</div>
+                                    <textarea
+                                        value={product.noteExternal || ''}
+                                        onChange={(event) => handleChange('noteExternal', event.target.value)}
+                                        className="text-xs w-full border border-gray-300 rounded-sm px-2 py-1 focus:outline-none bg-white h-25"
                                     />
-                                    <div className="mt-2">
-                                        <div className="ml-2 mb-1 text-xs text-gray-700">Not. intern</div>
-                                        <textarea
-                                            value={product.noteInternal || ''}
-                                            onChange={(event) => handleChange('noteInternal', event.target.value)}
-                                            className="text-xs w-full border border-gray-300 rounded-sm px-2 py-1 focus:outline-none bg-white h-25"
+                                </div>
+                                <LabeledReactSelect
+                                    name="materialId"
+                                    label="Material"
+                                    value={product?.materialId || ''}
+                                    items={materials}
+                                    onChange={(value) => handleChange('materialId', value)}
+                                    disableInactive
+                                    labelWidth="w-22"
+                                    margintop="2"
+                                />
+                                <LabeledReactSelect
+                                    name="constructionId"
+                                    label="Konstruktion"
+                                    value={product?.constructionId || ''}
+                                    items={constructions}
+                                    onChange={(value) => handleChange('constructionId', value)}
+                                    disableInactive
+                                    labelWidth="w-22"
+                                    margintop="0"
+                                />
+                                <LabeledInput
+                                    label="Vikt/1000st"
+                                    value={product?.netWeightPer1000 ?? ''}
+                                    onChange={(value) => handleChange('netWeightPer1000', value)}
+                                    labelWidth="w-22"
+                                    margintop="0"
+                                />
+                                <LabeledInput
+                                    label="Produktkod"
+                                    value={product?.productCode || ''}
+                                    onChange={(value) => handleChange('productCode', value)}
+                                    labelWidth="w-22"
+                                    margintop="0"
+                                />
+                                <LabeledSwitch
+                                    field="active"
+                                    name="active"
+                                    label="Ar aktiv"
+                                    value={Boolean(product?.active)}
+                                    onChange={(_rowId, field, checked) => handleChange(field, checked)}
+                                    labelWidth="w-22"
+                                    marginTop={2}
+                                />
+                                <LabeledSwitch
+                                    field="isServicePackaging"
+                                    name="isServicePackaging"
+                                    label="Ar serviceforp."
+                                    value={Boolean(product?.isServicePackaging)}
+                                    onChange={(_rowId, field, checked) => handleChange(field, checked)}
+                                    labelWidth="w-22"
+                                    marginTop={2}
+                                />
+                            </span>
+
+                            <span>
+                                <div className="flex items-center space-x-2 w-full text-xs pb-[1px] mt-0">
+                                    <label className="w-24 flex-none text-xs text-gray-700">Format, lbh</label>
+                                    <input
+                                        type="text"
+                                        value={product?.lengthMm ?? ''}
+                                        onChange={(event) => handleChange('lengthMm', event.target.value)}
+                                        className="w-24 text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={product?.widthMm ?? ''}
+                                        onChange={(event) => handleChange('widthMm', event.target.value)}
+                                        className="w-24 text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={product?.heightMm ?? ''}
+                                        onChange={(event) => handleChange('heightMm', event.target.value)}
+                                        className="w-24 text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none"
+                                    />
+                                </div>
+                                <div className="flex items-center space-x-2 w-full text-xs pb-[1px] mt-1">
+                                    <div className="w-24 flex-none" />
+                                    <input
+                                        type="text"
+                                        value={product?.format || ''}
+                                        onChange={(event) => handleChange('format', event.target.value)}
+                                        className="flex-1 text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none"
+                                        placeholder="Fri formatinformation"
+                                    />
+                                </div>
+
+                                <LabeledInput
+                                    label="Farger"
+                                    value={product?.nrOfColors || ''}
+                                    onChange={(value) => handleChange('nrOfColors', value)}
+                                    labelWidth="w-24"
+                                    margintop="2"
+                                />
+
+                                <div className="mt-8 grid grid-cols-[96px_1fr] gap-x-2 items-start">
+                                    <div className="text-xs text-gray-700 pt-2">Lack</div>
+                                    <div className="space-y-2">
+                                        {normalizedVarnishes.map((varnish) => {
+                                            const isChecked = (product.varnishId == null && varnish.id == null)
+                                                || Number(product.varnishId) === Number(varnish.id);
+
+                                            return (
+                                                <label key={varnish.id ?? 'none'} className="flex items-center gap-2 text-xs text-gray-800">
+                                                    <input
+                                                        type="radio"
+                                                        name="varnish"
+                                                        checked={isChecked}
+                                                        onChange={() => handleChange('varnishId', varnish.id)}
+                                                        className="h-4 w-4"
+                                                    />
+                                                    <span>{varnish.name}</span>
+                                                </label>
+                                            );
+                                        })}
+                                        <input
+                                            type="text"
+                                            value={product?.varnishOther || ''}
+                                            onChange={(event) => handleChange('varnishOther', event.target.value)}
+                                            placeholder="Annan lack"
+                                            className="w-full text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none"
                                         />
                                     </div>
-                                    <div className="mt-2">
-                                        <div className="ml-2 mb-1 text-xs text-gray-700">Notering, visas externt mot kund</div>
-                                        <textarea
-                                            value={product.noteExternal || ''}
-                                            onChange={(event) => handleChange('noteExternal', event.target.value)}
-                                            className="text-xs w-full border border-gray-300 rounded-sm px-2 py-1 focus:outline-none bg-white h-25"
-                                        />
-                                    </div>
-                                    <LabeledReactSelect
-                                        name="materialId"
-                                        label="Material"
-                                        value={product?.materialId || ''}
-                                        items={materials}
-                                        onChange={(value) => handleChange('materialId', value)}
-                                        disableInactive
-                                        labelWidth="w-22"
-                                        margintop="2"
-                                    />
-                                    <LabeledReactSelect
-                                        name="constructionId"
-                                        label="Konstruktion"
-                                        value={product?.constructionId || ''}
-                                        items={constructions}
-                                        onChange={(value) => handleChange('constructionId', value)}
-                                        disableInactive
-                                        labelWidth="w-22"
-                                        margintop="0"
-                                    />
-                                    <LabeledInput
-                                        label="Vikt/1000st"
-                                        value={product?.netWeightPer1000 ?? ''}
-                                        onChange={(value) => handleChange('netWeightPer1000', value)}
-                                        labelWidth="w-22"
-                                        margintop="0"
-                                    />
-                                    <LabeledInput
-                                        label="Produktkod"
-                                        value={product?.productCode || ''}
-                                        onChange={(value) => handleChange('productCode', value)}
-                                        labelWidth="w-22"
-                                        margintop="0"
-                                    />
+                                </div>
+
+                                <div className="mt-8 ">
+                                    <div className="mb-1 text-xs font-medium text-gray-700">Tryckmetod (intern information)</div>
+                                    <div className="mb-2 text-[10px] text-gray-500">Visas inte på beställningar eller mot kund.</div>
                                     <LabeledSwitch
-                                        field="active"
-                                        name="active"
-                                        label="Ar aktiv"
-                                        value={Boolean(product?.active)}
+                                        field="isOffset"
+                                        name="isOffset"
+                                        label="Offset"
+                                        value={Boolean(product?.isOffset)}
                                         onChange={(_rowId, field, checked) => handleChange(field, checked)}
                                         labelWidth="w-22"
-                                        marginTop={2}
+                                        marginTop={1}
                                     />
                                     <LabeledSwitch
-                                        field="isServicePackaging"
-                                        name="isServicePackaging"
-                                        label="Ar serviceforp."
-                                        value={Boolean(product?.isServicePackaging)}
+                                        field="isDigital"
+                                        name="isDigital"
+                                        label="Digital"
+                                        value={Boolean(product?.isDigital)}
                                         onChange={(_rowId, field, checked) => handleChange(field, checked)}
                                         labelWidth="w-22"
-                                        marginTop={2}
+                                        marginTop={1}
                                     />
-                                </span>
-
-                                <span>
-                                    <div className="flex items-center space-x-2 w-full text-xs pb-[1px] mt-0">
-                                        <label className="w-24 flex-none text-xs text-gray-700">Format, lbh</label>
-                                        <input
-                                            type="text"
-                                            value={product?.lengthMm ?? ''}
-                                            onChange={(event) => handleChange('lengthMm', event.target.value)}
-                                            className="w-24 text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none"
-                                        />
-                                        <input
-                                            type="text"
-                                            value={product?.widthMm ?? ''}
-                                            onChange={(event) => handleChange('widthMm', event.target.value)}
-                                            className="w-24 text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none"
-                                        />
-                                        <input
-                                            type="text"
-                                            value={product?.heightMm ?? ''}
-                                            onChange={(event) => handleChange('heightMm', event.target.value)}
-                                            className="w-24 text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none"
-                                        />
-                                    </div>
-                                    <div className="flex items-center space-x-2 w-full text-xs pb-[1px] mt-1">
-                                        <div className="w-24 flex-none" />
-                                        <input
-                                            type="text"
-                                            value={product?.format || ''}
-                                            onChange={(event) => handleChange('format', event.target.value)}
-                                            className="flex-1 text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none"
-                                            placeholder="Fri formatinformation"
-                                        />
-                                    </div>
-
-                                    <LabeledInput
-                                        label="Farger"
-                                        value={product?.nrOfColors || ''}
-                                        onChange={(value) => handleChange('nrOfColors', value)}
-                                        labelWidth="w-24"
-                                        margintop="2"
+                                    <LabeledSwitch
+                                        field="isFlexo"
+                                        name="isFlexo"
+                                        label="Flexo"
+                                        value={Boolean(product?.isFlexo)}
+                                        onChange={(_rowId, field, checked) => handleChange(field, checked)}
+                                        labelWidth="w-22"
+                                        marginTop={1}
                                     />
+                                </div>
 
-                                    <div className="mt-8 grid grid-cols-[96px_1fr] gap-x-2 items-start">
-                                        <div className="text-xs text-gray-700 pt-2">Lack</div>
-                                        <div className="space-y-2">
-                                            {normalizedVarnishes.map((varnish) => {
-                                                const isChecked = (product.varnishId == null && varnish.id == null)
-                                                    || Number(product.varnishId) === Number(varnish.id);
-
-                                                return (
-                                                    <label key={varnish.id ?? 'none'} className="flex items-center gap-2 text-xs text-gray-800">
-                                                        <input
-                                                            type="radio"
-                                                            name="varnish"
-                                                            checked={isChecked}
-                                                            onChange={() => handleChange('varnishId', varnish.id)}
-                                                            className="h-4 w-4"
-                                                        />
-                                                        <span>{varnish.name}</span>
-                                                    </label>
-                                                );
-                                            })}
-                                            <input
-                                                type="text"
-                                                value={product?.varnishOther || ''}
-                                                onChange={(event) => handleChange('varnishOther', event.target.value)}
-                                                placeholder="Annan lack"
-                                                className="w-full text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none"
-                                            />
-                                        </div>
-                                    </div>
-                                </span>
-                            </div>
-                        </span>
-                    </div>
+                            </span>
+                        </div>
+                    </span>
+                </div>
             </OrderDetailLayout>
         </div>
     );

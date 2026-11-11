@@ -1,16 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeftCircle, ArrowRightCircle, ChevronUp, ChevronDown } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import LabeledReactSelect from '../../../components/LabeledReactSelect';
 import apiClient from '../../../config/apiClient';
+import { formatDateShort } from '../../../helpers/dateUtils';
 import { getSharedRequest } from '../../../helpers/sharedRequest';
 
 const PAGE_SIZE = 100;
 
 const columns = [
-    { key: 'id',            label: 'Id',            align: 'left',  width: '4%' },
+    { key: 'supplierOrderNr', label: 'Best.nr',       align: 'left',  width: '4%' },
     { key: 'sentAt',        label: 'Skickat',       align: 'left',  width: '6%' },
     { key: 'fileSent',      label: 'Fil',           align: 'left',  width: '3%' },
     { key: 'seller',        label: 'Ansv. Säljare', align: 'left',  width: '8%', filterable: true },
@@ -22,7 +24,7 @@ const columns = [
     { key: 'deliveryDate',  label: 'Lev. Datum',    align: 'left',  width: '7%' },
     { key: 'edition',       label: 'Upplaga',       align: 'right', width: '5%' },
     { key: 'orderValueSek', label: 'Ordervärde',    align: 'right', width: '5%' },
-    { key: 'markupPercent', label: 'Påslag',        align: 'right', width: '3%' },
+    { key: 'markupPercent', label: 'Påslag',        align: 'right', width: '4%' },
     { key: 'totalTbSek',    label: 'TB',            align: 'right', width: '4%' },
 ];
 
@@ -38,10 +40,10 @@ const NonConfirmedSupplierOrders = () => {
     const [sortDir, setSortDir] = useState('asc');
 
     const [filters, setFilters] = useState({
-        seller: '',
-        ourReference: '',
-        customerName: '',
-        supplierName: '',
+        seller: null,
+        ourReference: null,
+        customerName: null,
+        supplierName: null,
     });
 
     useEffect(() => {
@@ -97,7 +99,7 @@ const NonConfirmedSupplierOrders = () => {
     const filterOptions = useMemo(() => {
         const unique = (key) => {
             const values = [...new Set(allRows.map((r) => r[key]).filter(Boolean))].sort();
-            return [{ id: '', name: 'Alla' }, ...values.map((v) => ({ id: v, name: v }))];
+            return values.map((v) => ({ id: v, name: v }));
         };
         return {
             seller: unique('seller'),
@@ -120,10 +122,10 @@ const NonConfirmedSupplierOrders = () => {
     // Apply in-memory filters
     const filteredRows = useMemo(() => {
         return allRows.filter((row) => {
-            if (filters.seller && row.seller !== filters.seller) return false;
-            if (filters.ourReference && row.ourReference !== filters.ourReference) return false;
-            if (filters.customerName && row.customerName !== filters.customerName) return false;
-            if (filters.supplierName && row.supplierName !== filters.supplierName) return false;
+            if (filters.seller !== null && !filters.seller.includes(row.seller)) return false;
+            if (filters.ourReference !== null && !filters.ourReference.includes(row.ourReference)) return false;
+            if (filters.customerName !== null && !filters.customerName.includes(row.customerName)) return false;
+            if (filters.supplierName !== null && !filters.supplierName.includes(row.supplierName)) return false;
             return true;
         });
     }, [allRows, filters]);
@@ -185,28 +187,9 @@ const NonConfirmedSupplierOrders = () => {
         }).format(Number(value));
     };
 
-    const formatDate = (value) => {
-        if (!value) return '';
-        return new Date(value).toLocaleString('sv-SE', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-        });
-    };
-
-    const formatDateShort = (value) => {
-        if (!value) return '';
-        return new Date(value).toLocaleDateString('sv-SE', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-        });
-    };
-
     const hasPreviousPage = pageNumber > 1;
     const hasNextPage = pageNumber < totalPages;
+    const today = formatDateShort(new Date());
 
     return (
         <div className="flex h-full flex-col pt-3 pb-4 ps-10 pe-0">
@@ -221,8 +204,10 @@ const NonConfirmedSupplierOrders = () => {
                         filterStyle
                         value={filters.seller}
                         items={filterOptions.seller}
-                        onChange={(selected) => handleFilterChange({ seller: selected || '' })}
+                        onChange={(selected) => handleFilterChange({ seller: selected })}
                         isDisabled={loading}
+                        isMulti
+                        placeholder="Alla"
                     />
                 </div>
 
@@ -234,8 +219,10 @@ const NonConfirmedSupplierOrders = () => {
                         filterStyle
                         value={filters.ourReference}
                         items={filterOptions.ourReference}
-                        onChange={(selected) => handleFilterChange({ ourReference: selected || '' })}
+                        onChange={(selected) => handleFilterChange({ ourReference: selected })}
                         isDisabled={loading}
+                        isMulti
+                        placeholder="Alla"
                     />
                 </div>
 
@@ -247,8 +234,10 @@ const NonConfirmedSupplierOrders = () => {
                         filterStyle
                         value={filters.customerName}
                         items={filterOptions.customerName}
-                        onChange={(selected) => handleFilterChange({ customerName: selected || '' })}
+                        onChange={(selected) => handleFilterChange({ customerName: selected })}
                         isDisabled={loading}
+                        isMulti
+                        placeholder="Alla"
                     />
                 </div>
 
@@ -260,8 +249,10 @@ const NonConfirmedSupplierOrders = () => {
                         filterStyle
                         value={filters.supplierName}
                         items={filterOptions.supplierName}
-                        onChange={(selected) => handleFilterChange({ supplierName: selected || '' })}
+                        onChange={(selected) => handleFilterChange({ supplierName: selected })}
                         isDisabled={loading}
+                        isMulti
+                        placeholder="Alla"
                     />
                 </div>
 
@@ -303,7 +294,7 @@ const NonConfirmedSupplierOrders = () => {
             </div>
 
             <div className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
-                <table className={`table-fixed w-full border-collapse text-xs [&_thead_th]:px-2 [&_thead_th]:pt-1 [&_thead_th]:pb-2 [&_thead_th]:text-tiny [&_thead_th]:font-medium [&_thead_th]:text-gray-500 [&_tbody_>_tr]:h-6 [&_tbody_>_tr]:border-b [&_tbody_>_tr]:border-gray-100 [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:px-2 [&_tbody_td]:py-0 [&_tbody_td]:text-gray-800 ${showSkeleton ? '' : '[&_tbody_>_tr:hover]:!bg-lime-200/70'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                <table className={`table-fixed w-full border-collapse text-xs [&_thead_th]:px-2 [&_thead_th]:pt-1 [&_thead_th]:pb-2 [&_thead_th]:text-tiny [&_thead_th]:font-semibold [&_thead_th]:text-gray-900 [&_thead_th]:tracking-[0.12em] [&_tbody_>_tr]:h-6 [&_tbody_>_tr]:border-b [&_tbody_>_tr]:border-gray-100 [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:px-2 [&_tbody_td]:py-0 [&_tbody_td]:text-gray-800 ${showSkeleton ? '' : '[&_tbody_>_tr:hover]:!bg-lime-200/70'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                     <colgroup>
                         {columns.map((col) => (
                             <col key={col.key} style={{ width: col.width }} />
@@ -315,9 +306,9 @@ const NonConfirmedSupplierOrders = () => {
                                 <th
                                     key={col.key}
                                     onClick={() => handleSort(col.key)}
-                                    className={`overflow-hidden text-ellipsis whitespace-nowrap px-2 py-1.5 text-tiny font-medium text-gray-500 cursor-pointer select-none hover:text-gray-700 ${col.align === 'right' ? 'text-right' : 'text-left'}`}
+                                    className={`overflow-hidden text-ellipsis whitespace-nowrap px-2 py-1.5 text-tiny font-semibold text-gray-900 cursor-pointer select-none tracking-[0.12em] ${col.align === 'right' ? 'text-right' : 'text-left'}`}
                                 >
-                                    <span className="inline-flex max-w-full items-center gap-0.5 overflow-hidden">
+                                    <span className="inline-flex max-w-full items-center gap-0.5 overflow-hidden text-gray-900">
                                         {col.label}
                                         {sortKey === col.key
                                             ? sortDir === 'asc'
@@ -347,14 +338,26 @@ const NonConfirmedSupplierOrders = () => {
                                 </td>
                             </tr>
                         ) : (
-                            pagedRows.map((row) => {
+                            pagedRows.map((row, index) => {
                                 const hasCustomerOrderedEdition = Number(row.customerOrderedEdition ?? row.CustomerOrderedEdition ?? 0) > 0;
+                                const deliveryDate = formatDateShort(row.deliveryDate);
+                                const isDeliveryDatePast = deliveryDate && deliveryDate < today;
                                 return (
                                 <tr
                                     key={row.id}
-                                    className={hasCustomerOrderedEdition ? 'bg-lime-50 hover:bg-lime-100' : 'hover:bg-amber-50'}
+                                    className={hasCustomerOrderedEdition
+                                        ? 'bg-lime-50 hover:bg-lime-100'
+                                        : `${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-amber-50`}
                                 >
-                                    <td className="px-2 py-1 text-gray-800">{row.id}</td>
+                                    <td className="px-2 py-1 text-gray-800">
+                                        <Link
+                                            to={`/order/supplierorders/${row.id}`}
+                                            className="text-sky-700 underline-offset-2 hover:underline hover:text-sky-800"
+                                            aria-label={`Öppna leverantörsorder ${row.supplierOrderNr || '-'}`}
+                                        >
+                                            {row.supplierOrderNr || '-'}
+                                        </Link>
+                                    </td>
                                     <td className="px-2 py-1 text-gray-800 whitespace-nowrap">
                                         {row.sentAt
                                             ? formatDateShort(row.sentAt)
@@ -366,8 +369,8 @@ const NonConfirmedSupplierOrders = () => {
                                     <td className="px-2 py-1 text-gray-800">{row.customerName}</td>
                                     <td className="px-2 py-1 text-gray-800">{row.supplierName}</td>
                                     <td className="px-2 py-1 text-gray-800">{row.productName}</td>
-                                    <td className="px-2 py-1 text-gray-800 whitespace-nowrap">{formatDate(row.createdAt)}</td>
-                                    <td className="px-2 py-1 text-gray-800 whitespace-nowrap">{formatDateShort(row.deliveryDate)}</td>
+                                    <td className="px-2 py-1 text-gray-800 whitespace-nowrap">{formatDateShort(row.createdAt)}</td>
+                                    <td className={`px-2 py-1 whitespace-nowrap ${isDeliveryDatePast ? '!text-red-500' : 'text-gray-800'}`}>{deliveryDate}</td>
                                     <td className="px-2 py-1 text-right text-gray-800">{row.editiopnLeft?.toLocaleString('sv-SE') ?? ''}</td>
                                     <td className="px-2 py-1 text-right text-gray-800">{formatAmount(row.orderValueLeftSek)}</td>
                                     <td className="px-2 py-1 text-right text-gray-800">{formatPercent(row.markupPercent)}</td>

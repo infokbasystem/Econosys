@@ -1,0 +1,42 @@
+@baseUrl = http://localhost:5000
+@token = replace-with-bearer-token
+@customerOrderId = 123
+@callOffId = 456
+
+### Find the available stock groups for a customer order
+GET {{baseUrl}}/api/calloff/delivery-candidates?customerOrderId={{customerOrderId}}
+Authorization: Bearer {{token}}
+
+### Add a planned delivery to an existing active call-off
+POST {{baseUrl}}/api/calloff/{{callOffId}}/planned-deliveries
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customerOrderId": {{customerOrderId}},
+  "editionPerPallet": 1000,
+  "nrOfItems": 2000,
+  "nrOfPallets": 2,
+  "isDelivered": false
+}
+
+### Preview transport legs for unsaved call-off deliveries (calls Google with the company API key)
+POST {{baseUrl}}/api/calloff/route-preview
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customerDeliveryAddressId": null,
+  "deliveries": [
+    { "deliveryFromStockId": 789 },
+    { "newDelivery": { "customerOrderId": {{customerOrderId}}, "editionPerPallet": 1000 } }
+  ]
+}
+
+### Recalculate and store the transport legs of a saved call-off
+POST {{baseUrl}}/api/calloff/{{callOffId}}/route/recalculate
+Authorization: Bearer {{token}}
+
+### Recalculate a call-off that does not exist (404)
+POST {{baseUrl}}/api/calloff/0/route/recalculate
+Authorization: Bearer {{token}}

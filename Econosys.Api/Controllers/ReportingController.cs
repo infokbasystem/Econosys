@@ -587,7 +587,7 @@ namespace Econosys.Api.Controllers
                 {
 
                     OrderId = x.customerOrder.Id,
-                    OrderNumber = x.customerOrder.CustomerOrderNr ?? x.customerOrder.Id.ToString(),
+                    OrderNumber = x.customerOrder.CustomerOrderNr ?? string.Empty,
                     CreatedAt = x.CreatedAt,
                     SellerId = x.SellerId,
                     CustomerName = x.customerOrder.CustomerName
@@ -1012,7 +1012,7 @@ namespace Econosys.Api.Controllers
                 .Select(row => new NonDeliveredWarehouseOrdersReportRowDto
                 {
                     Id = row.Id,
-                    OrderNumber = row.CustomerOrderNr ?? row.Id.ToString(),
+                    OrderNumber = row.CustomerOrderNr ?? string.Empty,
                     ProductName = row.ProductName,
                     CustomerName = row.CustomerName,
                     SupplierName = row.SupplierName,
@@ -1188,7 +1188,7 @@ namespace Econosys.Api.Controllers
                 return new HandlingTimesDataReportRowDto
                 {
                     SupplierOrderId = row.SupplierOrderId,
-                    SupplierOrderNr = row.SupplierOrderNr ?? row.SupplierOrderId.ToString(),
+                    SupplierOrderNr = row.SupplierOrderNr ?? string.Empty,
                     SupplierName = row.SupplierName ?? string.Empty,
                     SupplierOrderCreatedDate = row.SupplierOrderCreatedDate,
                     SupplierOrderSentDateTime = supplierSentAt,
@@ -1796,6 +1796,7 @@ namespace Econosys.Api.Controllers
                 .Where(x => x > 0)
                 .Distinct()
                 .ToList();
+            var filterByCostIds = request?.FilterByCostIds ?? false;
 
             var startDate = new DateTime(year, month, 1);
             var endDate = startDate.AddMonths(1);
@@ -1806,7 +1807,7 @@ namespace Econosys.Api.Controllers
                     orderCost.SupplierOrder != null
                     && orderCost.SupplierOrder.Created >= startDate
                     && orderCost.SupplierOrder.Created < endDate
-                    && (selectedCostIds.Count == 0
+                    && (!filterByCostIds
                         || (orderCost.CostId.HasValue && selectedCostIds.Contains(orderCost.CostId.Value))))
                 .OrderByDescending(orderCost => orderCost.SupplierOrder!.Created)
                 .ThenBy(orderCost => orderCost.SupplierOrder!.SupplierOrderNr)
@@ -1837,7 +1838,7 @@ namespace Econosys.Api.Controllers
                             && responsibleUser.Id == orderCost.SupplierOrder.Customer.ResponsibleUserId.Value
                         select responsibleUser.Name
                     ).FirstOrDefault() ?? string.Empty,
-                    OrderNumber = orderCost.SupplierOrder != null ? orderCost.SupplierOrder.Id : 0,
+                    OrderNumber = orderCost.SupplierOrder != null ? orderCost.SupplierOrder.SupplierOrderNr ?? string.Empty : string.Empty,
                     Product = orderCost.SupplierOrder != null ? orderCost.SupplierOrder.Product ?? string.Empty : string.Empty,
                     PurchasePriceSEK = orderCost.InPrice.HasValue && orderCost.SupplierOrder != null && orderCost.SupplierOrder.PurchaseCurrencyRate > 0
                         ? orderCost.InPrice * (decimal)orderCost.SupplierOrder.PurchaseCurrencyRate.Value
@@ -2424,6 +2425,7 @@ namespace Econosys.Api.Controllers
                 .Select(so => new
                 {
                     so.Id,
+                    SupplierOrderNr = so.SupplierOrderNr ?? string.Empty,
                     so.EmailSentDateTime,
                     OurReference = so.OurReference ?? string.Empty,
                     SupplierName = so.SupplierName ?? string.Empty,
@@ -2514,6 +2516,7 @@ namespace Econosys.Api.Controllers
                 return new NonConfirmedSupplierOrderRowDto
                 {
                     Id = r.Id,
+                    SupplierOrderNr = r.SupplierOrderNr,
                     SentAt = r.EmailSentDateTime,
                     FileSent = r.EmailSentDateTime.HasValue ? "Fil" : null,
                     Seller = r.Seller,

@@ -390,7 +390,7 @@ const PalletFollowupReport = () => {
             </div>
 
             <div className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
-                <table className={`table-fixed w-full border-collapse text-xs [&_thead_th]:px-2 [&_thead_th]:pt-1 [&_thead_th]:pb-2 [&_thead_th]:text-tiny [&_thead_th]:font-medium [&_thead_th]:text-gray-500 [&_tbody_>_tr]:h-6 [&_tbody_>_tr]:border-b [&_tbody_>_tr]:border-gray-100 [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:px-2 [&_tbody_td]:py-0 [&_tbody_td]:text-gray-800 ${showSkeleton ? '' : '[&_tbody_>_tr:hover]:!bg-lime-200/70'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                <table className={`table-fixed w-full border-collapse text-xs [&_thead_th]:px-2 [&_thead_th]:pt-1 [&_thead_th]:pb-2 [&_thead_th]:text-tiny [&_thead_th]:font-semibold [&_thead_th]:text-gray-900 [&_thead_th]:tracking-[0.12em] [&_tbody_>_tr]:h-6 [&_tbody_>_tr]:border-b [&_tbody_>_tr]:border-gray-100 [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:px-2 [&_tbody_td]:py-0 [&_tbody_td]:text-gray-800 ${showSkeleton ? '' : '[&_tbody_>_tr:hover]:!bg-lime-200/70'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                     <colgroup>
                         {columns.map((col) => (
                             <col key={col.key} style={{ width: col.width }} />
@@ -430,8 +430,8 @@ const PalletFollowupReport = () => {
                                 </td>
                             </tr>
                         ) : (
-                            sortedRows.map((row) => (
-                                <tr key={`${row.supplier ?? ''}__${row.palletType ?? ''}`} className="border-b border-gray-100 hover:bg-blue-50">
+                            sortedRows.map((row, index) => (
+                                <tr key={`${row.supplier ?? ''}__${row.palletType ?? ''}`} className={`border-b border-gray-100 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50`}>
                                     <td className="px-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">{row.supplier}</td>
                                     <td className="px-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">{row.palletType}</td>
                                     <td className="px-2 pt-[6px] pb-[4px] text-right text-xs text-gray-800">{row.nrOfPallets}</td>

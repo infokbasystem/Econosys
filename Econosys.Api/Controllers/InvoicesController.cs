@@ -24,14 +24,20 @@ namespace Econosys.Api.Controllers
 
         private readonly ApplicationDbContext _dbContext;
         private readonly ILogger<InvoicesController> _logger;
+        private readonly IConfiguration _configuration;
 
         private readonly ILegacyUserResolutionService _legacyUserResolution;
 
-        public InvoicesController(ApplicationDbContext dbContext, ILogger<InvoicesController> logger, ILegacyUserResolutionService legacyUserResolution)
+        public InvoicesController(
+            ApplicationDbContext dbContext,
+            ILogger<InvoicesController> logger,
+            ILegacyUserResolutionService legacyUserResolution,
+            IConfiguration configuration)
         {
             _dbContext = dbContext;
             _logger = logger;
             _legacyUserResolution = legacyUserResolution;
+            _configuration = configuration;
         }
 
         [HttpGet("{id:int}")]
@@ -60,6 +66,8 @@ namespace Econosys.Api.Controllers
             {
                 return BadRequest(ModelState);
             }
+
+            ThrowSimulatedSaveFailureIfEnabled();
 
             var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
             if (legacyUser is null)
@@ -100,6 +108,8 @@ namespace Econosys.Api.Controllers
             {
                 return BadRequest(ModelState);
             }
+
+            ThrowSimulatedSaveFailureIfEnabled();
 
             var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
             if (legacyUser is null)
@@ -861,7 +871,7 @@ namespace Econosys.Api.Controllers
                 SortOrder = sortOrder,
                 PriceTypeId = 12,
                 AccountNr = FormatAccountNr(roundingAccount?.AccountNr, "rounding"),
-                Text = "Oresavrundning",
+                Text = "Öresavrundning",
                 Sum = roundingValue,
                 VatGround = false,
                 Calculate = false,
@@ -1650,6 +1660,13 @@ namespace Econosys.Api.Controllers
                 .ToList();
         }
 
+        private void ThrowSimulatedSaveFailureIfEnabled()
+        {
+            if (_configuration.GetValue<bool>("ErrorHandling:SimulateInvoiceSaveFailure"))
+            {
+                throw new InvalidOperationException("Simulated invoice save failure.");
+            }
+        }
 
         private static Dictionary<string, PropertyInfo> BuildFieldMap()
         {

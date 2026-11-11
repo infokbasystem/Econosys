@@ -7,14 +7,16 @@ import 'react-loading-skeleton/dist/skeleton.css';
 import { usePdf } from '../../contexts/PdfContext';
 import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
-import OrderNavigationTree from '../../components/OrderNavigationTree';
+import EntityOrderFlowNavigation from '../../components/EntityOrderFlowNavigation';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
+import useDocumentTitle from '../../hooks/useDocumentTitle';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledSelect from '../../components/LabeledSelect';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import LabeledSwitch from '../../components/LabeledSwitch';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { formatDateTime, fromDateInputToSwedishIso, toSwedishDateInputValue } from '../../helpers/dateUtils';
 import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
 import { parseNullableInt } from '../../helpers/numberUtils';
@@ -64,8 +66,8 @@ const renderInquiryMetaRow = (label, value, userName) => {
 
     return (
         <div className="grid grid-cols-21 gap-1 mx-2">
-            <div className="col-span-5"><span className="font-medium">{label}</span></div>
-            <div className="col-span-8">{formatDateTime(value)}</div>
+            <div className="col-span-5"><span>{label}</span></div>
+            <div className="col-span-8 font-semibold">{formatDateTime(value)}</div>
             <div className="col-span-8 text-gray-500">
                 {userName && `av ${userName}`}
             </div>
@@ -75,7 +77,7 @@ const renderInquiryMetaRow = (label, value, userName) => {
 
 const renderReadOnlyInfoRow = (label, value) => (
     <div className="">
-        <div className="text-tiny tracking-wide text-gray-400">
+        <div className="text-tiny tracking-wide text-black font-bold">
             {label}
         </div>
         <div className="mt-1 text-xs text-gray-800 break-words">
@@ -90,6 +92,9 @@ const Inquiry = () => {
     const [searchParams] = useSearchParams();
     const calculationId = parseNullableInt(searchParams.get('calculationId'));
     const isNewInquiry = id === 'new' || id == null;
+
+    const [inquiry, setInquiry] = useState(null);
+    useDocumentTitle(isNewInquiry ? 'Ny förfrågan' : `Förfrågan ${inquiry?.id || id}`);
 
     const {
         openPdfPreview,
@@ -107,7 +112,6 @@ const Inquiry = () => {
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
     const [unsavedWarningReason, setUnsavedWarningReason] = useState('navigate');
 
-    const [inquiry, setInquiry] = useState(null);
     const [originalInquiry, setOriginalInquiry] = useState(null);
     const [selectedSupplierDetails, setSelectedSupplierDetails] = useState(null);
     const [selectedCustomerDetails, setSelectedCustomerDetails] = useState(null);
@@ -133,6 +137,7 @@ const Inquiry = () => {
     }, [inquiry, originalInquiry]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(() => hasUnsavedChanges() || Boolean(isNewInquiry && inquiry));
 
     useEffect(() => {
         return () => {
@@ -578,7 +583,7 @@ const Inquiry = () => {
                 onToggleInfoPanel={toggleInfoPanel}
                 infoContent={(
                     <div className="space-y-3">
-                        <h2 className="text-sm text-center text-gray-700">Info</h2>
+                        <h2 className="text-sm text-center text-gray-500">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
                             {renderInquiryMetaRow('Skapad:', inquiry?.createdAt, inquiry?.createdByUserName)}
                             {renderInquiryMetaRow('Redigerad:', inquiry?.editedAt, inquiry?.editedByUserName)}
@@ -586,7 +591,7 @@ const Inquiry = () => {
                     </div>
                 )}
                 infoFooter={(
-                    <OrderNavigationTree
+                    <EntityOrderFlowNavigation
                         entityType="inquiry"
                         entityId={Number.isInteger(inquiry?.id) && inquiry.id > 0 ? inquiry.id : null}
                     />
@@ -627,7 +632,7 @@ const Inquiry = () => {
                         </div>
                     </div>
 
-                    <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-gradient-to-br from-slate-50 via-white to-slate-100 px-5 py-4 shadow-sm">
+                    <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-[#e8eeed] px-5 py-4 shadow-sm">
                         {/* <div className="flex items-center justify-between gap-4">
                             <div>
                                 <h3 className="text-sm font-semibold text-gray-800">Produktinformation</h3>

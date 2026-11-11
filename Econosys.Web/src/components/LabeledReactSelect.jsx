@@ -2,7 +2,7 @@ import Select, { components } from 'react-select';
 import { ChevronDown, ExternalLink } from 'lucide-react';
 
 
-const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, value, items, onChange, disableInactive, allowRawValueLabel = false, filterStyle = false, openInNewTabUrl, openInNewTabLabel = 'Öppna i ny flik', ...props }) => {
+const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, value, items, onChange, disableInactive, allowRawValueLabel = false, filterStyle = false, fitMenuToContent = false, openInNewTabUrl, openInNewTabLabel = 'Öppna i ny flik', ...props }) => {
     const normalizedItems = Array.isArray(items) ? items : [];
 
     const options = normalizedItems
@@ -15,7 +15,9 @@ const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, va
     const isMultiSelect = Boolean(props.isMulti);
 
     const selectedValue = isMultiSelect
-        ? options.filter(opt => Array.isArray(value) && value.some(v => String(v) === String(opt.value)))
+        ? (value == null
+            ? options
+            : options.filter(opt => Array.isArray(value) && value.some(v => String(v) === String(opt.value))))
         : (options.find(opt => String(opt.value) === String(value))
             || (allowRawValueLabel && value ? { value, label: String(value) } : null));
 
@@ -36,6 +38,55 @@ const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, va
             </div>
         </components.Option>
     );
+
+    const MultiSelectMenuList = (menuProps) => {
+        const allOptions = menuProps.selectProps.options ?? [];
+        const selectedOptions = menuProps.selectProps.value ?? [];
+        const isAllSelected = allOptions.length > 0 && selectedOptions.length === allOptions.length;
+
+        const toggleAll = () => {
+            menuProps.selectProps.onChange?.(isAllSelected ? [] : allOptions);
+        };
+
+        return (
+            <components.MenuList {...menuProps}>
+                {allOptions.length > 0 && (
+                    <button
+                        type="button"
+                        aria-pressed={isAllSelected}
+                        onMouseDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }}
+                        onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            toggleAll();
+                        }}
+                        className="flex w-full items-center gap-2 border-b border-gray-200 px-3 py-2 text-left text-gray-800 hover:bg-gray-100"
+                    >
+                        <input type="checkbox" checked={isAllSelected} readOnly className="h-3 w-3" />
+                        <span>Alla</span>
+                    </button>
+                )}
+                {menuProps.children}
+            </components.MenuList>
+        );
+    };
+
+    const MultiValue = (multiValueProps) => {
+        const selectedOptions = multiValueProps.getValue();
+        const allOptions = multiValueProps.selectProps.options ?? [];
+        const isAllSelected = allOptions.length > 0 && selectedOptions.length === allOptions.length;
+
+        if (isAllSelected || selectedOptions.length >= 2) {
+            return multiValueProps.index === 0
+                ? <span className="text-gray-700">{isAllSelected ? 'Alla valda' : `${selectedOptions.length} valda`}</span>
+                : null;
+        }
+
+        return <components.MultiValue {...multiValueProps} />;
+    };
 
     const IndicatorsContainer = (containerProps) => (
         <components.IndicatorsContainer {...containerProps}>
@@ -74,6 +125,21 @@ const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, va
     );
 
     const customStyles = {
+        menu: (provided) => ({
+            ...provided,
+            ...(fitMenuToContent ? {
+                width: 'max-content',
+                minWidth: '100%',
+                maxWidth: 'calc(100vw - 2rem)',
+            } : {}),
+        }),
+        option: (provided) => ({
+            ...provided,
+            ...(fitMenuToContent ? {
+                whiteSpace: 'normal',
+                overflowWrap: 'anywhere',
+            } : {}),
+        }),
         control: (provided, state) => ({
             ...provided,
             minHeight: filterStyle ? 26 : 24,
@@ -87,7 +153,7 @@ const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, va
         valueContainer: (provided) => ({
             ...provided,
             minHeight: 25,
-            padding: '0px 4px 1px 6px',
+            padding: filterStyle ? '1px 4px 0px 10px' : '0px 4px 1px 6px',
         }),
         input: (provided) => ({
             ...provided,
@@ -121,6 +187,7 @@ const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, va
             color: 'darkgray',
             cursor: 'auto',
             '&:hover': { color: '#000' },
+            margin: filterStyle ? '0 6px 0 0' : '0 3px 0 0',
         }),
         indicatorSeparator: () => ({
             display: 'none',
@@ -140,14 +207,17 @@ const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, va
                 isClearable
                 isSearchable
                 styles={customStyles}
+                {...props}
                 closeMenuOnSelect={!isMultiSelect}
+                blurInputOnSelect={!isMultiSelect}
                 hideSelectedOptions={false}
                 components={{
                     ...(isMultiSelect ? { Option: CheckboxOption } : {}),
+                    ...(isMultiSelect ? { MenuList: MultiSelectMenuList } : {}),
+                    ...(isMultiSelect ? { MultiValue } : {}),
                     ...(openInNewTabUrl ? { IndicatorsContainer } : {}),
                     DropdownIndicator,
                 }}
-                {...props}
             />
         </div>
     );

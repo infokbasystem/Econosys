@@ -1,0 +1,34 @@
+@baseUrl = https://localhost:5001
+@token = replace-with-access-token
+
+### Product filters are combined before pagination; customer and supplier match related calculations
+POST {{baseUrl}}/api/products/search
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "filter": {
+    "conditions": [
+      { "field": "name", "operator": "contains", "value": "Box" },
+      { "field": "constructionid", "operator": "eq", "value": 1 },
+      { "field": "customerid", "operator": "eq", "value": 1 },
+      { "field": "supplierid", "operator": "eq", "value": 1 },
+      { "field": "active", "operator": "eq", "value": true }
+    ]
+  },
+  "pagination": { "pageNumber": 1, "pageSize": 25 },
+  "orderBy": [{ "field": "id", "direction": "desc" }]
+}
+
+### Unsupported relationship filter operators return 400
+POST {{baseUrl}}/api/products/search
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "filter": {
+    "conditions": [
+      { "field": "customerid", "operator": "contains", "value": "Box" }
+    ]
+  }
+}

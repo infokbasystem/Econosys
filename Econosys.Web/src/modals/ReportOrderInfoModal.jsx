@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
+import useAppUpdateGuard from '../hooks/useAppUpdateGuard';
 
 import LabeledInput from '../components/LabeledInput';
 import LabeledCheckbox from '../components/LabeledCheckbox';
@@ -17,6 +18,7 @@ const ReportOrderInfoModal = ({
     errorMessage = '',
 }) => {
     const [producedEditionValue, setProducedEditionValue] = useState(producedEdition);
+    useAppUpdateGuard(isOpen || isSaving);
     const [isCompletedValue, setIsCompletedValue] = useState(isCompleted);
     const [syncedProps, setSyncedProps] = useState({ isOpen, producedEdition, isCompleted });
 
@@ -47,8 +49,7 @@ const ReportOrderInfoModal = ({
             <div className="absolute inset-0 bg-black/50 z-40" />
             <div className="relative z-50 flex min-h-screen items-start justify-center pt-20" onClick={onClose}>
                 <div
-                    className="relative bg-white rounded-sm shadow-xl max-w-md w-full mx-4 p-6"
-                    style={{ background: 'rgb(255, 255, 234)' }}
+                    className="relative bg-[#f4f3f2] rounded-sm shadow-xl max-w-md w-full mx-4 p-6"
                     onClick={(e) => e.stopPropagation()}
                 >
                     <div className="relative flex items-center justify-center mb-4">

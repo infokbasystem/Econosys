@@ -5,6 +5,7 @@ namespace Econosys.Api.DTOs
         public int Year { get; set; }
         public int Month { get; set; }
         public List<int>? CostIds { get; set; }
+        public bool FilterByCostIds { get; set; }
     }
 
     public class MonthlyOrderCostsReportResponseDto
@@ -27,7 +28,7 @@ namespace Econosys.Api.DTOs
         public DateTime OrderCreatedAt { get; set; }
         public string Customer { get; set; } = string.Empty;
         public string Responsible { get; set; } = string.Empty;
-        public int OrderNumber { get; set; }
+        public string OrderNumber { get; set; } = string.Empty;
         public string Product { get; set; } = string.Empty;
         public decimal? PurchasePriceSEK { get; set; }
         public decimal? PurchasePriceAttestedSEK { get; set; }

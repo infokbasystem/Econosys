@@ -2,6 +2,19 @@
 @token = replace-with-access-token
 @calculationId = 1
 @inquiryId = 1
+@quotationId = 1
+
+### Branded PDF in the customer's language (saved quotation only)
+GET {{baseUrl}}/api/pdf/quotation/{{quotationId}}
+Authorization: Bearer {{token}}
+
+### Unknown quotation returns 404
+GET {{baseUrl}}/api/pdf/quotation/2147483647
+Authorization: Bearer {{token}}
+
+### Shared document text catalog, configured languages and saved translations
+GET {{baseUrl}}/api/translationitems/document-texts
+Authorization: Bearer {{token}}
 
 ### Choose an inquiry belonging to the calculation
 GET {{baseUrl}}/api/quotations/from-calculation/{{calculationId}}/inquiries

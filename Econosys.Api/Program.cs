@@ -29,6 +29,9 @@ builder.Services
     .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
     .SetApplicationName("Econosys.Api");
 builder.Services.AddHttpClient("Jeeves", client => client.Timeout = TimeSpan.FromSeconds(30));
+// Logging disabled: the Geocoding API key is part of the request URL and must not reach the logs.
+builder.Services.AddHttpClient(GoogleRoutingClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(20))
+    .RemoveAllLoggers();
 
 // Entity Framework
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -159,6 +162,9 @@ builder.Services.AddScoped<IPalletFormatOptionsService, PalletFormatOptionsServi
 builder.Services.AddScoped<IOrderHistoryService, OrderHistoryService>();
 builder.Services.AddScoped<IOrderFlowNavigationService, OrderFlowNavigationService>();
 builder.Services.AddScoped<ITransportOrderCostCalculationService, TransportOrderCostCalculationService>();
+builder.Services.AddScoped<IGoogleRoutingClient, GoogleRoutingClient>();
+builder.Services.AddScoped<ICallOffRouteService, CallOffRouteService>();
+builder.Services.AddScoped<ITransportOrderRouteService, CallOffRouteService>();
 builder.Services.AddSingleton<IProtectedSecretService, ProtectedSecretService>();
 builder.Services.AddScoped<IJeevesAccountingService, JeevesAccountingService>();
 
@@ -317,6 +323,8 @@ app.UseHttpsRedirection();
 
 // Add CORS middleware
 app.UseCors("ActivePolicy");
+
+app.UseMiddleware<Econosys.Api.Middleware.ExceptionDetailsMiddleware>();
 
 app.UseRateLimiter();
 

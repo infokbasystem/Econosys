@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import SwitchSelector from 'react-switch-selector';
 import { useBlocker } from 'react-router-dom';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledSwitch from '../../components/LabeledSwitch';
@@ -187,6 +188,7 @@ const CostsSettings = () => {
     }, [form, originalForm, translationGroups, originalTranslationGroups, isLoadingDetails]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(hasUnsavedChanges);
 
     const loadList = async () => {
         setIsLoadingList(true);

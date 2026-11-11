@@ -416,12 +416,12 @@ const Deliveries = () => {
         return parsed.toLocaleDateString('sv-SE');
     };
 
-    const getRowClass = (row) => {
+    const getRowClass = (row, index) => {
         const rowId = getRowId(row);
         const isSelected = selectedRowId === rowId;
         return [
             'h-6 cursor-pointer border-b border-gray-100',
-            isSelected ? 'bg-lime-100/80' : '',
+            isSelected ? 'bg-lime-100/80' : index % 2 === 0 ? 'bg-white' : 'bg-gray-50',
             !isSelected ? 'hover:bg-lime-200/70' : 'hover:bg-lime-200/70',
         ].join(' ');
     };
@@ -573,10 +573,10 @@ const Deliveries = () => {
                                 </td>
                             </tr>
                         ) : (
-                            rows.map((row) => (
+                            rows.map((row, index) => (
                                 <tr
                                     key={getRowId(row)}
-                                    className={getRowClass(row)}
+                                    className={getRowClass(row, index)}
                                     onClick={() => setSelectedRowId((prev) => (prev === getRowId(row) ? null : getRowId(row)))}
                                 >
                                     <td className="truncate px-2 py-0 text-gray-800">{row.productName}</td>
@@ -615,7 +615,7 @@ const Deliveries = () => {
                                                 onClick={(event) => event.stopPropagation()}
                                                 className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                             >
-                                                {row.supplierOrderNr ?? row.supplierOrderId}
+                                                {row.supplierOrderNr || '-'}
                                             </Link>
                                         ) : (row.supplierOrderNr ?? '')}
                                     </td>

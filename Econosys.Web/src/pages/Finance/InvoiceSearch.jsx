@@ -338,8 +338,8 @@ const InvoiceSearch = () => {
         const isSelected = selectedRowId === row.id;
         return [
             'h-6 cursor-pointer border-b border-gray-100',
-            isSelected ? 'bg-lime-100/80' : '',
-            !isSelected ? 'hover:bg-lime-200/70' : 'hover:bg-lime-200/70',
+            isSelected ? 'odd:bg-lime-100/80 even:bg-lime-100/80' : 'odd:bg-white even:bg-gray-50',
+            'hover:bg-lime-200/70',
         ].join(' ');
     };
 

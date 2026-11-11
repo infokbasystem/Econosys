@@ -3,6 +3,7 @@ using System.Text.Json;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +15,11 @@ namespace Econosys.Api.Controllers
     [Route("api/[controller]")]
     public class TranslationItemsController : ControllerBase
     {
+        public sealed record DocumentTextSettingsResponse(
+            IReadOnlyList<DocumentPdfTranslations.Definition> Definitions,
+            IReadOnlyList<string> Languages,
+            IReadOnlyList<TranslationItemDto> Items);
+
         private readonly ApplicationDbContext _dbContext;
         private readonly ILogger<TranslationItemsController> _logger;
 
@@ -21,6 +27,30 @@ namespace Econosys.Api.Controllers
         {
             _dbContext = dbContext;
             _logger = logger;
+        }
+
+        [HttpGet("document-texts")]
+        public async Task<ActionResult<DocumentTextSettingsResponse>> GetDocumentTexts(CancellationToken cancellationToken)
+        {
+            var codes = DocumentPdfTranslations.Definitions.Select(item => (int?)item.Code).ToList();
+            var items = await _dbContext.TranslationItems.AsNoTracking()
+                .Where(item => codes.Contains(item.TranslationCode))
+                .OrderBy(item => item.Id)
+                .ToListAsync(cancellationToken);
+            var configuredLanguages = await _dbContext.Languages.AsNoTracking()
+                .Select(language => language.LanguageCode)
+                .ToListAsync(cancellationToken);
+            var languages = configuredLanguages.Concat(items.Select(item => item.LangCode))
+                .Where(code => !string.IsNullOrWhiteSpace(code))
+                .Select(code => code!.Trim().ToUpperInvariant())
+                .Distinct().OrderBy(code => code).ToList();
+            if (languages.Count == 0)
+            {
+                languages.AddRange(["EN", "SW"]);
+            }
+
+            return Ok(new DocumentTextSettingsResponse(DocumentPdfTranslations.Definitions,
+                languages, items.Select(MapToDto).ToList()));
         }
 
         [HttpGet("{id:int}")]

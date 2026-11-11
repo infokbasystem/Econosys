@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Skeleton from 'react-loading-skeleton'
 import 'react-loading-skeleton/dist/skeleton.css'
 import { CirclePlus } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import apiClient from '../../config/apiClient'
 import LabeledCheckbox from '../../components/LabeledCheckbox'
 import ReportOrderInfoModal from '../../modals/ReportOrderInfoModal'
+import DeliveryFromStock from '../../modals/DeliveryFromStock'
 import { getSharedRequest } from '../../helpers/sharedRequest'
 import bg from '../../assets/content.png'
 import './CalloffOverview.css'
@@ -164,6 +166,7 @@ const MultiSelectCheckboxFilter = ({ options, selectedValues, onChange }) => {
 }
 
 const CalloffOverview = () => {
+  const navigate = useNavigate()
   const cachedUi = calloffOverviewCache.ui
   const cachedData = calloffOverviewCache.data
   const topScrollRef = useRef(null)
@@ -194,6 +197,12 @@ const CalloffOverview = () => {
   const [reportOrderInfoSaving, setReportOrderInfoSaving] = useState(false)
   const [reportOrderInfoError, setReportOrderInfoError] = useState('')
   const [topTableRefreshToken, setTopTableRefreshToken] = useState(0)
+  const [activeTableRefreshToken, setActiveTableRefreshToken] = useState(0)
+  const [planning, setPlanning] = useState(null)
+  const [planningError, setPlanningError] = useState('')
+  const [planningNotice, setPlanningNotice] = useState('')
+  const [planningBusy, setPlanningBusy] = useState(false)
+  const planningRequestRef = useRef(0)
   const customerFilterInitializedRef = useRef(Array.isArray(cachedUi?.customerFilter))
   const productFilterInitializedRef = useRef(Array.isArray(cachedUi?.productFilter))
   const inventoryFilterInitializedRef = useRef(Array.isArray(cachedUi?.inventoryFilter))
@@ -305,7 +314,7 @@ const CalloffOverview = () => {
       if (!initialHasActiveSnapshotRef.current) setActiveLoading(true)
       try {
         const response = await getSharedRequest(
-          'logistics:calloffoverview:active-table',
+          `logistics:calloffoverview:active-table:${activeTableRefreshToken}`,
           () => apiClient.get('/logistics/calloffoverview/active-table')
         )
         if (isActive) setActiveRows(response?.data ?? [])
@@ -323,7 +332,7 @@ const CalloffOverview = () => {
     return () => {
       isActive = false
     }
-  }, [])
+  }, [activeTableRefreshToken])
 
   const filteredTopRows = useMemo(() => {
     const customerSet = new Set(customerFilter)
@@ -387,6 +396,78 @@ const CalloffOverview = () => {
     }
   }
 
+  const openPlanning = async (row) => {
+    const requestId = ++planningRequestRef.current
+    setPlanning({ step: 'loading' })
+    setPlanningError('')
+    setPlanningNotice('')
+    try {
+      const response = await apiClient.get('/calloff/delivery-candidates', { params: { customerOrderId: row.customerOrderId } })
+      if (planningRequestRef.current !== requestId) return
+      const candidate = response.data
+      const groups = candidate.groups.filter((group) => group.nrOfPallets > 0)
+      if (groups.length === 0) {
+        setPlanning({ step: 'empty' })
+      } else if (groups.length === 1) {
+        setPlanning({ step: 'delivery', candidate, group: groups[0] })
+      } else {
+        setPlanning({ step: 'stock', candidate, groups })
+      }
+    } catch (error) {
+      if (planningRequestRef.current !== requestId) return
+      console.error('Failed to load stock for planning:', error)
+      setPlanning({ step: 'error' })
+      setPlanningError('Kunde inte hämta lagersaldot.')
+    }
+  }
+
+  const closePlanning = () => {
+    planningRequestRef.current += 1
+    setPlanning(null)
+  }
+
+  const chooseCallOff = async (callOffId) => {
+    if (!planning?.details || planningBusy) return
+    if (callOffId === null) {
+      navigate('/logistics/calloff/new', {
+        state: { plannedDelivery: { candidate: planning.candidate, group: planning.group, details: planning.details } },
+      })
+      return
+    }
+
+    setPlanningBusy(true)
+    setPlanningError('')
+    try {
+      const response = await apiClient.post(`/calloff/${callOffId}/planned-deliveries`, planning.details)
+      const routeCalculation = response?.data?.routeCalculation
+      setPlanning(null)
+      setPlanningNotice(['Calculated', 'Empty'].includes(routeCalculation?.status)
+        ? 'Leveransen har lagts till och transportbenen har räknats om.'
+        : `Leveransen har lagts till. ${routeCalculation?.message || 'Transportbenen kunde inte räknas om.'}`)
+      setTopTableRefreshToken((value) => value + 1)
+      setActiveTableRefreshToken((value) => value + 1)
+    } catch (error) {
+      console.error('Failed to plan delivery:', error)
+      setPlanningError(typeof error.response?.data === 'string' ? error.response.data : 'Kunde inte lägga till leveransen i avropet.')
+    } finally {
+      setPlanningBusy(false)
+    }
+  }
+
+  const loadPlanningCallOffs = async () => {
+    setPlanningBusy(true)
+    setPlanningError('')
+    try {
+      const response = await apiClient.get('/logistics/calloffoverview/active-table')
+      setActiveRows(response.data)
+    } catch (error) {
+      console.error('Failed to load call-offs for planning:', error)
+      setPlanningError('Kunde inte hämta pågående avrop. Försök igen.')
+    } finally {
+      setPlanningBusy(false)
+    }
+  }
+
   const renderTopCell = (row, column) => {
     if (column.key === 'logisticsInfo') {
       return (
@@ -430,7 +511,7 @@ const CalloffOverview = () => {
     if (column.key === 'plan') {
       return (
         <td key={column.key} className="px-2 py-1 text-gray-700">
-          <button type="button" disabled className="cursor-not-allowed text-gray-400" title="Planera kommer i nästa steg">Planera</button>
+          <button type="button" onClick={(event) => { event.stopPropagation(); openPlanning(row) }} className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800">Planera</button>
         </td>
       )
     }
@@ -472,6 +553,7 @@ const CalloffOverview = () => {
 
   return (
     <div className="grid grid-rows-[520px_auto] gap-6 pt-1 pb-4 px-[clamp(4px,3vw,6vw)]">
+      {planningNotice ? <div role="status" className="fixed bottom-4 right-4 z-50 border border-amber-300 bg-yellow-50 px-4 py-3 text-xs text-gray-800 shadow-lg">{planningNotice}<button type="button" onClick={() => setPlanningNotice('')} className="ml-4 text-sky-700 hover:underline">Stäng</button></div> : null}
       {logisticsInfoPopup ? (
         <div
           role="status"
@@ -616,6 +698,60 @@ const CalloffOverview = () => {
         isSaving={reportOrderInfoSaving}
         errorMessage={reportOrderInfoError}
       />
+      <DeliveryFromStock
+        isOpen={planning?.step === 'delivery'}
+        candidate={planning?.candidate}
+        group={planning?.group}
+        onClose={closePlanning}
+        onSave={(details) => {
+          setPlanning((current) => ({ ...current, step: 'calloff', details }))
+          loadPlanningCallOffs()
+        }}
+      />
+      {planning && planning.step !== 'delivery' ? createPortal(
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/50" />
+          <div className="relative flex min-h-screen items-start justify-center pt-20">
+            <div role="dialog" aria-modal="true" aria-labelledby="plan-calloff-title" className="w-full max-w-md rounded-sm bg-[#f4f3f2] p-6 shadow-xl mx-4">
+              <h2 id="plan-calloff-title" className="mb-4 text-center text-sm font-semibold">
+                {planning.step === 'stock' ? 'Välj lagersaldo' : planning.step === 'calloff' ? 'Välj avrop' : 'Planera leverans'}
+              </h2>
+              {planning.step === 'loading' ? <p className="py-4 text-center text-xs">Hämtar lagersaldo...</p> : null}
+              {planning.step === 'empty' ? <p className="py-4 text-center text-xs">Inga pallar kvar att leverera.</p> : null}
+              {planning.step === 'stock' ? (
+                <div className="max-h-80 overflow-y-auto">
+                  <p className="mb-3 text-center text-xs">{planning.candidate.customerOrderNr} {planning.candidate.customerName}</p>
+                  {planning.groups.map((group) => (
+                    <div key={group.editionPerPallet ?? 'none'} className="flex items-center justify-between border-t border-gray-300 py-2 text-xs">
+                      <span>{formatNumber(group.editionPerPallet)} / pall · {formatNumber(group.nrOfPallets)} pallar · saldo {formatNumber(group.nrOf)}</span>
+                      <button type="button" onClick={() => setPlanning((current) => ({ ...current, step: 'delivery', group }))} className="bg-lime-700 px-4 py-1 text-white hover:bg-lime-900">Välj</button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {planning.step === 'calloff' ? (
+                <>
+                  <div className="max-h-80 overflow-y-auto">
+                    {planningBusy ? <p className="py-3 text-center text-xs text-gray-600">Hämtar pågående avrop...</p> : planningError ? null : activeRows.length === 0 ? <p className="py-3 text-center text-xs text-gray-600">Inga pågående avrop.</p> : activeRows.map((row) => (
+                      <div key={row.id} className="flex items-center justify-between gap-3 border-t border-gray-300 py-2 text-xs">
+                        <div><div className="font-semibold">{row.id} {row.shipperName}</div><div>{row.customerNames}</div><div>{formatDate(row.deliveryDate)} {row.note}</div></div>
+                        <button type="button" disabled={planningBusy} onClick={() => chooseCallOff(row.id)} className="bg-lime-700 px-4 py-1 text-white hover:bg-lime-900 disabled:bg-gray-400">Välj</button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : null}
+              {planningError ? <p role="alert" className="mt-3 text-center text-xs text-red-700">{planningError}</p> : null}
+              {planning.step === 'calloff' && planningError ? <button type="button" onClick={loadPlanningCallOffs} className="mt-2 text-xs text-sky-700 hover:underline">Hämta avrop igen</button> : null}
+              <div className="mt-6 flex justify-end gap-3">
+                {planning.step === 'calloff' ? <button type="button" disabled={planningBusy} onClick={() => chooseCallOff(null)} className="bg-lime-700 px-4 py-1 text-xs text-white hover:bg-lime-900 disabled:bg-gray-400">Skapa nytt avrop</button> : null}
+                <button type="button" disabled={planningBusy} onClick={closePlanning} className="bg-orange-400 px-4 py-1 text-xs text-white hover:bg-orange-600 disabled:bg-gray-400">Avbryt</button>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      ) : null}
     </div>
   )
 }

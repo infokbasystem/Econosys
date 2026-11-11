@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import RichTextEditor from './RichTextEditor';
 import apiClient from '../config/apiClient';
+import useAppUpdateGuard from '../hooks/useAppUpdateGuard';
 
 const createEmptyRecipient = () => ({ email: '', doSend: false });
 
@@ -111,6 +112,7 @@ export default function EmailModal({
     onSent,
 }) {
     const [subject, setSubject] = useState(initialSubject);
+    useAppUpdateGuard(true);
     const [body, setBody] = useState(initialBody);
     const [receivers, setReceivers] = useState(() => normalizeRecipients(receiverList));
     const [ccRecipients, setCcRecipients] = useState(() => normalizeRecipients(ccMailList));
@@ -302,7 +304,7 @@ export default function EmailModal({
 
             <div className="relative z-50 flex min-h-screen items-start justify-center pt-20">
 
-                <div className="rounded-sm shadow-xl py-6 w-[92%] max-w-5xl max-h-[92vh] overflow-y-auto" style={{ background: 'rgb(255, 255, 234)' }}>
+                <div className="rounded-sm shadow-xl py-6 w-[92%] max-w-5xl max-h-[92vh] overflow-y-auto bg-[#f4f3f2]">
 
                     <div className="relative flex items-center justify-center mb-4">
                         <h2 className="text-sm font-semibold text-center">Skicka e-post</h2>

@@ -10,6 +10,9 @@ namespace Econosys.Api.Models
         [Column("lngProduct_ID")]
         public int Id { get; set; }
 
+        [Column("CompanyId")]
+        public int CompanyId { get; set; }
+
         [Column("strProduct")]
         [MaxLength(50)]
         public string? Name { get; set; }
@@ -102,5 +105,6 @@ namespace Econosys.Api.Models
         public Varnish? Varnish { get; set; }
         public ICollection<Calculation> Calculations { get; set; } = new List<Calculation>();
         public ICollection<DocumentFile> DocumentFiles { get; set; } = new List<DocumentFile>();
+        public ProductInternalInfo? InternalInfo { get; set; }
     }
 }

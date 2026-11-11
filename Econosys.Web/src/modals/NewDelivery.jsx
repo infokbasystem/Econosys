@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
-import { FilePlus2, MapPinPlus, Plus, Search, Trash2 } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { FilePlus2, Map, MapPinPlus, Maximize, Minimize, Plus, Satellite, Search, Trash2 } from 'lucide-react'
 
 import ActionButton from '../components/ActionButton'
 import LabeledCheckbox from '../components/LabeledCheckbox'
@@ -10,6 +10,7 @@ import LabeledInput from '../components/LabeledInput'
 import LabeledSelect from '../components/LabeledSelect'
 import SegmentedFilter from '../components/SegmentedFilter'
 import apiClient from '../config/apiClient'
+import useAppUpdateGuard from '../hooks/useAppUpdateGuard'
 import { getSharedRequest } from '../helpers/sharedRequest'
 
 const deliveryTypes = [
@@ -191,6 +192,9 @@ const calculateDistance = async (maps, from, to) => {
 
 const NewDelivery = () => {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const planningCustomerOrderId = Number(searchParams.get('customerOrderId'))
+  const isPlanFlow = searchParams.get('fromPlan') === '1' && Number.isInteger(planningCustomerOrderId) && planningCustomerOrderId > 0
   const [deliveryType, setDeliveryType] = useState(1)
   const [orderSearch, setOrderSearch] = useState('')
   const [orderInfo, setOrderInfo] = useState(null)
@@ -210,27 +214,65 @@ const NewDelivery = () => {
   const [isSearching, setIsSearching] = useState(false)
   const [isLoadingOrder, setIsLoadingOrder] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  useAppUpdateGuard(!savedDelivery || isSubmitting || Boolean(selectedFile && !uploadedFile))
   const [isLoadingLegs, setIsLoadingLegs] = useState(false)
   const [isLoadingPositions, setIsLoadingPositions] = useState(false)
   const [googleApiKey, setGoogleApiKey] = useState('')
   const [mapError, setMapError] = useState('')
   const [isMapReady, setIsMapReady] = useState(false)
+  const [isSatelliteView, setIsSatelliteView] = useState(false)
+  const [isMapFullscreen, setIsMapFullscreen] = useState(false)
+  const isSatelliteViewRef = useRef(false)
+  const mapFrameRef = useRef(null)
   const mapContainerRef = useRef(null)
   const mapRuntimeRef = useRef({ map: null, renderers: [] })
   const fileInputRef = useRef(null)
 
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsMapFullscreen(document.fullscreenElement === mapFrameRef.current)
+      const maps = window.google?.maps
+      if (mapRuntimeRef.current.map && maps) {
+        maps.event.trigger(mapRuntimeRef.current.map, 'resize')
+      }
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
   const isPallet = Boolean(orderInfo?.isPallet)
   const deliveryParts = calculateDeliveryParts(form, isPallet, customSlattDeliveries)
 
-  const closeModal = () => navigate('/logistics/deliveries', { replace: true })
+  const returnToPlan = (planDelivery = null) => navigate('/logistics/transportorderoverivew', {
+    replace: true,
+    state: planDelivery
+      ? { planDelivery: { ...planDelivery, customerOrderId: orderInfo?.customerOrderId } }
+      : null,
+  })
+
+  const closeModal = () => {
+    if (isPlanFlow) {
+      returnToPlan()
+      return
+    }
+
+    navigate('/logistics/deliveries', { replace: true })
+  }
 
   useEffect(() => {
     const handleKeyDown = (event) => {
-      if (event.key === 'Escape' && !isSubmitting) navigate('/logistics/deliveries', { replace: true })
+      if (event.key !== 'Escape' || isSubmitting) return
+
+      if (isPlanFlow) {
+        navigate('/logistics/transportorderoverivew', { replace: true })
+      } else {
+        navigate('/logistics/deliveries', { replace: true })
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isSubmitting, navigate])
+  }, [isSubmitting, isPlanFlow, navigate])
 
   useEffect(() => {
     let isActive = true
@@ -266,6 +308,34 @@ const NewDelivery = () => {
     loadOptions()
     return () => { isActive = false }
   }, [])
+
+  useEffect(() => {
+    if (!isPlanFlow) return undefined
+
+    let isActive = true
+    setIsLoadingOrder(true)
+    setFormError('')
+
+    apiClient.get(`/deliveries/new/order/${planningCustomerOrderId}`)
+      .then((response) => {
+        if (!isActive) return
+
+        const info = response?.data
+        setOrderInfo(info)
+        setForm(mapOrderInfoToForm(info))
+        setDeliveryType(info?.inventoryId != null && info?.inventoryIsInventory === true ? 1 : 3)
+      })
+      .catch((error) => {
+        if (!isActive) return
+        setOrderInfo(null)
+        setFormError(getApiError(error, 'Kunde inte hämta orderinformation.'))
+      })
+      .finally(() => {
+        if (isActive) setIsLoadingOrder(false)
+      })
+
+    return () => { isActive = false }
+  }, [isPlanFlow, planningCustomerOrderId])
 
   useEffect(() => {
     const term = orderSearch.trim()
@@ -415,6 +485,10 @@ const NewDelivery = () => {
 
         const map = runtime.map ?? new maps.Map(mapContainerRef.current, {
           disableDefaultUI: false,
+          controlSize: 28,
+          mapTypeControl: false,
+          fullscreenControl: false,
+          mapTypeId: isSatelliteViewRef.current ? maps.MapTypeId.SATELLITE : maps.MapTypeId.ROADMAP,
           zoom: 5,
           center: { lat: 59.3293, lng: 18.0686 },
         })
@@ -651,7 +725,11 @@ const NewDelivery = () => {
         formData,
       )
       setUploadedFile(response?.data ?? { name: selectedFile.name })
-      navigate('/logistics/deliveries', { replace: true })
+      if (isPlanFlow) {
+        returnToPlan(saved)
+      } else {
+        navigate('/logistics/deliveries', { replace: true })
+      }
     } catch (error) {
       setFormError(`Leveransen sparades, men följesedeln kunde inte laddas upp: ${getApiError(error, 'Kontrollera filen och försök igen.')}`)
     }
@@ -721,6 +799,8 @@ const NewDelivery = () => {
       setSavedDelivery(saved)
       if (selectedFile) {
         await uploadSelectedFile(saved)
+      } else if (isPlanFlow) {
+        returnToPlan(saved)
       } else {
         navigate('/logistics/deliveries', { replace: true })
       }
@@ -728,6 +808,27 @@ const NewDelivery = () => {
       setFormError(getApiError(error, 'Kunde inte spara leveransen.'))
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const setMapType = (isSatellite) => {
+    isSatelliteViewRef.current = isSatellite
+    setIsSatelliteView(isSatellite)
+    const map = mapRuntimeRef.current.map
+    const maps = window.google?.maps
+    if (map && maps) {
+      map.setMapTypeId(isSatellite ? maps.MapTypeId.SATELLITE : maps.MapTypeId.ROADMAP)
+    }
+  }
+
+  const toggleMapFullscreen = async () => {
+    if (document.fullscreenElement === mapFrameRef.current) {
+      await document.exitFullscreen()
+      return
+    }
+
+    if (mapFrameRef.current?.requestFullscreen) {
+      await mapFrameRef.current.requestFullscreen()
     }
   }
 
@@ -750,8 +851,7 @@ const NewDelivery = () => {
       <div className="absolute inset-0 bg-black/50 z-40" />
       <div className="relative z-50 flex min-h-screen items-start justify-center pt-16">
         <div
-          className="relative bg-white rounded-sm shadow-xl w-full max-w-4xl mx-4 py-6 px-10"
-          style={{ background: 'rgb(255, 255, 234)' }}
+          className="relative bg-[#f4f3f2] rounded-sm shadow-xl w-full max-w-4xl mx-4 py-6 px-10"
           onClick={(event) => event.stopPropagation()}
         // aria-labelledby="new-delivery-title"
         // aria-modal="true"
@@ -1047,8 +1147,41 @@ const NewDelivery = () => {
                   <div className="flex items-center justify-between">
                     {isLoadingLegs ? <span className="text-tiny text-gray-500">Läser in...</span> : null}
                   </div>
-                  <div className="relative h-120 overflow-hidden border border-gray-300 bg-slate-50">
+                  <div ref={mapFrameRef} className="relative h-120 overflow-hidden border border-gray-300 bg-slate-50">
                     <div className="absolute inset-0" ref={mapContainerRef} />
+                    <div className="absolute left-3 top-3 z-10 inline-flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white/95 p-1 shadow-md backdrop-blur-sm">
+                      <button
+                        aria-pressed={!isSatelliteView}
+                        className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${!isSatelliteView ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+                        onClick={() => setMapType(false)}
+                        title="Visa vägkarta"
+                        type="button"
+                      >
+                        <Map aria-hidden="true" size={14} />
+                        Karta
+                      </button>
+                      <button
+                        aria-pressed={isSatelliteView}
+                        className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors ${isSatelliteView ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+                        onClick={() => setMapType(true)}
+                        title="Visa satellit"
+                        type="button"
+                      >
+                        <Satellite aria-hidden="true" size={14} />
+                        Satellit
+                      </button>
+                    </div>
+                    <button
+                      aria-label={isMapFullscreen ? 'Avsluta helskärmsläge' : 'Visa karta i helskärm'}
+                      className="absolute right-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white/95 text-slate-700 shadow-md backdrop-blur-sm transition hover:bg-white hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-600"
+                      onClick={toggleMapFullscreen}
+                      title={isMapFullscreen ? 'Avsluta helskärmsläge' : 'Helskärm'}
+                      type="button"
+                    >
+                      {isMapFullscreen
+                        ? <Minimize aria-hidden="true" size={15} />
+                        : <Maximize aria-hidden="true" size={15} />}
+                    </button>
                     {mapError ? (
                       <div className="absolute inset-0 flex items-center justify-center bg-slate-50/90 px-4 text-center text-xs text-red-700">
                         {mapError}

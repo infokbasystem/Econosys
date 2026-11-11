@@ -37,6 +37,7 @@ namespace Econosys.Api.DTOs
     public class OrderNavigationSupplierOrderDto
     {
         public int Id { get; set; }
+        public string? SupplierOrderNr { get; set; }
         public bool IsCurrent { get; set; }
         public List<OrderNavigationCustomerOrderDto> CustomerOrders { get; set; } = new();
     }
@@ -44,6 +45,7 @@ namespace Econosys.Api.DTOs
     public class OrderNavigationCustomerOrderDto
     {
         public int Id { get; set; }
+        public string? CustomerOrderNr { get; set; }
         public bool IsCurrent { get; set; }
     }
 }

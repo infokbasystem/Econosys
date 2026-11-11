@@ -26,6 +26,8 @@ namespace Econosys.Api.Controllers
                 .AsNoTracking()
                 .Where(x => x.TransportOrderId == transportOrderId)
                 .Include(x => x.TransportOrderCostCalcSupplierOrders)
+                    .ThenInclude(x => x.SupplierOrder)
+                .Include(x => x.TransportOrderCostCalcSupplierOrders)
                     .ThenInclude(x => x.TransportOrderCostCalcSupplierOrderDeliveries)
                 .OrderBy(x => x.CreatedDateTime)
                 .ThenBy(x => x.Id)
@@ -39,6 +41,8 @@ namespace Econosys.Api.Controllers
         {
             var costCalc = await _dbContext.TransportOrderCostCalcs
                 .AsNoTracking()
+                .Include(x => x.TransportOrderCostCalcSupplierOrders)
+                    .ThenInclude(x => x.SupplierOrder)
                 .Include(x => x.TransportOrderCostCalcSupplierOrders)
                     .ThenInclude(x => x.TransportOrderCostCalcSupplierOrderDeliveries)
                 .FirstOrDefaultAsync(x => x.Id == id);
@@ -178,6 +182,8 @@ namespace Econosys.Api.Controllers
 
             var reloaded = await _dbContext.TransportOrderCostCalcs
                 .AsNoTracking()
+                .Include(x => x.TransportOrderCostCalcSupplierOrders)
+                    .ThenInclude(x => x.SupplierOrder)
                 .Include(x => x.TransportOrderCostCalcSupplierOrders)
                     .ThenInclude(x => x.TransportOrderCostCalcSupplierOrderDeliveries)
                 .FirstAsync(x => x.Id == id);

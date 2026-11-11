@@ -3,6 +3,7 @@ namespace Econosys.Api.DTOs
     public class NonConfirmedSupplierOrderRowDto
     {
         public int Id { get; set; }
+        public string SupplierOrderNr { get; set; } = string.Empty;
         public DateTime? SentAt { get; set; }
         public string? FileSent { get; set; }
         public string Seller { get; set; } = string.Empty;

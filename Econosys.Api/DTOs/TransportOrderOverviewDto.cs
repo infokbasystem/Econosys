@@ -38,7 +38,9 @@ namespace Econosys.Api.DTOs
         public string CustomerCity { get; set; } = string.Empty;
         public string ProductName { get; set; } = string.Empty;
         public string DeliveryTime { get; set; } = string.Empty;
+        public string? DeliveryTimeSortDate { get; set; }
         public string ConfirmedDeliveryTime { get; set; } = string.Empty;
+        public string? ConfirmedDeliveryTimeSortDate { get; set; }
         public int? EditionOrdered { get; set; }
         public int? EditionProduced { get; set; }
         public int? EditionCustomerOrder { get; set; }
@@ -64,5 +66,20 @@ namespace Econosys.Api.DTOs
     {
         public int? ProducedEdition { get; set; }
         public bool IsCompleted { get; set; }
+    }
+
+    public class PlanTransportOrderRequestDto
+    {
+        public int CustomerOrderId { get; set; }
+        public string DeliveryType { get; set; } = string.Empty;
+        public int DeliveryId { get; set; }
+        public int? TransportOrderId { get; set; }
+    }
+
+    public class PlanTransportOrderResponseDto
+    {
+        public int TransportOrderId { get; set; }
+        public int TransportOrderNr { get; set; }
+        public CallOffRouteCalculationDto? RouteCalculation { get; set; }
     }
 }

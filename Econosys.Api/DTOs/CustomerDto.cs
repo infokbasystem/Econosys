@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace Econosys.Api.DTOs
 {
     public class CustomerDto
@@ -15,6 +17,7 @@ namespace Econosys.Api.DTOs
         public string? Telephone3 { get; set; }
         public string? Fax { get; set; }
         public string? Note { get; set; }
+        public string? ImportantCalculationInfo { get; set; }
         public string? LoadingInstruction { get; set; }
         public int? ResponsibleUserId { get; set; }
         public bool VAT { get; set; }
@@ -52,6 +55,7 @@ namespace Econosys.Api.DTOs
         public int? CountryId { get; set; }
         public string? Category { get; set; }
         public bool IsProspect { get; set; }
+        public bool IsComplete { get; set; }
         public bool InvoicePalletsSeparately { get; set; }
         public bool InvoiceCostsSeparately { get; set; }
         public bool InvoiceCostsSeparatelyImmediately { get; set; }
@@ -70,6 +74,7 @@ namespace Econosys.Api.DTOs
     public class CustomerFormOptionsDto
     {
         public IReadOnlyList<FilterOptionDto<int>> Users { get; set; } = Array.Empty<FilterOptionDto<int>>();
+        public IReadOnlyList<string> Categories { get; set; } = Array.Empty<string>();
         public IReadOnlyList<CurrencyDto> Currencies { get; set; } = Array.Empty<CurrencyDto>();
         public IReadOnlyList<FilterOptionDto<string>> TermsOfDelivery { get; set; } = Array.Empty<FilterOptionDto<string>>();
         public IReadOnlyList<FilterOptionDto<string>> TermsOfPayment { get; set; } = Array.Empty<FilterOptionDto<string>>();
@@ -130,6 +135,8 @@ namespace Econosys.Api.DTOs
         public string? Telephone3 { get; set; }
         public string? Fax { get; set; }
         public string? Note { get; set; }
+        [MaxLength(1000)]
+        public string? ImportantCalculationInfo { get; set; }
         public string? LoadingInstruction { get; set; }
         public int? ResponsibleUserId { get; set; }
         public bool VAT { get; set; }
@@ -191,6 +198,8 @@ namespace Econosys.Api.DTOs
         public string? Telephone3 { get; set; }
         public string? Fax { get; set; }
         public string? Note { get; set; }
+        [MaxLength(1000)]
+        public string? ImportantCalculationInfo { get; set; }
         public string? LoadingInstruction { get; set; }
         public int? ResponsibleUserId { get; set; }
         public bool? VAT { get; set; }
@@ -280,8 +289,16 @@ namespace Econosys.Api.DTOs
         public string? SearchTerm { get; set; }
         public bool? Active { get; set; }
         public bool? IsProspect { get; set; }
+        public bool? IsComplete { get; set; }
+        public bool[]? IsProspectValues { get; set; }
+        public bool[]? IsCompleteValues { get; set; }
+        public int? ResponsibleUserId { get; set; }
+        public int? SupportEmployeeId { get; set; }
+        public int[]? ResponsibleUserIds { get; set; }
+        public int[]? SupportEmployeeIds { get; set; }
         public int? CountryId { get; set; }
         public string? Category { get; set; }
+        public string[]? Categories { get; set; }
         public string? SortBy { get; set; }
         public bool SortDescending { get; set; }
         public PaginationRequest? Pagination { get; set; }

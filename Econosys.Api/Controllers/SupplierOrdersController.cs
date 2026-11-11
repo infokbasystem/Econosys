@@ -66,6 +66,13 @@ namespace Econosys.Api.Controllers
                 return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
             }
 
+            var customer = await _dbContext.Customers.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == request.CustomerId);
+            if (customer is null)
+            {
+                return BadRequest(new { message = "Kunden kunde inte hittas." });
+            }
+
             var entity = new SupplierOrder { CompanyId = legacyUser.CompanyId };
             ApplyCreateRequestToEntity(entity, request);
 
@@ -74,11 +81,14 @@ namespace Econosys.Api.Controllers
             entity.Edited = SwedishTime.Now;
             entity.EditedBy = legacyUser.Id;
 
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
             _dbContext.SupplierOrders.Add(entity);
             await _dbContext.SaveChangesAsync();
 
+            entity.SupplierOrderNr = customer.OrderNrPrefix + entity.Id.ToString(CultureInfo.InvariantCulture);
             await SyncOrderCostsAsync(entity.Id, request.OrderCosts);
             await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             var saved = await BuildDetailsQuery().FirstAsync(x => x.Id == entity.Id);
             return CreatedAtAction(nameof(GetById), new { id = entity.Id }, MapToDto(saved));
@@ -207,7 +217,6 @@ namespace Econosys.Api.Controllers
 
             var inventories = await _dbContext.Inventories
                 .AsNoTracking()
-                .Where(x => x.IsInventory)
                 .OrderBy(x => x.Name)
                 .ThenBy(x => x.Id)
                 .Select(x => new FilterOptionDto<int>
@@ -274,6 +283,17 @@ namespace Econosys.Api.Controllers
             }
 
             ApplyUpdateRequestToEntity(entity, request);
+            if (string.IsNullOrWhiteSpace(entity.SupplierOrderNr))
+            {
+                var customer = await _dbContext.Customers.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == entity.CustomerId);
+                if (customer is null)
+                {
+                    return BadRequest(new { message = "Kunden kunde inte hittas." });
+                }
+
+                entity.SupplierOrderNr = customer.OrderNrPrefix + entity.Id.ToString(CultureInfo.InvariantCulture);
+            }
             entity.Edited = SwedishTime.Now;
             entity.EditedBy = legacyUser.Id;
 
@@ -1119,7 +1139,6 @@ namespace Econosys.Api.Controllers
 
         private static void ApplyCreateRequestToEntity(SupplierOrder entity, CreateSupplierOrderRequest request)
         {
-            entity.SupplierOrderNr = request.SupplierOrderNr;
             entity.BasedOnSupplierOrderId = request.BasedOnSupplierOrderId;
             entity.InquiryId = request.InquiryId;
             entity.QuotationId = request.QuotationId;
@@ -1206,7 +1225,10 @@ namespace Econosys.Api.Controllers
         private static void ApplyUpdateRequestToEntity(SupplierOrder entity, UpdateSupplierOrderRequest request)
         {
             // Supplier/customer linkage is intentionally stable after create.
-            entity.SupplierOrderNr = request.SupplierOrderNr;
+            if (!string.IsNullOrWhiteSpace(request.SupplierOrderNr))
+            {
+                entity.SupplierOrderNr = request.SupplierOrderNr;
+            }
             entity.BasedOnSupplierOrderId = request.BasedOnSupplierOrderId;
             entity.SupplierFactoryId = request.SupplierFactoryId;
             entity.InventoryId = request.InventoryId;

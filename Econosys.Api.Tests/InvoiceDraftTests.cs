@@ -4,6 +4,7 @@ using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
 using Econosys.Api.Services;
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -33,7 +34,7 @@ public class InvoiceDraftTests
     {
         using var context = CreateContext();
         var controller = new InvoicesController(context,
-            NullLogger<InvoicesController>.Instance, new UserResolution(7));
+            NullLogger<InvoicesController>.Instance, new UserResolution(7), new ConfigurationBuilder().Build());
         var existing = new Invoice { Id = 50 };
         if (update)
         {
@@ -208,7 +209,7 @@ public class InvoiceDraftTests
         Assert.IsType<InvoiceDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
 
     private static InvoicesController CreateController(ApplicationDbContext context) =>
-        new(context, NullLogger<InvoicesController>.Instance, new UserResolution());
+        new(context, NullLogger<InvoicesController>.Instance, new UserResolution(), new ConfigurationBuilder().Build());
 
     private sealed class UserResolution(int companyId = 1) : ILegacyUserResolutionService
     {

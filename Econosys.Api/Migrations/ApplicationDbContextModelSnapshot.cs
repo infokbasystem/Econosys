@@ -1813,6 +1813,10 @@ namespace Econosys.Api.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
+
                     b.Property<int?>("AccountNrAccountsReceivable")
                         .HasColumnType("int")
                         .HasColumnName("AccountNrAccountsReceivable");
@@ -1891,6 +1895,11 @@ namespace Econosys.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("strFax");
+
+                    b.Property<string>("ImportantCalculationInfo")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("ImportantCalculationInfo");
 
                     b.Property<int?>("InvoiceCommunicationTypeId")
                         .HasColumnType("int")
@@ -3180,6 +3189,10 @@ namespace Econosys.Api.Migrations
                     b.Property<decimal?>("FreightCostPer1000")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("HandlingWorkdaysOverrideReason")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
                     b.Property<bool>("IsInternal")
                         .HasColumnType("bit");
 
@@ -3192,6 +3205,9 @@ namespace Econosys.Api.Migrations
 
                     b.Property<decimal?>("NrOfProduced")
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<int?>("OverrideHandlingWorkdays")
+                        .HasColumnType("int");
 
                     b.Property<int?>("ResponsibleUserId")
                         .HasColumnType("int");
@@ -4070,6 +4086,10 @@ namespace Econosys.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("strAccountNr");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
 
                     b.Property<string>("CostCenter")
                         .HasMaxLength(50)
@@ -5168,6 +5188,28 @@ namespace Econosys.Api.Migrations
                         {
                             t.ExcludeFromMigrations();
                         });
+                });
+
+            modelBuilder.Entity("Econosys.Api.Models.ProductInternalInfo", b =>
+                {
+                    b.Property<int>("ProductId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDigital")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsFlexo")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsOffset")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("PpwrUpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("ProductId");
+
+                    b.ToTable("ProductInternalInfo");
                 });
 
             modelBuilder.Entity("Econosys.Api.Models.Quotation", b =>
@@ -8308,6 +8350,17 @@ namespace Econosys.Api.Migrations
                     b.Navigation("Varnish");
                 });
 
+            modelBuilder.Entity("Econosys.Api.Models.ProductInternalInfo", b =>
+                {
+                    b.HasOne("Econosys.Api.Models.Product", "Product")
+                        .WithOne("InternalInfo")
+                        .HasForeignKey("Econosys.Api.Models.ProductInternalInfo", "ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("Econosys.Api.Models.Quotation", b =>
                 {
                     b.HasOne("Econosys.Api.Models.Calculation", "Calculation")
@@ -9034,6 +9087,8 @@ namespace Econosys.Api.Migrations
                     b.Navigation("Calculations");
 
                     b.Navigation("DocumentFiles");
+
+                    b.Navigation("InternalInfo");
                 });
 
             modelBuilder.Entity("Econosys.Api.Models.Quotation", b =>

@@ -1,0 +1,11 @@
+@baseUrl = https://localhost:5001
+@token = replace-with-access-token
+@supplierOrderId = 1
+
+### Branded purchase order PDF in the supplier's language
+GET {{baseUrl}}/api/pdf/supplierorder/{{supplierOrderId}}
+Authorization: Bearer {{token}}
+
+### Unknown supplier order PDF returns 404
+GET {{baseUrl}}/api/pdf/supplierorder/2147483647
+Authorization: Bearer {{token}}

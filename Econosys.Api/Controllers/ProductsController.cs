@@ -4,6 +4,7 @@ using Econosys.Api.Common;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -17,11 +18,16 @@ namespace Econosys.Api.Controllers
     {
         private readonly ApplicationDbContext _dbContext;
         private readonly ILogger<ProductsController> _logger;
+        private readonly ILegacyUserResolutionService _legacyUserResolution;
 
-        public ProductsController(ApplicationDbContext dbContext, ILogger<ProductsController> logger)
+        public ProductsController(
+            ApplicationDbContext dbContext,
+            ILogger<ProductsController> logger,
+            ILegacyUserResolutionService legacyUserResolution)
         {
             _dbContext = dbContext;
             _logger = logger;
+            _legacyUserResolution = legacyUserResolution;
         }
 
         [HttpGet("{id:int}")]
@@ -30,6 +36,7 @@ namespace Econosys.Api.Controllers
             var entity = await _dbContext.Products
                 .AsNoTracking()
                 .Include(x => x.Construction)
+                .Include(x => x.InternalInfo)
                 .FirstOrDefaultAsync(x => x.Id == id);
 
             if (entity is null)
@@ -48,8 +55,15 @@ namespace Econosys.Api.Controllers
                 return BadRequest(ModelState);
             }
 
+            var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+            if (legacyUser is null)
+            {
+                return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+            }
+
             var entity = new Product
-            {                
+            {
+                CompanyId = legacyUser.CompanyId,
                 Name = request.Name,
                 NoteInternal = request.NoteInternal,
                 NoteExternal = request.NoteExternal,
@@ -73,6 +87,12 @@ namespace Econosys.Api.Controllers
                 MaterialGroup = request.MaterialGroup,
                 Active = request.Active,
                 IsServicePackaging = request.IsServicePackaging,
+                InternalInfo = new ProductInternalInfo
+                {
+                    IsOffset = request.IsOffset,
+                    IsDigital = request.IsDigital,
+                    IsFlexo = request.IsFlexo,
+                },
                 LastSupplierOrderCreated = request.LastSupplierOrderCreated,
                 LastCustomerOrderCreated = request.LastCustomerOrderCreated
             };
@@ -90,7 +110,9 @@ namespace Econosys.Api.Controllers
                 return BadRequest(ModelState);
             }
 
-            var entity = await _dbContext.Products.FirstOrDefaultAsync(x => x.Id == id);
+            var entity = await _dbContext.Products
+                .Include(x => x.InternalInfo)
+                .FirstOrDefaultAsync(x => x.Id == id);
 
             if (entity is null)
             {
@@ -118,6 +140,10 @@ namespace Econosys.Api.Controllers
             entity.MaterialGroup = request.MaterialGroup;
             entity.Active = request.Active ?? false;
             entity.IsServicePackaging = request.IsServicePackaging;
+            entity.InternalInfo ??= new ProductInternalInfo();
+            entity.InternalInfo.IsOffset = request.IsOffset;
+            entity.InternalInfo.IsDigital = request.IsDigital;
+            entity.InternalInfo.IsFlexo = request.IsFlexo;
             entity.LastSupplierOrderCreated = request.LastSupplierOrderCreated;
             entity.LastCustomerOrderCreated = request.LastCustomerOrderCreated;
             entity.EditedAt = SwedishTime.Now;
@@ -125,6 +151,25 @@ namespace Econosys.Api.Controllers
             await _dbContext.SaveChangesAsync();
 
             return Ok(MapToDto(entity));
+        }
+
+        [HttpPut("{id:int}/ppwr-updated")]
+        public async Task<ActionResult<object>> MarkPpwrUpdated(int id)
+        {
+            var entity = await _dbContext.Products
+                .Include(x => x.InternalInfo)
+                .FirstOrDefaultAsync(x => x.Id == id);
+
+            if (entity is null)
+            {
+                return NotFound();
+            }
+
+            entity.InternalInfo ??= new ProductInternalInfo();
+            entity.InternalInfo.PpwrUpdatedAt = SwedishTime.Now;
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new { ppwrUpdatedAt = entity.InternalInfo.PpwrUpdatedAt });
         }
 
         [HttpDelete("{id:int}")]
@@ -148,7 +193,8 @@ namespace Econosys.Api.Controllers
         {
             IQueryable<Product> query = _dbContext.Products
                 .AsNoTracking()
-                .Include(x => x.Construction);
+                .Include(x => x.Construction)
+                .Include(x => x.InternalInfo);
             var pagination = request?.Pagination ?? new PaginationRequest();
 
             if (request?.Filter?.Conditions?.Count > 0)
@@ -273,6 +319,19 @@ namespace Econosys.Api.Controllers
         {
             var field = condition.Field.Trim().ToLowerInvariant();
             var op = condition.Operator.Trim().ToLowerInvariant();
+
+            if (field is "customerid" or "supplierid")
+            {
+                if (op != "eq")
+                {
+                    throw new ArgumentException($"Unsupported operator '{condition.Operator}' for field '{condition.Field}'.");
+                }
+
+                var id = GetRequiredIntValue(condition);
+                return field == "customerid"
+                    ? query.Where(product => product.Calculations.Any(calculation => calculation.CustomerId == id))
+                    : query.Where(product => product.Calculations.Any(calculation => calculation.SupplierId == id));
+            }
 
             return field switch
             {
@@ -741,6 +800,10 @@ namespace Econosys.Api.Controllers
             MaterialGroup = entity.MaterialGroup,
             Active = entity.Active,
             IsServicePackaging = entity.IsServicePackaging,
+            IsOffset = entity.InternalInfo?.IsOffset ?? false,
+            IsDigital = entity.InternalInfo?.IsDigital ?? false,
+            IsFlexo = entity.InternalInfo?.IsFlexo ?? false,
+            PpwrUpdatedAt = entity.InternalInfo?.PpwrUpdatedAt,
             LastSupplierOrderCreated = entity.LastSupplierOrderCreated,
             LastCustomerOrderCreated = entity.LastCustomerOrderCreated,
             Construction = entity.Construction is null

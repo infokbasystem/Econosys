@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import SwitchSelector from 'react-switch-selector';
 import { useBlocker } from 'react-router-dom';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledSelect from '../../components/LabeledSelect';
@@ -219,6 +220,7 @@ const TypeSection = ({ palletTypes, isLoadingList, onRefresh, selectedTypeId, on
     }, [form, originalForm]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(hasUnsavedChanges);
 
     useEffect(() => {
         const handleBeforeUnload = (event) => {
@@ -570,6 +572,7 @@ const FormatSection = ({ palletFormats, isLoadingList, onRefresh, selectedTypeId
     }, [form, originalForm, isLoadingDetails]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(hasUnsavedChanges);
 
     useEffect(() => {
         const handleBeforeUnload = (event) => {

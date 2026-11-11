@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -15,11 +16,16 @@ namespace Econosys.Api.Controllers
     {
         private readonly ApplicationDbContext _dbContext;
         private readonly ILogger<CustomersController> _logger;
+        private readonly ILegacyUserResolutionService _legacyUserResolution;
 
-        public CustomersController(ApplicationDbContext dbContext, ILogger<CustomersController> logger)
+        public CustomersController(
+            ApplicationDbContext dbContext,
+            ILogger<CustomersController> logger,
+            ILegacyUserResolutionService legacyUserResolution)
         {
             _dbContext = dbContext;
             _logger = logger;
+            _legacyUserResolution = legacyUserResolution;
         }
 
         [HttpGet("{id:int}")]
@@ -52,6 +58,14 @@ namespace Econosys.Api.Controllers
                     Name = x.Name!,
                     IsActive = x.Active,
                 })
+                .ToListAsync();
+
+            var categories = await _dbContext.Customers
+                .AsNoTracking()
+                .Where(x => x.Category != null && x.Category.Trim() != "")
+                .Select(x => x.Category!)
+                .Distinct()
+                .OrderBy(x => x)
                 .ToListAsync();
 
             var currencies = await _dbContext.Currencies
@@ -112,6 +126,7 @@ namespace Econosys.Api.Controllers
             return Ok(new CustomerFormOptionsDto
             {
                 Users = users,
+                Categories = categories,
                 Currencies = currencies,
                 TermsOfDelivery = termsOfDelivery,
                 TermsOfPayment = termsOfPayment,
@@ -127,8 +142,15 @@ namespace Econosys.Api.Controllers
                 return BadRequest(ModelState);
             }
 
+            var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+            if (legacyUser is null)
+            {
+                return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+            }
+
             var customer = new Customer
             {
+                CompanyId = legacyUser.CompanyId,
                 Name = request.Name,
                 SortName = request.SortName,
                 Address = request.Address,
@@ -141,6 +163,7 @@ namespace Econosys.Api.Controllers
                 Telephone3 = request.Telephone3,
                 Fax = request.Fax,
                 Note = request.Note,
+                ImportantCalculationInfo = request.ImportantCalculationInfo,
                 LoadingInstruction = request.LoadingInstruction,
                 ResponsibleUserId = request.ResponsibleUserId,
                 VAT = request.VAT,
@@ -174,7 +197,7 @@ namespace Econosys.Api.Controllers
                 AccountNrEarnings = request.AccountNrEarnings,
                 SupportEmployeeId = request.SupportEmployeeId,
                 LastActivity = request.LastActivity,
-                CountryId = request.CountryId,
+                CountryId = null,
                 Category = request.Category,
                 IsProspect = request.IsProspect,
                 InvoicePalletsSeparately = request.InvoicePalletsSeparately,
@@ -217,9 +240,66 @@ namespace Econosys.Api.Controllers
                 query = query.Where(c => c.Active == request.Active.Value);
             }
 
+            if (request?.ResponsibleUserId.HasValue == true)
+            {
+                query = query.Where(c => c.ResponsibleUserId == request.ResponsibleUserId.Value);
+            }
+
+            if (request?.ResponsibleUserIds?.Length > 0)
+            {
+                query = query.Where(c =>
+                    c.ResponsibleUserId.HasValue
+                    && request.ResponsibleUserIds.Contains(c.ResponsibleUserId.Value));
+            }
+
+            if (request?.SupportEmployeeId.HasValue == true)
+            {
+                query = query.Where(c => c.SupportEmployeeId == request.SupportEmployeeId.Value);
+            }
+
+            if (request?.SupportEmployeeIds?.Length > 0)
+            {
+                query = query.Where(c =>
+                    c.SupportEmployeeId.HasValue
+                    && request.SupportEmployeeIds.Contains(c.SupportEmployeeId.Value));
+            }
+
             if (request?.IsProspect.HasValue == true)
             {
                 query = query.Where(c => c.IsProspect == request.IsProspect.Value);
+            }
+
+            if (request?.IsProspectValues?.Length > 0)
+            {
+                query = query.Where(c => request.IsProspectValues.Contains(c.IsProspect));
+            }
+
+            var completeFilter = request?.IsCompleteValues?.Length == 1
+                ? request.IsCompleteValues[0]
+                : request?.IsComplete;
+            if (completeFilter.HasValue)
+            {
+                var matchingCompletion = query.Where(c =>
+                    c.Name != null && c.Name.Trim() != ""
+                    && c.DeliveryAddresses.Any()
+                    && c.CustomerContactPersons.Any(contact => contact.MailInvoice)
+                    && c.OrgNr != null && c.OrgNr.Trim() != ""
+                    && c.TermsOfPayment != null && c.TermsOfPayment.Trim() != ""
+                    && c.TermsOfDelivery != null && c.TermsOfDelivery.Trim() != ""
+                    && c.ResponsibleUserId.HasValue
+                    && c.SupportEmployeeId.HasValue);
+
+                query = completeFilter.Value
+                    ? matchingCompletion
+                    : query.Where(c =>
+                        !(c.Name != null && c.Name.Trim() != ""
+                          && c.DeliveryAddresses.Any()
+                          && c.CustomerContactPersons.Any(contact => contact.MailInvoice)
+                          && c.OrgNr != null && c.OrgNr.Trim() != ""
+                          && c.TermsOfPayment != null && c.TermsOfPayment.Trim() != ""
+                          && c.TermsOfDelivery != null && c.TermsOfDelivery.Trim() != ""
+                          && c.ResponsibleUserId.HasValue
+                          && c.SupportEmployeeId.HasValue));
             }
 
             if (request?.CountryId.HasValue == true)
@@ -230,6 +310,11 @@ namespace Econosys.Api.Controllers
             if (!string.IsNullOrWhiteSpace(request?.Category))
             {
                 query = query.Where(c => c.Category == request.Category);
+            }
+
+            if (request?.Categories?.Length > 0)
+            {
+                query = query.Where(c => c.Category != null && request.Categories.Contains(c.Category));
             }
 
             // Apply sorting
@@ -269,7 +354,24 @@ namespace Econosys.Api.Controllers
                 totalPages = totalCount == 0 ? 0 : (int)Math.Ceiling(totalCount / (double)pagination.PageSize);
             }
 
-            var dtos = items.Select(MapToDto).ToList();
+            var customerIds = items.Select(x => x.Id).ToList();
+            var completeCustomerIds = await _dbContext.Customers
+                .AsNoTracking()
+                .Where(c => customerIds.Contains(c.Id)
+                    && c.Name != null && c.Name.Trim() != ""
+                    && c.DeliveryAddresses.Any()
+                    && c.CustomerContactPersons.Any(contact => contact.MailInvoice)
+                    && c.OrgNr != null && c.OrgNr.Trim() != ""
+                    && c.TermsOfPayment != null && c.TermsOfPayment.Trim() != ""
+                    && c.TermsOfDelivery != null && c.TermsOfDelivery.Trim() != ""
+                    && c.ResponsibleUserId.HasValue
+                    && c.SupportEmployeeId.HasValue)
+                .Select(c => c.Id)
+                .ToHashSetAsync();
+
+            var dtos = items
+                .Select(customer => MapToDto(customer, completeCustomerIds.Contains(customer.Id)))
+                .ToList();
 
             return Ok(new PagedResultDto<CustomerDto>
             {
@@ -311,6 +413,7 @@ namespace Econosys.Api.Controllers
             customer.Telephone3 = request.Telephone3;
             customer.Fax = request.Fax;
             customer.Note = request.Note;
+            customer.ImportantCalculationInfo = request.ImportantCalculationInfo;
             customer.LoadingInstruction = request.LoadingInstruction;
             customer.ResponsibleUserId = request.ResponsibleUserId;
             customer.VAT = request.VAT ?? false;
@@ -552,7 +655,7 @@ namespace Econosys.Api.Controllers
             return NoContent();
         }
 
-        private static CustomerDto MapToDto(Customer customer)
+        private static CustomerDto MapToDto(Customer customer, bool isComplete = false)
         {
             return new CustomerDto
             {
@@ -569,6 +672,7 @@ namespace Econosys.Api.Controllers
                 Telephone3 = customer.Telephone3,
                 Fax = customer.Fax,
                 Note = customer.Note,
+                ImportantCalculationInfo = customer.ImportantCalculationInfo,
                 LoadingInstruction = customer.LoadingInstruction,
                 ResponsibleUserId = customer.ResponsibleUserId,
                 VAT = customer.VAT,
@@ -606,6 +710,7 @@ namespace Econosys.Api.Controllers
                 CountryId = customer.CountryId,
                 Category = customer.Category,
                 IsProspect = customer.IsProspect,
+                IsComplete = isComplete,
                 InvoicePalletsSeparately = customer.InvoicePalletsSeparately,
                 InvoiceCostsSeparately = customer.InvoiceCostsSeparately,
                 InvoiceCostsSeparatelyImmediately = customer.InvoiceCostsSeparatelyImmediately,

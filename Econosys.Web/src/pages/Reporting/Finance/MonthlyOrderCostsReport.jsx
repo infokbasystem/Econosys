@@ -5,6 +5,7 @@ import ExcelJS from 'exceljs';
 
 import LabeledReactSelect from '../../../components/LabeledReactSelect';
 import apiClient from '../../../config/apiClient';
+import { formatDateShort } from '../../../helpers/dateUtils';
 import { getSharedRequest } from '../../../helpers/sharedRequest';
 
 const monthOptions = [
@@ -53,7 +54,7 @@ const MonthlyOrderCostsReport = () => {
     const [filters, setFilters] = useState({
         year: now.getFullYear(),
         month: now.getMonth() + 1,
-        costIds: [],
+        costIds: null,
     });
 
     const [sortConfig, setSortConfig] = useState({ key: 'orderCreatedAt', direction: 'desc' });
@@ -173,6 +174,7 @@ const MonthlyOrderCostsReport = () => {
                 year: requestFilters.year,
                 month: requestFilters.month,
                 costIds: requestFilters.costIds ?? [],
+                filterByCostIds: requestFilters.costIds !== null,
             };
             const requestKey = `reporting:order-costs:monthly:${JSON.stringify(requestBody)}`;
             const response = await getSharedRequest(requestKey, () => apiClient.post('/reporting/order-costs/monthly', requestBody));
@@ -253,14 +255,6 @@ const MonthlyOrderCostsReport = () => {
         }).format(Number(value));
     };
 
-    const formatDateTime = (value) => {
-        if (!value) {
-            return '';
-        }
-
-        return new Date(value).toLocaleString('sv-SE');
-    };
-
     const totalPurchaseAmountSEK = useMemo(() => {
         return sortedRows.reduce((sum, row) => sum + (Number(row.purchasePriceSEK) || 0), 0);
     }, [sortedRows]);
@@ -306,7 +300,7 @@ const MonthlyOrderCostsReport = () => {
             row.shouldInvoice ? 'Ja' : 'Nej',
             row.invoiceNumber ?? '',
             row.supplier ?? '',
-            row.orderCreatedAt ? formatDateTime(row.orderCreatedAt) : '',
+            formatDateShort(row.orderCreatedAt),
             row.responsible ?? '',
             row.orderNumber ?? '',
         ]));
@@ -402,7 +396,7 @@ const MonthlyOrderCostsReport = () => {
         <div className="flex h-full flex-col pt-3 pb-4 ps-10 pe-0">
             {/* <div className="mt-2 text-sm text-gray-500">Orderkostnader per månad</div> */}
 
-            <div className={`relative z-20 flex items-center gap-4 mt-2 pb-2 ${loading ? 'opacity-60 pointer-events-none' : ''}`}>
+            <div className={`relative z-20 flex items-center gap-4 mt-2 pb-2 ${loading && !initialLoadCompleted ? 'opacity-60 pointer-events-none' : ''}`}>
                 <div className="flex items-center">
                     <div className="w-50">
                         <LabeledReactSelect
@@ -437,7 +431,7 @@ const MonthlyOrderCostsReport = () => {
                             value={filters.costIds}
                             items={costOptions}
                             onChange={(selected) => handleFilterChange('costIds', selected)}
-                            isDisabled={loading || costOptions.length === 0}
+                            isDisabled={!initialLoadCompleted || costOptions.length === 0}
                             isMulti
                         />
                     </div>
@@ -476,7 +470,7 @@ const MonthlyOrderCostsReport = () => {
             </div>
 
             <div className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
-                <table className={`table-fixed w-full border-collapse text-xs [&_thead_th]:px-2 [&_thead_th]:pt-1 [&_thead_th]:pb-2 [&_thead_th]:text-tiny [&_thead_th]:font-medium [&_thead_th]:text-gray-500 [&_tbody_>_tr]:h-6 [&_tbody_>_tr]:border-b [&_tbody_>_tr]:border-gray-100 [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:px-2 [&_tbody_td]:py-0 [&_tbody_td]:text-gray-800 ${showSkeleton ? '' : '[&_tbody_>_tr:hover]:!bg-lime-200/70'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                <table className={`table-fixed w-full border-collapse text-xs [&_thead_th]:px-2 [&_thead_th]:pt-1 [&_thead_th]:pb-2 [&_thead_th]:text-tiny [&_thead_th]:font-semibold [&_thead_th]:text-gray-900 [&_thead_th]:tracking-[0.12em] [&_tbody_>_tr]:h-6 [&_tbody_>_tr]:border-b [&_tbody_>_tr]:border-gray-100 [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:px-2 [&_tbody_td]:py-0 [&_tbody_td]:text-gray-800 ${showSkeleton ? '' : '[&_tbody_>_tr:hover]:!bg-lime-200/70'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                     <colgroup>
                         {columns.map((column) => (
                             <col key={column.key} style={{ width: column.width }} />
@@ -522,7 +516,7 @@ const MonthlyOrderCostsReport = () => {
                             </tr>
                         ) : (
                             sortedRows.map((row, index) => (
-                                <tr key={`${row.orderNumber}-${index}`} className="hover:bg-blue-50">
+                                <tr key={`${row.orderNumber}-${index}`} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50`}>
                                     <td className="px-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">{row.cost}</td>
                                     <td className="px-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">{row.customer}</td>
                                     <td className="px-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">{row.product}</td>
@@ -535,7 +529,7 @@ const MonthlyOrderCostsReport = () => {
                                     <td className="px-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800 text-center">{row.shouldInvoice ? 'Ja' : 'Nej'}</td>
                                     <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800 text-right">{row.invoiceNumber ?? ''}</td>
                                     <td className="px-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">{row.supplier}</td>
-                                    <td className="px-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">{formatDateTime(row.orderCreatedAt)}</td>
+                                    <td className="px-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">{formatDateShort(row.orderCreatedAt)}</td>
                                     <td className="px-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">{row.responsible}</td>
                                     <td className="px-2 pt-[6px] pb-[4px] text-xs text-gray-800 text-right">{row.orderNumber}</td>
                                 </tr>

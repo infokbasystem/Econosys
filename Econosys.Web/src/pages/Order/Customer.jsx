@@ -5,6 +5,7 @@ import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import ActionButton from '../../components/ActionButton';
 import LabeledInput from '../../components/LabeledInput';
@@ -18,6 +19,7 @@ import LabeledTextArea from '../../components/LabeledTextArea';
 import InventorySelectModal from '../../modals/InventorySelectModal';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
+import useDocumentTitle from '../../hooks/useDocumentTitle';
 
 const createNewCustomerModel = () => ({
     id: 0,
@@ -29,7 +31,7 @@ const createNewCustomerModel = () => ({
     postalAddress: '',
     visitingAddress: '',
     country: 'SVERIGE',
-    countryId: 752,
+    countryId: null,
     reference: '',
     telephone1: '',
     telephone2: '',
@@ -39,6 +41,7 @@ const createNewCustomerModel = () => ({
     orgNr: '',
     vatNr: '',
     note: '',
+    importantCalculationInfo: '',
     loadingInstruction: '',
     paymentDays: 0,
     creditLimit: 0,
@@ -111,7 +114,7 @@ const renderMetaRow = (label, value, userName, userId) => {
     return (
         <div className="grid grid-cols-21 gap-1 mx-2">
             <div className="col-span-5"><span className="font-medium">{label}</span></div>
-            <div className="col-span-8">{formatDateTime(value)}</div>
+            <div className="col-span-8 font-semibold">{formatDateTime(value)}</div>
             <div className="col-span-8 text-gray-500">{actor && `av ${actor}`}</div>
         </div>
     );
@@ -124,6 +127,9 @@ const Customer = () => {
     const navigate = useNavigate();
     const { id } = useParams();
     const isNewCustomer = id === 'new';
+
+    const [customer, setCustomer] = useState(null);
+    useDocumentTitle(isNewCustomer ? 'Ny kund' : `Kund ${customer?.name || customer?.id || id}`);
 
     const [loading, setLoading] = useState(true);
     const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
@@ -139,7 +145,6 @@ const Customer = () => {
     const [userOptions, setUserOptions] = useState([]);
     const [languageOptions, setLanguageOptions] = useState(defaultLanguageOptions);
 
-    const [customer, setCustomer] = useState(null);
     const [originalCustomer, setOriginalCustomer] = useState(null);
     const [selectedContactIdentity, setSelectedContactIdentity] = useState(null);
     const [selectedAddressIdentity, setSelectedAddressIdentity] = useState(null);
@@ -158,6 +163,7 @@ const Customer = () => {
     }, [customer, originalCustomer]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(() => hasUnsavedChanges() || Boolean(isNewCustomer && customer));
 
     useEffect(() => {
         const handleBeforeUnload = (event) => {
@@ -293,7 +299,10 @@ const Customer = () => {
         const defaultLanguageId = swedishOption?.id ?? languageOptions[0]?.id ?? null;
 
         const shouldFillCurrency = customer.currencyId == null && defaultCurrencyId != null;
-        const shouldFillLanguage = customer.languageId == null && defaultLanguageId != null;
+        const hasSelectedLanguage = languageOptions.some(
+            (item) => String(item.id) === String(customer.languageId),
+        );
+        const shouldFillLanguage = !hasSelectedLanguage && defaultLanguageId != null;
 
         if (!shouldFillCurrency && !shouldFillLanguage) {
             return;
@@ -304,7 +313,10 @@ const Customer = () => {
             return {
                 ...prev,
                 ...(prev.currencyId == null && defaultCurrencyId != null ? { currencyId: defaultCurrencyId } : {}),
-                ...(prev.languageId == null && defaultLanguageId != null ? { languageId: defaultLanguageId } : {}),
+                ...(!languageOptions.some((item) => String(item.id) === String(prev.languageId))
+                    && defaultLanguageId != null
+                    ? { languageId: defaultLanguageId }
+                    : {}),
             };
         });
 
@@ -313,7 +325,10 @@ const Customer = () => {
             return {
                 ...prev,
                 ...(prev.currencyId == null && defaultCurrencyId != null ? { currencyId: defaultCurrencyId } : {}),
-                ...(prev.languageId == null && defaultLanguageId != null ? { languageId: defaultLanguageId } : {}),
+                ...(!languageOptions.some((item) => String(item.id) === String(prev.languageId))
+                    && defaultLanguageId != null
+                    ? { languageId: defaultLanguageId }
+                    : {}),
             };
         });
     }, [currencyOptions, customer, isNewCustomer, languageOptions]);
@@ -585,7 +600,7 @@ const Customer = () => {
         const selectedOption = countryCodeOptions.find((item) => String(item.id) === String(value));
         setCustomer((prev) => ({
             ...prev,
-            countryId: parseNullableInt(value),
+            countryId: null,
             country: selectedOption?.countryName ?? '',
         }));
     };
@@ -604,6 +619,7 @@ const Customer = () => {
         telephone3: source?.telephone3 ?? '',
         fax: source?.fax ?? '',
         note: source?.note ?? '',
+        importantCalculationInfo: source?.importantCalculationInfo ?? '',
         loadingInstruction: source?.loadingInstruction ?? '',
         responsibleUserId: parseNullableInt(source?.responsibleUserId),
         vat: Boolean(source?.vat),
@@ -799,7 +815,7 @@ const Customer = () => {
                 onToggleInfoPanel={toggleInfoPanel}
                 infoContent={(
                     <div className="space-y-3">
-                        <h2 className="text-sm text-center text-gray-700">Info</h2>
+                        <h2 className="text-sm text-center text-gray-500">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
                             {renderMetaRow('Skapad:', customer?.createdAt, customer?.createdByUserName, customer?.createdBy)}
                             {renderMetaRow('Redigerad:', customer?.editedAt, customer?.editedByUserName, customer?.editedBy)}
@@ -866,7 +882,9 @@ const Customer = () => {
                                     <LabeledReactSelect
                                         name="countryId"
                                         label=""
-                                        value={customer?.countryId || ''}
+                                        value={countryCodeOptions.find(
+                                            (item) => item.countryName === customer?.country,
+                                        )?.id ?? ''}
                                         items={countryCodeOptions}
                                         onChange={handleCountryCodeChange}
                                         margintop="0"
@@ -889,13 +907,13 @@ const Customer = () => {
                         <div>
                             <LabeledInput label="Organisationsnr." value={customer?.orgNr || ''} onChange={(value) => handleChange('orgNr', value)} labelWidth="w-24" margintop="0" />
                             <LabeledInput label="Vat.nr." value={customer?.vatNr || ''} onChange={(value) => handleChange('vatNr', value)} labelWidth="w-24" />
-                            <LabeledTextArea label="Notering" value={customer?.note || ''} onChange={(value) => handleChange('note', value)} labelWidth="w-24" margintop="2" rows={4} />
+                            <LabeledTextArea label="Notering" value={customer?.note || ''} onChange={(value) => handleChange('note', value)} labelWidth="w-24" margintop="2" rows={3} />
+                            <LabeledTextArea label="Viktig kalkylinfo" name="importantCalculationInfo" value={customer?.importantCalculationInfo || ''} onChange={(value) => handleChange('importantCalculationInfo', value)} labelWidth="w-24" rows={2} maxLength={1000} />
                             <LabeledTextArea label="Packinstruktion" value={customer?.loadingInstruction || ''} onChange={(value) => handleChange('loadingInstruction', value)} labelWidth="w-24" rows={3} />
                             <LabeledReactSelect name="termsOfDelivery" label="Leveransvillkor" value={customer?.termsOfDelivery || ''} items={deliveryTermOptions} onChange={(value) => handleChange('termsOfDelivery', value)} labelWidth="w-24" margintop="2" allowRawValueLabel />
                             <LabeledReactSelect name="termsOfPayment" label="Betalningsvillkor" value={customer?.termsOfPayment || ''} items={paymentTermOptions} onChange={(value) => handleChange('termsOfPayment', value)} labelWidth="w-24" allowRawValueLabel />
                             <LabeledReactSelect name="responsibleUserId" label="Saljare" value={customer?.responsibleUserId || ''} items={userOptions} onChange={(value) => handleChange('responsibleUserId', value)} labelWidth="w-24" margintop="2" />
                             <LabeledReactSelect name="supportEmployeeId" label="Support" value={customer?.supportEmployeeId || ''} items={userOptions} onChange={(value) => handleChange('supportEmployeeId', value)} labelWidth="w-24" />
-                            <LabeledInput label="Ordernr-prefix" value={customer?.orderNrPrefix || ''} onChange={(value) => handleChange('orderNrPrefix', value)} labelWidth="w-24" />
                         </div>
 
                         <div>
@@ -928,6 +946,7 @@ const Customer = () => {
                                     <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-gray-500">%</span>
                                 </div>
                             </div>
+                            <LabeledInput label="Ordernr-prefix" value={customer?.orderNrPrefix || ''} onChange={(value) => handleChange('orderNrPrefix', value)} labelWidth="w-20" margintop={2} />
                         </div>
 
                         <div>

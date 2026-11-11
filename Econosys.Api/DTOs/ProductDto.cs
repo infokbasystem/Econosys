@@ -29,6 +29,10 @@ namespace Econosys.Api.DTOs
         public int? MaterialGroup { get; set; }
         public bool Active { get; set; }
         public bool? IsServicePackaging { get; set; }
+        public bool IsOffset { get; set; }
+        public bool IsDigital { get; set; }
+        public bool IsFlexo { get; set; }
+        public DateTime? PpwrUpdatedAt { get; set; }
         public DateTime? LastSupplierOrderCreated { get; set; }
         public DateTime? LastCustomerOrderCreated { get; set; }
         public ConstructionLookupDto? Construction { get; set; }
@@ -88,6 +92,9 @@ namespace Econosys.Api.DTOs
         public int? MaterialGroup { get; set; }
         public bool Active { get; set; }
         public bool? IsServicePackaging { get; set; }
+        public bool IsOffset { get; set; }
+        public bool IsDigital { get; set; }
+        public bool IsFlexo { get; set; }
         public DateTime? LastSupplierOrderCreated { get; set; }
         public DateTime? LastCustomerOrderCreated { get; set; }
     }
@@ -140,6 +147,9 @@ namespace Econosys.Api.DTOs
         public int? MaterialGroup { get; set; }
         public bool? Active { get; set; }
         public bool? IsServicePackaging { get; set; }
+        public bool IsOffset { get; set; }
+        public bool IsDigital { get; set; }
+        public bool IsFlexo { get; set; }
         public DateTime? LastSupplierOrderCreated { get; set; }
         public DateTime? LastCustomerOrderCreated { get; set; }
     }

@@ -12,16 +12,24 @@ const PAGE_SIZE = 25;
 const TABLE_FONT_STYLE = { fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" };
 
 const columns = [
-    { key: 'customerOrderNr', label: 'Nr', align: 'left', width: '9%' },
-    { key: 'supplierOrderNr', label: 'Lev onr', align: 'left', width: '10%' },
+    { key: 'customerOrderNr', label: 'Nr', align: 'left', width: '80px' },
+    { key: 'yourOrderNr', label: 'Kunds onr', align: 'left', width: '80px' },
     { key: 'product', label: 'Produkt', align: 'left', width: '14%' },
     { key: 'customerName', label: 'Kund', align: 'left', width: '14%' },
     { key: 'construction', label: 'Konstruktion', align: 'left', width: '12%' },
     { key: 'material', label: 'Material', align: 'left', width: '12%' },
     { key: 'format', label: 'Format', align: 'left', width: '10%' },
-    { key: 'created', label: 'Skapad', align: 'left', width: '6%' },
-    { key: 'edited', label: 'Ändrad', align: 'left', width: '7%' },
+    { key: 'created', label: 'Skapad', align: 'left', width: '100px' },
+    { key: 'edited', label: 'Ändrad', align: 'left', width: '100px' },
 ];
+
+// Pixel widths stay fixed; percentage widths share the remaining space proportionally.
+const tableStyle = {
+    ...TABLE_FONT_STYLE,
+    gridTemplateColumns: columns.map(({ width }) => (
+        width.endsWith('%') ? `minmax(0, ${parseFloat(width)}fr)` : width
+    )).join(' '),
+};
 
 const initialPagination = {
     pageNumber: 1,
@@ -133,8 +141,8 @@ const CustomerOrderSearch = () => {
     const getRowClass = (rowId) => {
         const isSelected = selectedRowId === rowId;
         return [
-            'h-6 cursor-pointer border-b border-gray-100',
-            isSelected ? 'bg-lime-100/80' : '',
+            'col-span-full grid grid-cols-subgrid h-6 cursor-pointer border-b border-gray-100',
+            isSelected ? 'odd:bg-lime-100/80 even:bg-lime-100/80' : 'odd:bg-white even:bg-gray-50',
             'hover:bg-lime-200/70',
         ].join(' ');
     };
@@ -184,19 +192,14 @@ const CustomerOrderSearch = () => {
             </div>
 
             <div className="mt-3 min-h-0 flex-1 overflow-auto border-t border-gray-300 py-1">
-                <table className="table-fixed w-full border-collapse text-xs" style={TABLE_FONT_STYLE}>
-                    <colgroup>
-                        {columns.map((column) => (
-                            <col key={column.key} {...(column.width ? { style: { width: column.width } } : {})} />
-                        ))}
-                    </colgroup>
-                    <thead>
-                        <tr className="text-tiny text-gray-500">
+                <table className="grid w-full text-xs" style={tableStyle}>
+                    <thead className="contents">
+                        <tr className="col-span-full grid grid-cols-subgrid text-tiny text-gray-500">
                             {columns.map((column) => (
                                 <th
                                     key={column.key}
                                     onClick={() => handleSort(column.key)}
-                                    className={`cursor-pointer px-2 pt-1 pb-2 text-tiny font-medium text-gray-500 ${column.align === 'right' ? 'text-right' : 'text-left'}`}
+                                    className={`overflow-hidden cursor-pointer px-2 pt-1 pb-2 text-tiny font-medium text-gray-500 ${column.align === 'right' ? 'text-right' : 'text-left'}`}
                                 >
                                     <span className="inline-flex items-center gap-1">
                                         {column.label}
@@ -210,16 +213,16 @@ const CustomerOrderSearch = () => {
                             ))}
                         </tr>
                     </thead>
-                    <tbody className={`${!loading && rows.length > 0 ? 'bg-white' : 'bg-transparent'}`}>
+                    <tbody className="contents">
                         {showSkeleton ? (
                             Array.from({ length: 12 }).map((_, index) => (
-                                <tr key={index}>
-                                    <td colSpan={columns.length} className="px-2 py-1"><Skeleton height={16} /></td>
+                                <tr key={index} className="col-span-full grid grid-cols-subgrid">
+                                    <td colSpan={columns.length} className="col-span-full px-2 py-1"><Skeleton height={16} /></td>
                                 </tr>
                             ))
                         ) : rows.length === 0 ? (
-                            <tr>
-                                <td colSpan={columns.length} className="px-4 py-8 text-center text-gray-400">Inga ordererkännanden hittades.</td>
+                            <tr className="col-span-full grid grid-cols-subgrid">
+                                <td colSpan={columns.length} className="col-span-full px-4 py-8 text-center text-gray-400">Inga ordererkännanden hittades.</td>
                             </tr>
                         ) : (
                             rows.map((row) => (
@@ -237,7 +240,7 @@ const CustomerOrderSearch = () => {
                                             {row.customerOrderNr}
                                         </button>
                                     </td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{row.supplierOrderNr}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{row.yourOrderNr}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.product}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.customerName}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.construction}</td>

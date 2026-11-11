@@ -40,6 +40,14 @@ Detta kommer att:
 - Hanteras via npm inuti mappen `Econosys.Web`.
 - För att installera paket: `cd Econosys.Web && npm install`.
 
+### Automatiska frontenduppdateringar
+- Varje frontendbygge genererar ett unikt build-ID och `dist/version.json`. ID:t visas diskret längst ned till höger och döljs vid utskrift.
+- Produktionsappen kontrollerar versionen vid start, var 60:e sekund och när fliken åter blir synlig eller får fokus. Utvecklingsservern och testbyggen laddas inte om automatiskt.
+- Vid en ny driftsättning laddas sidan om automatiskt, men först när osparade ändringar är sparade eller förkastade, öppna redigeringsdialoger är stängda och API-anrop är avslutade. Aktiva inmatningsfält skyddas också tills fokus lämnar fältet.
+- En pågående leveransregistrering skyddas tills den har sparats eller sidan lämnas. Uppdateringar ändrar inte befintliga navigeringsvarningar.
+- Frontend publiceras till Azure Static Web Apps via `deploy-frontend.sh`. `public/staticwebapp.config.json` stänger av cache för HTML och versionsfilen; hashade filer under `/assets/` behåller lång cachetid. Versionsfilen undantas från SPA-fallback.
+- Flikar som redan kör kod utan uppdateringskontrollen behöver laddas om en gång efter den första publiceringen. Om gammal HTML fortfarande levereras förhindras upprepade automatiska omladdningar; appen visar då ett meddelande om manuell omladdning.
+
 ### Pall/packning i kalkyler
 - Alternativen hämtas med `/api/palletformats/searchwithprices` för vald kund och leverantör. Endast format kopplade till båda visas.
 - Listan sorteras efter palltypens sorteringsnummer, formatets sorteringsnummer och namn. Inaktiva format eller palltyper kan inte väljas.
@@ -66,6 +74,9 @@ Detta kommer att:
 - **Ny förfrågan**, **Nytt affärsförslag** och **Ny beställning** öppnas i samma webbläsarflik som kalkylen. Kalkylkopplingen följer med och befintlig varning för osparade ändringar gäller vid navigeringen.
 - Valdialogerna för **Ny beställning** använder appens gemensamma modalstil: ljusgul bakgrund, centrerad rubrik, orange avbryt-/tillbakaknappar och gröna åtgärdsknappar.
 - Osparade beställningar visar **Orderkostnader** för redigering av utkast och en tom **Orderhistorik**. Historik hämtas först när beställningen har sparats.
+- Nya beställningar får `SupplierOrderNr` enligt legacy: kundens `OrderNrPrefix` följt av beställningens databas-ID. Numret används i rubriker, tabeller, rapporter och utskrifter; länkar och relationer använder fortfarande ID. Befintliga nummer bevaras, och saknade nummer fylls i vid sparande.
+- Nya ordererkännanden kopplade till en beställning får `strCustomerOrder` (`customerOrderNr` i API) från beställningens `SupplierOrderNr`, enligt legacy. Det första får samma nummer, följande får suffix `-2`, `-3` osv. Numret tilldelas av API vid sparande och visas i rubriker, navigation, listor och rapporter; länkar och relationer använder fortfarande databas-ID. Befintliga nummer räknas inte om. Headersökningen stöder även ordernummer med bokstäver och suffix (minst fem tecken).
+- Fältet **Kunds onr** på ordererkännandet läser och sparar `strYourOrderNr` (`yourOrderNr` i API), separat från ordererkännandets nummer. Vid skapande från beställning hämtas startvärdet från beställningens kundordernummer enligt legacy.
 - **Nytt ordererkännande** från en beställning visar beställningens befintliga orderkostnader i utkastet. Vid sparande kopplas samma kostnadsposter till ordererkännandet utan kopiering; kopplingen till beställningen och kostnadernas övriga metadata bevaras.
 - Ordererkännandets pallformat och debiteringsflagga följer med från beställningen. Pallpriset hämtas från det kopplade affärsförslaget och pallantalet börjar tomt enligt legacy. Antal och pris bevaras vid sparande; byte av pallformat använder kundens registrerade pallpris.
 - Informationspanelen använder grupperad navigation enligt legacy: produkter, aktuell kalkyl, förfrågningar, affärsförslag, beställningar och ordererkännanden. Tomma grupper döljs och aktuell grupp markeras i rött.

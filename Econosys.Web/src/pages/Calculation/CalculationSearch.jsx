@@ -318,7 +318,7 @@ const CalculationSearch = () => {
                             <tr
                                 key={row.id}
                                 onClick={() => setSelectedRowId((previous) => previous === row.id ? null : row.id)}
-                                className={`h-6 cursor-pointer border-b border-gray-100 hover:bg-lime-200/70 ${selectedRowId === row.id ? 'bg-lime-100/80' : ''}`}
+                                className={`h-6 cursor-pointer border-b border-gray-100 ${selectedRowId === row.id ? 'odd:bg-lime-100/80 even:bg-lime-100/80' : 'odd:bg-white even:bg-gray-50'} hover:bg-lime-200/70`}
                             >
                                 {COLUMNS.map((column) => (
                                     <td key={column.key} title={String(getCellValue(row, column))} className="truncate px-2 py-1 text-gray-800">

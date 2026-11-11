@@ -31,6 +31,7 @@ namespace Econosys.Api.Services
                 Id = supplierOrder.Id,
                 TransportOrderCostCalcId = supplierOrder.TransportOrderCostCalcId,
                 SupplierOrderId = supplierOrder.SupplierOrderId,
+                SupplierOrderNr = supplierOrder.SupplierOrder?.SupplierOrderNr,
                 CaclulationInternationalCost = supplierOrder.CaclulationInternationalCost,
                 CaclulationDomesticCost = supplierOrder.CaclulationDomesticCost,
                 CaclulationFtl = supplierOrder.CaclulationFtl,

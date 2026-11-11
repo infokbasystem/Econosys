@@ -30,6 +30,22 @@ namespace Econosys.Api.Controllers
             return items is null ? NotFound() : Ok(items);
         }
 
+        /// <summary>Grouped navigation for a product or document, including its related product branches.</summary>
+        [HttpGet("{entityType}/{id:int}/flow")]
+        [ProducesResponseType<IReadOnlyList<OrderFlowNavigationItemDto>>(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<IReadOnlyList<OrderFlowNavigationItemDto>>> GetFlow(
+            string entityType, int id, [FromServices] IOrderFlowNavigationService service, CancellationToken cancellationToken)
+        {
+            var normalizedEntityType = NormalizeEntityType(entityType);
+            if (normalizedEntityType is null)
+                return BadRequest(new { message = "Unsupported entity type for order navigation." });
+
+            var items = await service.GetFlowAsync(normalizedEntityType, id, cancellationToken);
+            return items is null ? NotFound() : Ok(items);
+        }
+
         [HttpGet("{entityType}/{id:int}")]
         public async Task<ActionResult<OrderNavigationTreeDto>> GetTree(string entityType, int id)
         {
@@ -100,6 +116,7 @@ namespace Econosys.Api.Controllers
                 .Select(x => new SupplierOrderNodeProjection
                 {
                     Id = x.Id,
+                    SupplierOrderNr = x.SupplierOrderNr,
                     CalculationId = x.CalculationId,
                     InquiryId = x.InquiryId,
                     QuotationId = x.QuotationId,
@@ -116,6 +133,7 @@ namespace Econosys.Api.Controllers
                 .Select(x => new CustomerOrderNodeProjection
                 {
                     Id = x.Id,
+                    CustomerOrderNr = x.CustomerOrderNr,
                     SupplierOrderId = x.SupplierOrderId,
                     QuotationId = x.QuotationId,
                 })
@@ -131,6 +149,7 @@ namespace Econosys.Api.Controllers
                         .Select(y => new OrderNavigationCustomerOrderDto
                         {
                             Id = y.Id,
+                            CustomerOrderNr = y.CustomerOrderNr,
                             IsCurrent = IsCurrent(context, "customerorder", y.Id),
                         })
                         .ToList());
@@ -145,6 +164,7 @@ namespace Econosys.Api.Controllers
                         .Select(y => new OrderNavigationCustomerOrderDto
                         {
                             Id = y.Id,
+                            CustomerOrderNr = y.CustomerOrderNr,
                             IsCurrent = IsCurrent(context, "customerorder", y.Id),
                         })
                         .ToList());
@@ -157,6 +177,7 @@ namespace Econosys.Api.Controllers
                     x => new OrderNavigationSupplierOrderDto
                     {
                         Id = x.Id,
+                        SupplierOrderNr = x.SupplierOrderNr,
                         IsCurrent = IsCurrent(context, "supplierorder", x.Id),
                         CustomerOrders = customerOrdersBySupplierOrder.TryGetValue(x.Id, out var orderCustomerOrders)
                             ? orderCustomerOrders
@@ -570,6 +591,7 @@ namespace Econosys.Api.Controllers
         private sealed class SupplierOrderNodeProjection
         {
             public int Id { get; set; }
+            public string? SupplierOrderNr { get; set; }
             public int? CalculationId { get; set; }
             public int? InquiryId { get; set; }
             public int? QuotationId { get; set; }
@@ -578,6 +600,7 @@ namespace Econosys.Api.Controllers
         private sealed class CustomerOrderNodeProjection
         {
             public int Id { get; set; }
+            public string? CustomerOrderNr { get; set; }
             public int? SupplierOrderId { get; set; }
             public int? QuotationId { get; set; }
         }

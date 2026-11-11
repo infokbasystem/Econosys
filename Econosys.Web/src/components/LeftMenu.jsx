@@ -24,7 +24,10 @@ export const LeftMenuItem = ({ item }) => {
                 ].join(' ')}
             />
             {Icon && <Icon className="h-4 w-4 shrink-0" />}
-            <span className={['text-xs leading-none', isActive ? 'font-semibold' : 'font-normal'].join(' ')}>{item.label}</span>
+            <span className={[
+                'text-xs leading-none',
+                item.className ?? (isActive ? 'font-semibold' : 'font-normal'),
+            ].join(' ')}>{item.label}</span>
         </span>
     );
 

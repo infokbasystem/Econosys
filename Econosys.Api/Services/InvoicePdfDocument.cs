@@ -1,8 +1,6 @@
 using Econosys.Api.Models;
 using QuestPDF.Fluent;
-using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
-using PdfUnit = QuestPDF.Infrastructure.Unit;
 
 namespace Econosys.Api.Services;
 
@@ -12,10 +10,6 @@ public static class InvoicePdfDocument
     private const int RoundingPriceTypeId = 12;
     private const int VatPriceTypeId = 13;
     private const string DefaultCurrency = "SEK";
-    private static readonly byte[] LogoBytes = File.ReadAllBytes(
-        Path.Combine(AppContext.BaseDirectory, "Assets", "Econopack_Logo_Sage.png"));
-    private static readonly byte[] WatermarkBytes = File.ReadAllBytes(
-        Path.Combine(AppContext.BaseDirectory, "Assets", "Box_Sage.png"));
 
     public static byte[] Generate(Invoice invoice, CompanyInfo? company)
     {
@@ -52,22 +46,7 @@ public static class InvoicePdfDocument
         {
             document.Page(page =>
             {
-                page.Size(PageSizes.A4);
-                page.MarginHorizontal(1.7f, PdfUnit.Centimetre);
-                page.MarginVertical(1.5f, PdfUnit.Centimetre);
-                page.DefaultTextStyle(style => style
-                    .FontFamily("DM Sans")
-                    .FontSize(9)
-                    .FontColor("#111827"));
-
-                page.Background()
-                    .AlignBottom()
-                    .AlignRight()
-                    .OffsetX(150)
-                    .OffsetY(-25)
-                    .Width(320)
-                    .Image(WatermarkBytes)
-                    .FitWidth();
+                DocumentPdfLayout.Configure(page);
 
                 page.Content().Column(column =>
                 {
@@ -81,7 +60,7 @@ public static class InvoicePdfDocument
 
                 page.Footer()
                     .PaddingTop(14)
-                    .Element(container => ComposeFooter(container, company));
+                    .Element(container => DocumentPdfLayout.InvoiceFooter(container, company));
             });
         }).GeneratePdf();
     }
@@ -92,7 +71,7 @@ public static class InvoicePdfDocument
         {
             row.RelativeItem().Column(column =>
             {
-                column.Item().Height(40).AlignLeft().Image(LogoBytes).FitHeight();
+                column.Item().Element(DocumentPdfLayout.Logo);
             });
 
             row.ConstantItem(190).AlignRight().Column(column =>
@@ -253,35 +232,6 @@ public static class InvoicePdfDocument
         });
     }
 
-    private static void ComposeFooter(IContainer container, CompanyInfo? company)
-    {
-        container.Row(row =>
-        {
-            row.RelativeItem().Column(column =>
-            {
-                column.Item().Text(string.Join(" ", NonEmpty(company?.Address, company?.ZipCode, company?.PostalAddress, "•", company?.Telephone1)));
-                column.Item().Text(string.Join(" ", NonEmpty("•", company?.Email, "•", company?.Web)));
-                column.Item().Text(text =>
-                {
-                    text.Span(Value(company?.CompanyName));
-                    text.Span(" är godkänd för F-skatt.").Italic();
-                });
-            });
-            row.ConstantItem(270).AlignRight().Column(column =>
-            {
-                column.Item().AlignRight().Text(text => { text.Span("Bank: ").Bold(); text.Span(Value(company?.Bank)); });
-                column.Item().AlignRight().Text(text => { text.Span("Bankgiro: ").Bold(); text.Span(Value(company?.BG)); });
-                column.Item().AlignRight().Row(line =>
-                {
-                    line.AutoItem().Text(text => { text.Span("VAT-nr: ").Bold(); text.Span(Value(company?.VATNr)); });
-                    line.ConstantItem(18);
-                    line.AutoItem().Text(text => { text.Span("BIC: ").Bold(); text.Span(Value(company?.BIC)); });
-                });
-                column.Item().AlignRight().Text(text => { text.Span("IBAN: ").Bold(); text.Span(Value(company?.IBAN)); });
-            });
-        });
-    }
-
     private static IContainer HeaderCell(IContainer container) => container
         .Background("#f1f4f3")
         .PaddingVertical(7)
@@ -299,10 +249,6 @@ public static class InvoicePdfDocument
         .PaddingRight(6);
 
     private static string Value(string? value) => string.IsNullOrWhiteSpace(value) ? "" : value;
-
-    private static IEnumerable<string> NonEmpty(params string?[] values) => values
-        .Where(value => !string.IsNullOrWhiteSpace(value))
-        .Select(value => value!);
 
     private static string FormatDate(DateTime? date) => date?.ToString("yyyy-MM-dd") ?? "";
 

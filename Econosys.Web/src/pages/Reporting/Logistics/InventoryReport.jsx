@@ -444,7 +444,7 @@ const InventoryReport = () => {
             </div>
 
             <div className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
-                <table className={`table-fixed w-full border-collapse text-xs [&_thead_th]:px-2 [&_thead_th]:pt-1 [&_thead_th]:pb-2 [&_thead_th]:text-tiny [&_thead_th]:font-medium [&_thead_th]:text-gray-500 [&_tbody_>_tr]:h-6 [&_tbody_>_tr]:border-b [&_tbody_>_tr]:border-gray-100 [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:px-2 [&_tbody_td]:py-0 [&_tbody_td]:text-gray-800 ${showSkeleton ? '' : '[&_tbody_>_tr:hover]:!bg-lime-200/70'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                <table className={`table-fixed w-full border-collapse text-xs [&_thead_th]:px-2 [&_thead_th]:pt-1 [&_thead_th]:pb-2 [&_thead_th]:text-tiny [&_thead_th]:font-semibold [&_thead_th]:text-gray-900 [&_thead_th]:tracking-[0.12em] [&_tbody_>_tr]:h-6 [&_tbody_>_tr]:border-b [&_tbody_>_tr]:border-gray-100 [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:px-2 [&_tbody_td]:py-0 [&_tbody_td]:text-gray-800 ${showSkeleton ? '' : '[&_tbody_>_tr:hover]:!bg-lime-200/70'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                     <colgroup>
                         {inventoryColumns.map((column) => (
                             <col key={column.key} style={{ width: column.width }} />
@@ -476,8 +476,8 @@ const InventoryReport = () => {
                                 <td colSpan={inventoryColumns.length} className="px-6 py-14 whitespace-nowrap text-sm text-gray-500 text-center">Inget att visa</td>
                             </tr>
                         ) : (
-                            inventoryData.map((item) => (
-                                <tr key={`${item.supplierOrderId}-${item.inventoryId}`} className='hover:bg-blue-50'>
+                            inventoryData.map((item, index) => (
+                                <tr key={`${item.supplierOrderId}-${item.inventoryId}`} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-blue-50`}>
                                     <td className="pl-2 pt-[6px] pb-[4px] truncate text-xs text-gray-800">
                                         <NavLink to={`/order/supplierorders/${item.supplierOrderId}`} className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800">{item.supplierOrderNr}</NavLink>
                                     </td>

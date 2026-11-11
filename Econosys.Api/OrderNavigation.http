@@ -1,0 +1,40 @@
+@baseUrl = https://localhost:5001
+@token = replace-with-access-token
+@productId = 1
+@calculationId = 1
+@inquiryId = 1
+@quotationId = 1
+@supplierOrderId = 1
+@customerOrderId = 1
+
+### Product flow includes all related calculation branches
+GET {{baseUrl}}/api/ordernavigation/product/{{productId}}/flow
+Authorization: Bearer {{token}}
+
+### Calculation flow excludes sibling calculations
+GET {{baseUrl}}/api/ordernavigation/calculation/{{calculationId}}/flow
+Authorization: Bearer {{token}}
+
+### Inquiry flow
+GET {{baseUrl}}/api/ordernavigation/inquiry/{{inquiryId}}/flow
+Authorization: Bearer {{token}}
+
+### Quotation flow
+GET {{baseUrl}}/api/ordernavigation/quotation/{{quotationId}}/flow
+Authorization: Bearer {{token}}
+
+### Supplier order flow uses visible order numbers
+GET {{baseUrl}}/api/ordernavigation/supplierorder/{{supplierOrderId}}/flow
+Authorization: Bearer {{token}}
+
+### Customer order flow includes inherited parent links
+GET {{baseUrl}}/api/ordernavigation/customerorder/{{customerOrderId}}/flow
+Authorization: Bearer {{token}}
+
+### Missing record returns 404
+GET {{baseUrl}}/api/ordernavigation/product/2147483647/flow
+Authorization: Bearer {{token}}
+
+### Unsupported entity type returns 400
+GET {{baseUrl}}/api/ordernavigation/unknown/1/flow
+Authorization: Bearer {{token}}

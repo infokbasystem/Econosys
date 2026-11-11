@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import apiClient from '../config/apiClient';
+import useAppUpdateGuard from '../hooks/useAppUpdateGuard';
 import { getSwedishTodayDateString, toSwedishDateInputValue } from '../helpers/dateUtils';
 
 const AREA_OPTIONS = [
@@ -67,6 +68,7 @@ const getApiValidationMessage = (err) => {
 };
 
 const ImprovementPropositionModal = ({ isOpen, onClose, onSaved, initialData = null }) => {
+    useAppUpdateGuard(isOpen);
     const [form, setForm] = useState(emptyForm);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
@@ -163,8 +165,7 @@ const ImprovementPropositionModal = ({ isOpen, onClose, onSaved, initialData = n
                 onClick={onClose}
             >
                 <div
-                    className="relative bg-white rounded-sm shadow-xl w-full max-w-2xl py-6"
-                    style={{ background: 'rgb(255, 255, 234)' }}
+                    className="relative bg-[#f4f3f2] rounded-sm shadow-xl w-full max-w-2xl py-6"
                     onClick={(e) => e.stopPropagation()}
                 >
                     {/* Header */}

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeftCircle, ArrowRightCircle, CircleHelp, CheckCircle, Trash2 } from 'lucide-react';
 import apiClient from '../config/apiClient';
+import useAppUpdateGuard from '../hooks/useAppUpdateGuard';
 import { formatDateTime } from '../helpers/dateUtils';
 
 import LabeledInput from './LabeledInput';
@@ -39,8 +40,8 @@ const getSupplierOrderGroupKey = (supplierOrderId) => (
     supplierOrderId == null ? NO_SUPPLIER_ORDER_KEY : String(supplierOrderId)
 );
 
-const getSupplierOrderLabel = (supplierOrderId) => (
-    supplierOrderId == null ? 'Ingen order' : `(${supplierOrderId})`
+const getSupplierOrderLabel = (supplierOrderId, supplierOrderNr) => (
+    supplierOrderId == null ? 'Ingen order' : `(${supplierOrderNr || '-'})`
 );
 
 const makeTempId = () => `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -102,6 +103,7 @@ const OrderCost = ({
     quotationId,
     customerOrderId,
     supplierOrderId,
+    supplierOrderNr,
     showForDraft = false,
     rows,
     costOptions,
@@ -115,6 +117,7 @@ const OrderCost = ({
     onChange,
 }) => {
     const [detailsLocalId, setDetailsLocalId] = useState(null);
+    useAppUpdateGuard(detailsLocalId != null);
     const [detailsDraft, setDetailsDraft] = useState(null);
     const [detailsLoading, setDetailsLoading] = useState(false);
     const [detailsSaving, setDetailsSaving] = useState(false);
@@ -415,7 +418,11 @@ const OrderCost = ({
                     <span className="min-w-6 text-center text-xs text-gray-600">
                         {supplierOrderGroups.length > 0 ? `${activeGroupIndex + 1}/${supplierOrderGroups.length}` : '0/0'}
                     </span>
-                    <span className='text-xs text-gray-600'>{getSupplierOrderLabel(activeGroup?.supplierOrderId ?? null)}</span>
+                    <span className='text-xs text-gray-600'>{getSupplierOrderLabel(
+                        activeGroup?.supplierOrderId ?? null,
+                        activeGroup?.rows.find((row) => row.supplierOrderNr)?.supplierOrderNr
+                            || (activeGroup?.supplierOrderId === supplierOrderId ? supplierOrderNr : null),
+                    )}</span>
                 </div>
                 <p className="text-center text-sm font-semibold text-gray-500">
                     Orderkostnader
@@ -703,8 +710,7 @@ const OrderCost = ({
                     <div className="absolute inset-0 bg-black/50 z-40" />
                     <div className="relative z-50 flex min-h-screen items-start justify-center pt-20" onClick={closeDetailsModal}>
                         <div
-                            className="relative bg-white rounded-sm shadow-xl max-w-lg w-full mx-4 p-6"
-                            style={{ background: 'rgb(255, 255, 234)' }}
+                            className="relative bg-[#f4f3f2] rounded-sm shadow-xl max-w-lg w-full mx-4 p-6"
                             onClick={(event) => event.stopPropagation()}
                         >
                             <div className="relative flex items-center justify-center mb-4">

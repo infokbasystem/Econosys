@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getOrderFlowSections } from './orderFlowNavigationSections.js';
+import { getOrderFlowSections, getVisibleOrderFlowItems } from './orderFlowNavigationSections.js';
 
 test('groups in legacy order, hides empty groups and uses calculation-specific headings', () => {
     const sections = getOrderFlowSections([
@@ -61,4 +61,27 @@ test('orders calculations by supplier, customer, then descending id', () => {
     ];
     assert.deepEqual(getOrderFlowSections(items, 'product')[0].items.map(({ id }) => id), [4, 3, 2, 1]);
     assert.deepEqual(getOrderFlowSections([], 'calculation'), []);
+});
+
+test('keeps the current document visible outside the latest-record limit on every document page', () => {
+    for (const type of ['inquiry', 'quotation', 'supplierOrder', 'customerOrder']) {
+        const items = Array.from({ length: 12 }, (_, index) => ({ type, id: index + 1 }));
+        const [section] = getOrderFlowSections(items, type);
+        const visibleItems = getVisibleOrderFlowItems(section, type, 1, false);
+
+        assert.equal(visibleItems.length, section.limit + 1);
+        assert.equal(visibleItems.at(-1).id, 1);
+        assert.equal(getVisibleOrderFlowItems(section, type, 12, false).length, section.limit);
+        assert.deepEqual(getVisibleOrderFlowItems(section, type, 1, true), section.items);
+    }
+});
+
+test('does not expand other sections or duplicate an already-visible current item', () => {
+    const [section] = getOrderFlowSections([
+        { type: 'inquiry', id: 1 },
+        { type: 'inquiry', id: 2 },
+    ], 'calculation');
+
+    assert.deepEqual(getVisibleOrderFlowItems(section, 'calculation', 1, false).map(({ id }) => id), [2]);
+    assert.deepEqual(getVisibleOrderFlowItems(section, 'inquiry', 1, false).map(({ id }) => id), [2, 1]);
 });

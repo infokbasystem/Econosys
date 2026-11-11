@@ -50,6 +50,46 @@ namespace Econosys.Api.DTOs
         public List<CallOffDeliveryAddressOptionDto> DeliveryAddressOptions { get; set; } = new();
         public TransportOrderDeliveryLegsResponseDto DeliveryLegs { get; set; } = new();
         public string Version { get; set; } = string.Empty;
+        /// <summary>Outcome of the leg recalculation triggered by this request, if any.</summary>
+        public CallOffRouteCalculationDto? RouteCalculation { get; set; }
+        /// <summary>True when the call-off has deliveries but no stored transport legs (for example after a failed calculation).</summary>
+        public bool IsRouteMissing { get; set; }
+    }
+
+    /// <summary>Outcome of a call-off transport-leg calculation: Calculated, Empty, Partial, Failed or Stale.</summary>
+    public class CallOffRouteCalculationDto
+    {
+        public string Status { get; set; } = string.Empty;
+        public string? Message { get; set; }
+    }
+
+    /// <summary>Transport legs together with the outcome of their calculation.</summary>
+    public class CallOffRouteResponseDto
+    {
+        public TransportOrderDeliveryLegsResponseDto DeliveryLegs { get; set; } = new();
+        public CallOffRouteCalculationDto RouteCalculation { get; set; } = new();
+    }
+
+    /// <summary>Unsaved call-off state to preview transport legs for.</summary>
+    public class CallOffRoutePreviewRequest
+    {
+        public int? CustomerDeliveryAddressId { get; set; }
+        public List<CallOffRoutePreviewDeliveryDto> Deliveries { get; set; } = new();
+    }
+
+    /// <summary>Either an existing stock delivery or an unsaved planned delivery.</summary>
+    public class CallOffRoutePreviewDeliveryDto
+    {
+        public int? DeliveryFromStockId { get; set; }
+        public AddCallOffDeliveryFromStockRequest? NewDelivery { get; set; }
+    }
+
+    /// <summary>Result of deleting a delivery from a call-off.</summary>
+    public class CallOffDeliveryDeletedResponseDto
+    {
+        public string Version { get; set; } = string.Empty;
+        public TransportOrderDeliveryLegsResponseDto DeliveryLegs { get; set; } = new();
+        public CallOffRouteCalculationDto? RouteCalculation { get; set; }
     }
 
     public class SaveCallOffDeliveryDto
@@ -59,6 +99,7 @@ namespace Econosys.Api.DTOs
         public decimal? NrOfPalletPlaces { get; set; }
         // Only used when Id is 0, to link a delivery created via /calloff/deliveries that hasn't been saved yet.
         public int? DeliveryFromStockId { get; set; }
+        public AddCallOffDeliveryFromStockRequest? NewDelivery { get; set; }
     }
 
     public class SaveCallOffAggregateRequest

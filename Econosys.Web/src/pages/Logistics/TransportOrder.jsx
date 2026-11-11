@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { NavLink, useBlocker, useNavigate, useParams } from 'react-router-dom';
+import { NavLink, useBlocker, useLocation, useNavigate, useParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 import { ArrowLeft, CirclePlus, PanelLeftClose, PanelLeftOpen, Printer, RefreshCw, Save, Trash2 } from 'lucide-react';
@@ -14,6 +14,7 @@ import LabeledReactSelect from '../../components/LabeledReactSelect';
 import LabeledTextArea from '../../components/LabeledTextArea';
 import SegmentedFilter from '../../components/SegmentedFilter';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import { toSwedishDateInputValue } from '../../helpers/dateUtils';
 import TruckLoadingArea, {
@@ -56,6 +57,17 @@ const defaultDeliveryOverviewState = {
 const COMPANY_SETTINGS_ID = 1;
 const GOOGLE_MAPS_SCRIPT_ID = 'google-maps-js-api';
 let googleMapsLoaderPromise = null;
+
+const getRouteStatus = (calculation, isMissing) => {
+    if (calculation?.status && !['Calculated', 'Empty'].includes(calculation.status)) {
+        return { status: calculation.status, message: calculation.message || 'Transportbenen kunde inte beräknas.' };
+    }
+    return isMissing ? { status: 'Missing', message: 'Transportben saknas för transportordern.' } : null;
+};
+
+const routeKeyForDeliveries = (deliveries) => JSON.stringify((deliveries ?? []).map((item) => ({
+    id: item.id, sortOrder: item.sortOrder,
+})));
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -199,6 +211,7 @@ const mapAggregateResponse = (dto) => {
         deliveryOverviewData: overviewData,
         truckPlanPallets: mapTruckPlanResponse(dto?.truckPlan, deliveryById),
         version: String(dto?.version ?? ''),
+        routeStatus: getRouteStatus(dto?.routeCalculation, Boolean(dto?.isRouteMissing)),
     };
 };
 
@@ -316,14 +329,26 @@ const formatDistance = (distanceKm) => {
 
 const TransportOrder = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { id } = useParams();
     const { openPdfPreview, closePdfPreview } = usePdf();
 
     const [loading, setLoading] = useState(true);
     const [messages, setMessages] = useState([]);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
+    const [showPdfRecipientPicker, setShowPdfRecipientPicker] = useState(false);
+    const [pdfRecipientType, setPdfRecipientType] = useState('');
+    const [pdfRecipientId, setPdfRecipientId] = useState('');
+    const [pdfRecipientOptions, setPdfRecipientOptions] = useState([]);
+    const [isPdfRecipientLoading, setIsPdfRecipientLoading] = useState(false);
+    const [isPdfLoading, setIsPdfLoading] = useState(false);
     const [transportOrderForm, setTransportOrderForm] = useState(defaultTransportOrderForm);
     const [deliveryLegData, setDeliveryLegData] = useState(defaultDeliveryLegState);
+    const [savedDeliveryLegData, setSavedDeliveryLegData] = useState(defaultDeliveryLegState);
+    const [routeStatus, setRouteStatus] = useState(null);
+    const [savedRouteStatus, setSavedRouteStatus] = useState(null);
+    const [routeRetryToken, setRouteRetryToken] = useState(0);
+    const [isRecalculatingRoute, setIsRecalculatingRoute] = useState(false);
     const [deliveryOverviewData, setDeliveryOverviewData] = useState(defaultDeliveryOverviewState);
     const [googleApiKey, setGoogleApiKey] = useState('');
     const [mapError, setMapError] = useState('');
@@ -341,6 +366,10 @@ const TransportOrder = () => {
     const mapContainerRef = useRef(null);
     const truckLoadingAreaRef = useRef(null);
     const costCalcAreaRef = useRef(null);
+    const pdfRequestRef = useRef(0);
+    const pdfObjectUrlRef = useRef(null);
+    const routeRequestRef = useRef(0);
+    const initialRouteCalculationRef = useRef(location.state?.routeCalculation);
     // Guards against duplicate/near-simultaneous save invocations; the isSaving *state* isn't reliable here since
     // two rapid calls can both read it as false before the first render commits.
     const isSavingRef = useRef(false);
@@ -392,9 +421,30 @@ const TransportOrder = () => {
     }, [createSnapshot, originalTransportOrderState]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(() => hasUnsavedChanges() || isSaving);
+
+    useEffect(() => {
+        pdfRequestRef.current += 1;
+        setIsPdfLoading(false);
+        if (pdfObjectUrlRef.current) {
+            URL.revokeObjectURL(pdfObjectUrlRef.current);
+            pdfObjectUrlRef.current = null;
+        }
+
+        return () => {
+            pdfRequestRef.current += 1;
+            if (pdfObjectUrlRef.current) {
+                URL.revokeObjectURL(pdfObjectUrlRef.current);
+                pdfObjectUrlRef.current = null;
+            }
+        };
+    }, [id]);
 
     const applyAggregateResponse = (dto) => {
         const aggregate = mapAggregateResponse(dto);
+        const status = getRouteStatus(dto?.routeCalculation ?? initialRouteCalculationRef.current, Boolean(dto?.isRouteMissing));
+        initialRouteCalculationRef.current = null;
+        routeRequestRef.current += 1;
         const nextSnapshot = {
             transportOrderForm: aggregate.transportOrderForm,
             deliveryOverviewData: aggregate.deliveryOverviewData,
@@ -403,6 +453,9 @@ const TransportOrder = () => {
 
         setTransportOrderForm(aggregate.transportOrderForm);
         setDeliveryLegData(aggregate.deliveryLegData);
+        setSavedDeliveryLegData(aggregate.deliveryLegData);
+        setRouteStatus(status);
+        setSavedRouteStatus(status);
         setDeliveryOverviewData(aggregate.deliveryOverviewData);
         setTruckPlanPallets(aggregate.truckPlanPallets);
         setAggregateVersion(aggregate.version);
@@ -462,6 +515,69 @@ const TransportOrder = () => {
         };
     }, [id]);
 
+    const routeKey = routeKeyForDeliveries(deliveryOverviewData.transportOrderDeliveryList);
+    const savedRouteKey = routeKeyForDeliveries(originalTransportOrderState?.deliveryOverviewData?.transportOrderDeliveryList);
+
+    useEffect(() => {
+        if (loading || !originalTransportOrderState) return undefined;
+        if (routeKey === savedRouteKey) {
+            routeRequestRef.current += 1;
+            setDeliveryLegData(savedDeliveryLegData);
+            setRouteStatus(savedRouteStatus);
+            return undefined;
+        }
+        const requestId = ++routeRequestRef.current;
+        const deliveries = JSON.parse(routeKey);
+        setDeliveryLegData(defaultDeliveryLegState);
+        if (deliveries.length === 0) {
+            setRouteStatus(null);
+            return undefined;
+        }
+        setRouteStatus({ status: 'Loading', message: 'Beräknar transportben...' });
+        const timer = setTimeout(async () => {
+            try {
+                const response = await apiClient.post(`/transportorder/${id}/route-preview`, { deliveries });
+                if (requestId !== routeRequestRef.current) return;
+                setDeliveryLegData(mapDeliveryLegsResponse(response?.data?.deliveryLegs));
+                setRouteStatus(getRouteStatus(response?.data?.routeCalculation, false));
+            } catch (error) {
+                if (requestId !== routeRequestRef.current) return;
+                console.error('Failed to preview transport route:', error);
+                setRouteStatus({ status: 'Failed', message: 'Kunde inte beräkna transportben.' });
+            }
+        }, 500);
+        return () => {
+            clearTimeout(timer);
+            if (routeRequestRef.current === requestId) routeRequestRef.current += 1;
+        };
+    }, [id, loading, routeKey, savedRouteKey, originalTransportOrderState, savedDeliveryLegData, savedRouteStatus, routeRetryToken]);
+
+    const retryRouteCalculation = async () => {
+        if (routeKey !== savedRouteKey) {
+            setRouteRetryToken((value) => value + 1);
+            return;
+        }
+        const requestId = ++routeRequestRef.current;
+        setIsRecalculatingRoute(true);
+        setRouteStatus({ status: 'Loading', message: 'Beräknar transportben...' });
+        try {
+            const response = await apiClient.post(`/transportorder/${id}/route/recalculate`);
+            if (requestId !== routeRequestRef.current) return;
+            const legs = mapDeliveryLegsResponse(response?.data?.deliveryLegs);
+            const status = getRouteStatus(response?.data?.routeCalculation, false);
+            setDeliveryLegData(legs);
+            setSavedDeliveryLegData(legs);
+            setRouteStatus(status);
+            setSavedRouteStatus(status);
+        } catch (error) {
+            if (requestId !== routeRequestRef.current) return;
+            console.error('Failed to recalculate transport route:', error);
+            setRouteStatus({ status: 'Failed', message: 'Kunde inte beräkna transportben.' });
+        } finally {
+            setIsRecalculatingRoute(false);
+        }
+    };
+
     useEffect(() => {
         const handleBeforeUnload = (event) => {
             if (!hasUnsavedChanges()) return;
@@ -519,7 +635,7 @@ const TransportOrder = () => {
 
             setMapError('');
 
-            const mainRouteRequest = deliveryLegData.deliveryLegGroupedList.length >= 2
+            const mainRouteRequest = deliveryLegData.deliveryLegGroupedList.length >= 1
                 ? getRouteRequestFromLegs(deliveryLegData.deliveryLegGroupedList)
                 : null;
 
@@ -685,8 +801,119 @@ const TransportOrder = () => {
         }
     };
 
-    const handleOpenPdfPanel = () => {
+    const downloadTransportOrderPdf = async (receiverType, receiverId = null) => {
+        if (!id || isSaving || isStaleConflict || isPdfLoading) {
+            return;
+        }
+        if (hasUnsavedChanges()) {
+            setMessages((previous) => [
+                ...previous.filter((message) => message.type !== 'error'),
+                { type: 'error', text: 'Spara transportordern innan du skapar en PDF.' },
+            ]);
+            return;
+        }
+
+        const requestId = ++pdfRequestRef.current;
+        const query = new URLSearchParams({ receiverType });
+        if (receiverId != null) {
+            query.set('receiverId', String(receiverId));
+        }
+
+        setIsPdfLoading(true);
+        closePdfPreview?.();
         openPdfPreview?.('');
+        try {
+            const response = await apiClient.get(`/pdf/transportorder/${id}?${query.toString()}`, {
+                responseType: 'blob',
+            });
+            if (requestId !== pdfRequestRef.current) return;
+
+            if (pdfObjectUrlRef.current) {
+                URL.revokeObjectURL(pdfObjectUrlRef.current);
+            }
+            const url = URL.createObjectURL(response.data);
+            pdfObjectUrlRef.current = url;
+            const fallbackId = receiverId ?? transportOrderForm.shipperId ?? '0';
+            const fileName = `Transportorder_${transportOrderForm.transportOrderNr || id}_${fallbackId}.pdf`;
+            openPdfPreview?.(url, fileName);
+        } catch (error) {
+            if (requestId !== pdfRequestRef.current) return;
+            console.error('Failed to load transport order PDF:', error);
+            const apiMessage = typeof error.response?.data === 'string' ? error.response.data : '';
+            setMessages((previous) => [
+                ...previous.filter((message) => message.type !== 'error'),
+                { type: 'error', text: apiMessage || 'Kunde inte ladda transportorder-PDF.' },
+            ]);
+        } finally {
+            if (requestId === pdfRequestRef.current) {
+                setIsPdfLoading(false);
+            }
+        }
+    };
+
+    const handleOpenPdfPanel = async (receiverType) => {
+        if (!id || isSaving || isStaleConflict || isPdfLoading || isPdfRecipientLoading) {
+            return;
+        }
+        if (hasUnsavedChanges()) {
+            setMessages((previous) => [
+                ...previous.filter((message) => message.type !== 'error'),
+                { type: 'error', text: 'Spara transportordern innan du skapar en PDF.' },
+            ]);
+            return;
+        }
+
+        if (receiverType === 'TRANSPORTER') {
+            if (!transportOrderForm.shipperId) {
+                setMessages((previous) => [
+                    ...previous.filter((message) => message.type !== 'error'),
+                    { type: 'error', text: 'Välj en transportör innan du skapar PDF:en.' },
+                ]);
+                return;
+            }
+            await downloadTransportOrderPdf(receiverType);
+            return;
+        }
+
+        setIsPdfRecipientLoading(true);
+        try {
+            const response = await apiClient.get(`/transportorder/${id}/pdf-recipients`);
+            const options = receiverType === 'SUPPLIER'
+                ? response?.data?.supplierFactories ?? []
+                : response?.data?.inventories ?? [];
+            if (options.length === 0) {
+                setMessages((previous) => [
+                    ...previous.filter((message) => message.type !== 'error'),
+                    { type: 'error', text: receiverType === 'SUPPLIER'
+                        ? 'Det finns inga leverantörer på transportordern.'
+                        : 'Det finns inga lagerleveranser på transportordern.' },
+                ]);
+                return;
+            }
+
+            setPdfRecipientType(receiverType);
+            setPdfRecipientOptions(options);
+            setPdfRecipientId(String(options[0].id));
+            setShowPdfRecipientPicker(true);
+        } catch (error) {
+            console.error('Failed to load transport order PDF recipients:', error);
+            setMessages((previous) => [
+                ...previous.filter((message) => message.type !== 'error'),
+                { type: 'error', text: 'Kunde inte läsa in PDF-mottagare.' },
+            ]);
+        } finally {
+            setIsPdfRecipientLoading(false);
+        }
+    };
+
+    const handleConfirmPdfRecipient = async () => {
+        if (!pdfRecipientId) {
+            return;
+        }
+        const recipientType = pdfRecipientType;
+        const recipientId = Number(pdfRecipientId);
+        setShowPdfRecipientPicker(false);
+        await downloadTransportOrderPdf(recipientType, recipientId);
     };
 
     // deliveryStatusOverride lets the delivery-status radio trigger an immediate save without waiting for the async form-field update to land in state.
@@ -849,6 +1076,48 @@ const TransportOrder = () => {
                 isDestructive={false}
             />
 
+            {showPdfRecipientPicker ? (
+                <div
+                    className="fixed inset-0 z-[60] flex items-start justify-center bg-black/50 px-4 pt-20"
+                    onMouseDown={() => setShowPdfRecipientPicker(false)}
+                >
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="transport-order-pdf-recipient-title"
+                        className="w-full max-w-xl rounded-sm bg-[#f4f3f2] p-6 shadow-xl"
+                        onMouseDown={(event) => event.stopPropagation()}
+                    >
+                        <h2 id="transport-order-pdf-recipient-title" className="mb-6 text-center text-sm font-semibold">
+                            {pdfRecipientType === 'SUPPLIER' ? 'Välj leverantör' : 'Välj lager'}
+                        </h2>
+                        <LabeledReactSelect
+                            label="Mottagare"
+                            labelWidth="w-24"
+                            inputWidth="flex-1"
+                            name="pdfRecipient"
+                            value={pdfRecipientId}
+                            items={pdfRecipientOptions}
+                            onChange={setPdfRecipientId}
+                        />
+                        <div className="mt-8 flex justify-end gap-3">
+                            <ActionButton
+                                label="Avbryt"
+                                onClick={() => setShowPdfRecipientPicker(false)}
+                                accent="slate"
+                            />
+                            <ActionButton
+                                label="Visa PDF"
+                                icon={Printer}
+                                onClick={handleConfirmPdfRecipient}
+                                disabled={!pdfRecipientId || isPdfLoading}
+                                accent="sky"
+                            />
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
             <div className="mt-0 flex min-h-0 flex-1 flex-col pr-10">
                 <div className={`grid min-h-0 flex-1 gap-6 transition-[grid-template-columns] duration-300 ease-in-out ${isInfoPanelExpanded ? 'lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-8' : 'lg:grid-cols-[0px_minmax(0,1fr)] lg:gap-6'} lg:items-start`}>
                     <div className={`mt-2 lg:mt-0 mb-8 pr-3 border-b border-gray-300 lg:mb-6 lg:self-stretch lg:border-b-0 overflow-hidden lg:overflow-visible transition-[border-color] duration-300 ease-in-out ${isInfoPanelExpanded ? 'lg:border-r' : 'lg:border-r-0'}`}>
@@ -946,19 +1215,22 @@ const TransportOrder = () => {
                                     <ActionButton
                                         label="Transportör"
                                         icon={Printer}
-                                        onClick={handleOpenPdfPanel}
+                                        onClick={() => handleOpenPdfPanel('TRANSPORTER')}
+                                        disabled={isSaving || isStaleConflict || isPdfLoading || isPdfRecipientLoading}
                                         accent="sky"
                                     />
                                     <ActionButton
-                                        label="Levernatör"
+                                        label="Leverantör"
                                         icon={Printer}
-                                        onClick={handleOpenPdfPanel}
+                                        onClick={() => handleOpenPdfPanel('SUPPLIER')}
+                                        disabled={isSaving || isStaleConflict || isPdfLoading || isPdfRecipientLoading}
                                         accent="sky"
                                     />
                                     <ActionButton
                                         label="Lager"
                                         icon={Printer}
-                                        onClick={handleOpenPdfPanel}
+                                        onClick={() => handleOpenPdfPanel('RECEIVER')}
+                                        disabled={isSaving || isStaleConflict || isPdfLoading || isPdfRecipientLoading}
                                         accent="sky"
                                     />
                                 </div>
@@ -1253,6 +1525,12 @@ const TransportOrder = () => {
 
                                 <section aria-label="Övre fjärde" className="pl-10">
 
+                                    <div className="mb-3 flex items-center justify-between gap-3 text-xs">
+                                        <span role={routeStatus?.status === 'Loading' ? 'status' : 'alert'} className="text-amber-700">{routeStatus?.message}</span>
+                                        <button type="button" className="underline" onClick={retryRouteCalculation} disabled={isRecalculatingRoute || isSaving || routeStatus?.status === 'Loading'}>
+                                            Beräkna transportben
+                                        </button>
+                                    </div>
                                     {rightColumnView === 'ViewCostCalc' ? (
                                         <TransportOrderCostCalcArea ref={costCalcAreaRef} transportOrderId={id} onMessage={handleCostCalcMessage} />
                                     ) : (

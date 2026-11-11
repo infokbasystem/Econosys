@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import apiClient from '../config/apiClient';
+import useAppUpdateGuard from '../hooks/useAppUpdateGuard';
 
 const FileEditModal = ({ isOpen, onClose, onSubmit, initialFile = null, entityId = null, entityType = 'inquiry' }) => {
+  useAppUpdateGuard(isOpen);
   const [fileName, setFileName] = useState('');
   const [description, setDescription] = useState('');
   const [selectedPath, setSelectedPath] = useState('');
@@ -241,8 +243,7 @@ const FileEditModal = ({ isOpen, onClose, onSubmit, initialFile = null, entityId
       <div className="relative z-50 flex min-h-screen items-start justify-center pt-20">
 
         <div
-          className="relative bg-white rounded-sm shadow-xl max-w-xl w-full py-6"
-          style={{ background: 'rgb(255, 255, 234)' }}
+          className="relative bg-[#f4f3f2] rounded-sm shadow-xl max-w-xl w-full py-6"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="relative flex items-center justify-center mb-4">

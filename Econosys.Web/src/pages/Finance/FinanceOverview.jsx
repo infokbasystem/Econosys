@@ -395,7 +395,7 @@ const FinanceOverview = () => {
                   <col key={column.key} style={{ width: column.width }} />
                 ))}
               </colgroup>
-              <thead>
+              <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                 <tr className="text-tiny text-gray-500">
                   {UNINVOICED_COLUMNS.map((column) => (
                     <th
@@ -419,8 +419,8 @@ const FinanceOverview = () => {
                     <td colSpan={UNINVOICED_COLUMNS.length} className="px-4 py-8 text-center text-gray-400">Inga leveranser att fakturera.</td>
                   </tr>
                 ) : (
-                  uninvoiced.items.map((row) => (
-                    <tr key={row.deliveryId} className="h-6 border-b border-gray-100 hover:bg-lime-200/70">
+                  uninvoiced.items.map((row, index) => (
+                    <tr key={row.deliveryId} className={`h-6 border-b border-gray-100 ${index % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-lime-200/70`}>
                       <td className="truncate px-2 py-1 text-gray-800">{row.customerOrderNr ?? "-"}</td>
                       <td className="truncate px-2 py-1 text-gray-800">{row.customerName ?? "-"}</td>
                       <td className="truncate px-2 py-1 text-right text-gray-800">{row.quantity ?? 0}</td>
@@ -455,7 +455,7 @@ const FinanceOverview = () => {
                   <col key={column.key} style={{ width: column.width }} />
                 ))}
               </colgroup>
-              <thead>
+              <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                 <tr className="text-tiny text-gray-500">
                   {UNBOOKED_COLUMNS.map((column) => (
                     <th
@@ -479,8 +479,8 @@ const FinanceOverview = () => {
                     <td colSpan={UNBOOKED_COLUMNS.length} className="px-4 py-8 text-center text-gray-400">Inga fakturor att bokföra.</td>
                   </tr>
                 ) : (
-                  unbooked.items.map((row) => (
-                    <tr key={row.invoiceId} className="h-6 border-b border-gray-100 hover:bg-lime-200/70">
+                  unbooked.items.map((row, index) => (
+                    <tr key={row.invoiceId} className={`h-6 border-b border-gray-100 ${index % 2 === 0 ? "bg-white" : "bg-gray-50"} hover:bg-lime-200/70`}>
                       <td className="truncate px-2 py-1">
                         <Link
                           to={`/finance/invoice/${row.invoiceId}`}

@@ -1,6 +1,15 @@
 @baseUrl = https://localhost:5001
 @token = replace-with-access-token
 @calculationId = 1
+@inquiryId = 1
+
+### Branded PDF in the selected recipient's language, with blank requested-price cells
+GET {{baseUrl}}/api/pdf/inquiry/{{inquiryId}}
+Authorization: Bearer {{token}}
+
+### Unknown inquiry PDF returns 404
+GET {{baseUrl}}/api/pdf/inquiry/2147483647
+Authorization: Bearer {{token}}
 
 ### Preview an unsaved inquiry with supplier, customer and active calculation rows
 GET {{baseUrl}}/api/inquiries/from-calculation/{{calculationId}}

@@ -26,15 +26,19 @@ const menuGroups = [
     {
         items: [
             { to: "/finance", label: "Översikt", icon: LayoutDashboard, end: true },
-            { to: "/finance/searchinvoice", label: "Sök faktura", icon: FileSearch },
-            { to: "/finance/attest", label: "Attestera kostnader", icon: WalletCards },
         ],
     },
     {
         label: "Fakturera",
         items: [
-            { to: "/finance/invoicedeliveriesandordercosts", label: "Fakturera leveranser och orderkostnader", icon: Receipt },
+            { to: "/finance/invoicedeliveriesandordercosts", label: "Fakturera", icon: Receipt, className: "font-bold text-black" },
             { to: "/finance/invoice/new", label: "Skapa fristående faktura", icon: FileText },
+        ],
+    },
+    {
+        items: [
+            { to: "/finance/searchinvoice", label: "Sök faktura", icon: FileSearch },
+            { to: "/finance/attest", label: "Attestera kostnader", icon: WalletCards },
         ],
     },
     {
@@ -60,6 +64,7 @@ const FinanceLayout = () => {
     const pathSegments = location.pathname.split('/').filter(Boolean);
     const hasIdLikeLastSegment = /^\d+$/.test(pathSegments[pathSegments.length - 1] || '');
     const isDetailPage = pathSegments.length >= 3 || (pathSegments.length === 2 && hasIdLikeLastSegment);
+    const isInvoicePage = pathSegments[1] === 'invoice';
 
     const menuContent = <LeftMenu groups={menuGroups} />;
 
@@ -72,15 +77,15 @@ const FinanceLayout = () => {
                 <div className="sticky top-0 z-50 shrink-0">
                     <Navbar />
                 </div>
-                <div className="relative min-h-0 grow overflow-hidden">
-                    <div className="flex h-full min-h-0 items-stretch overflow-hidden md:px-[clamp(4px,3vw,3vw)]">
-                        {!isDetailPage && (
+                <div className={`relative grow ${isInvoicePage ? '' : 'min-h-0 overflow-hidden'}`}>
+                    <div className={`flex items-stretch ${isInvoicePage ? 'min-h-full 2xl:px-[clamp(4px,3vw,3vw)]' : 'h-full min-h-0 overflow-hidden md:px-[clamp(4px,3vw,3vw)]'}`}>
+                        {!isDetailPage && !isInvoicePage && (
                             <div className="flex min-h-0 w-50 mt-10 mb-20 shrink-0 flex-col overflow-y-auto border-r border-gray-300">
                                 {menuContent}
                             </div>
                         )}
 
-                        {isDetailPage && (
+                        {isDetailPage && !isInvoicePage && (
                             <>
                             <button
                                 type="button"
@@ -114,8 +119,8 @@ const FinanceLayout = () => {
                             </>
                         )}
 
-                        <div className="flex-grow min-w-0 pt-4 px-0 relative overflow-hidden">
-                            <div className="outlet-leading-none h-full pt-0">
+                        <div className={`flex-grow min-w-0 pt-4 px-0 relative ${isInvoicePage ? '' : 'overflow-hidden'}`}>
+                            <div className={`outlet-leading-none pt-0 ${isInvoicePage ? '' : 'h-full'}`}>
                                 <Outlet />
                             </div>
                         </div>

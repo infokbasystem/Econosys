@@ -99,8 +99,7 @@ const SelectNewDeliveryInfo = ({
             <div className="absolute inset-0 bg-black/50 z-40" />
             <div className="relative z-50 flex min-h-screen items-start justify-center pt-20">
                 <div
-                    className="relative bg-white rounded-sm shadow-xl w-full max-w-sm mx-4 p-6"
-                    style={{ background: 'rgb(255, 255, 234)' }}
+                    className="relative bg-[#f4f3f2] rounded-sm shadow-xl w-full max-w-sm mx-4 p-6"
                     onClick={(event) => event.stopPropagation()}
                 >
                     <div className="relative flex items-center justify-center mb-4">

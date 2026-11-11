@@ -780,7 +780,7 @@ const SuppliersOverview = () => {
                                 <col key={column.key} {...(column.width ? { style: { width: column.width } } : {})} />
                             ))}
                         </colgroup>
-                        <thead>
+                        <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                             <tr className="text-tiny text-gray-500">
                                 {listColumns.map((column) => (
                                     <th key={column.key} className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">
@@ -801,10 +801,10 @@ const SuppliersOverview = () => {
                                     <td colSpan={listColumns.length} className="px-4 py-8 text-center text-gray-400">Inga leverantorer hittades.</td>
                                 </tr>
                             ) : (
-                                rows.map((row) => (
+                                rows.map((row, index) => (
                                     <tr
                                         key={row.id}
-                                        className={getRowClass(row.id)}
+                                        className={`${getRowClass(row.id)} ${selectedRowId === row.id ? '' : index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`}
                                         onClick={() => setSelectedRowId((prev) => (prev === row.id ? null : row.id))}
                                     >
                                         <td className="truncate px-2 py-1 text-gray-800">

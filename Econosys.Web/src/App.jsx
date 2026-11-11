@@ -1,6 +1,7 @@
 import { Navigate, Route, createBrowserRouter, createRoutesFromElements, RouterProvider } from 'react-router-dom'
 
 import './App.css'
+import AppUpdateStatus from './components/AppUpdateStatus'
 import LoginPage from './pages/LoginPage'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -13,10 +14,10 @@ import FinanceLayout from './layouts/FinanceLayout'
 import BudgetLayout from './layouts/BudgetLayout'
 import ReportingLayout from './layouts/ReportingLayout'
 import SettingsLayout from './layouts/SettingsLayout'
+import DocumentTitleLayout from './components/DocumentTitleLayout'
 
 import Overview from './pages/Overview'
 
-import OrderOverview from './pages/Order/OrderOverview'
 import CalculationSearch from './pages/Calculation/CalculationSearch'
 import Calculation from './pages/Calculation/Calculation'
 import ProductSearch from './pages/Order/ProductSearch'
@@ -109,12 +110,12 @@ import TransportPricelists from './pages/Settings/TransportPricelists'
 
 const router = createBrowserRouter(
   createRoutesFromElements(
-    <Route>
+    <Route element={<DocumentTitleLayout />}>
       <Route path="/" element={< MainLayout />}>
         <Route index element={<ProtectedRoute>< Overview /></ProtectedRoute>} />
       </Route>
       <Route path="order" element={< OrderLayout />}>
-        <Route index element={<ProtectedRoute>< OrderOverview /></ProtectedRoute>} />
+        <Route index element={<ProtectedRoute><NonConfirmedSupplierOrders /></ProtectedRoute>} />
         <Route path="calculations" element={<ProtectedRoute><CalculationSearch /></ProtectedRoute>} />
         <Route path="calculations/:id" element={<ProtectedRoute><Calculation /></ProtectedRoute>} />
         <Route path="products" element={<ProtectedRoute><ProductSearch /></ProtectedRoute>} />
@@ -123,9 +124,7 @@ const router = createBrowserRouter(
         <Route path="constructions" element={<ProtectedRoute><ConstructionsSettings /></ProtectedRoute>} />
         <Route path="customers" element={<ProtectedRoute><CustomerSearch /></ProtectedRoute>} />
         <Route path="suppliers" element={<ProtectedRoute><SuppliersOverview /></ProtectedRoute>} />
-        <Route path="customers/new" element={<ProtectedRoute><Customer /></ProtectedRoute>} />
         <Route path="customers/:id" element={<ProtectedRoute><Customer /></ProtectedRoute>} />
-        <Route path="suppliers/new" element={<ProtectedRoute><Supplier /></ProtectedRoute>} />
         <Route path="suppliers/:id" element={<ProtectedRoute><Supplier /></ProtectedRoute>} />
         <Route path="quotations" element={<ProtectedRoute><QuotationSearch /></ProtectedRoute>} />
         <Route path="supplierorders" element={<ProtectedRoute><SupplierOrderSearch /></ProtectedRoute>} />
@@ -298,6 +297,7 @@ function App() {
   return (
     <AuthProvider>
       <AppContent />
+      <AppUpdateStatus />
     </AuthProvider>
   )
 }

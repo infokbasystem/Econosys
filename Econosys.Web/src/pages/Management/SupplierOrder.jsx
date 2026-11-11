@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, ClipboardCopy, Printer, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, ClipboardCopy, Printer, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { useBlocker, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
@@ -8,9 +8,10 @@ import 'react-loading-skeleton/dist/skeleton.css';
 import { usePdf } from '../../contexts/PdfContext';
 import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
-import OrderNavigationTree from '../../components/OrderNavigationTree';
+import EntityOrderFlowNavigation from '../../components/EntityOrderFlowNavigation';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
+import useDocumentTitle from '../../hooks/useDocumentTitle';
 import OrderCost from '../../components/OrderCost';
 import OrderHistory from '../../components/OrderHistory';
 import LabeledDatePicker from '../../components/LabeledDatePicker';
@@ -19,10 +20,12 @@ import LabeledReactSelect from '../../components/LabeledReactSelect';
 import LabeledSwitch from '../../components/LabeledSwitch';
 import LabeledTextArea from '../../components/LabeledTextArea';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { formatDateTime } from '../../helpers/dateUtils';
 import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
 import { formatNumber, parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
+import { fetchSupplierOrderPackaging } from './supplierOrderPackaging';
 
 const toArray = (value) => (Array.isArray(value) ? value : []);
 const toInputValue = (value) => (value == null ? '' : String(value));
@@ -44,6 +47,7 @@ const formatCompactNumber = (value, maxFractionDigits = 2) => {
 };
 const makeTempId = () => `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const getTodayDate = () => new Date().toLocaleDateString('sv-SE');
+const inventoryRequiredMessage = 'Ett lager måste först väljas';
 
 const mapApiOrderCostToEditable = (row) => ({
     localId: row?.id ? String(row.id) : makeTempId(),
@@ -146,7 +150,7 @@ const renderMetaRow = (label, value, userName) => {
     return (
         <div className="grid grid-cols-21 gap-1 mx-2">
             <div className="col-span-5"><span className="font-medium">{label}</span></div>
-            <div className="col-span-8">{formatDateTime(value)}</div>
+            <div className="col-span-8 font-semibold">{formatDateTime(value)}</div>
             <div className="col-span-8 text-gray-500">{userName && `av ${userName}`}</div>
         </div>
     );
@@ -167,6 +171,9 @@ const SupplierOrder = () => {
     const calculationId = parseNullableInt(searchParams.get('calculationId'));
     const isNewSupplierOrder = id === 'new' || id == null;
 
+    const [supplierOrder, setSupplierOrder] = useState(null);
+    useDocumentTitle(isNewSupplierOrder ? 'Ny beställning' : `Beställning ${supplierOrder?.supplierOrderNr || '-'}`);
+
     const {
         openPdfPreview,
         markStale,
@@ -176,12 +183,12 @@ const SupplierOrder = () => {
     } = usePdf();
 
     const [loading, setLoading] = useState(true);
+    const [loadingPackagingInstruction, setLoadingPackagingInstruction] = useState(false);
     const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
     const [unsavedWarningReason, setUnsavedWarningReason] = useState('navigate');
 
-    const [supplierOrder, setSupplierOrder] = useState(null);
     const [originalSupplierOrder, setOriginalSupplierOrder] = useState(null);
     const [selectedCustomerDetails, setSelectedCustomerDetails] = useState(null);
     const [, setSelectedDeliveryAddressOption] = useState('');
@@ -219,6 +226,7 @@ const SupplierOrder = () => {
     }, [supplierOrder, originalSupplierOrder]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(() => hasUnsavedChanges() || Boolean(isNewSupplierOrder && supplierOrder) || workflowOpen || workflowSaving);
 
     useEffect(() => {
         return () => {
@@ -522,8 +530,31 @@ const SupplierOrder = () => {
         navigate('/order/supplierorders', { replace: true });
     };
 
+    const handleRefreshPackagingInstruction = async () => {
+        setLoadingPackagingInstruction(true);
+        try {
+            const packaging = await fetchSupplierOrderPackaging(apiClient, supplierOrder);
+            updateSupplierOrder(packaging);
+        } catch (error) {
+            console.error('Failed to refresh supplier order packaging instruction:', error);
+            setMessages((previous) => [
+                ...previous.filter((message) => message.type !== 'error'),
+                { type: 'error', text: error?.response?.data?.message || error.message || 'Kunde inte hämta packinstruktionen från kalkylen.' },
+            ]);
+        } finally {
+            setLoadingPackagingInstruction(false);
+        }
+    };
+
     const handleSave = async () => {
         if (!supplierOrder) return;
+        if (supplierOrder.inventoryId == null) {
+            setMessages((previous) => [
+                ...previous.filter((message) => message.type !== 'error'),
+                { type: 'error', text: inventoryRequiredMessage },
+            ]);
+            return;
+        }
 
         try {
             const payload = buildPayload(supplierOrder);
@@ -587,6 +618,7 @@ const SupplierOrder = () => {
             );
             const customerOrderDraft = {
                 id: 0,
+                yourOrderNr: supplierOrder.customerOrderNr ?? '',
                 supplierOrderId: supplierOrder.id,
                 supplierOrderNr: supplierOrder.supplierOrderNr || '',
                 quotationId: supplierOrder.quotationId ?? null,
@@ -786,15 +818,6 @@ const SupplierOrder = () => {
                         orderBy: [{ field: 'name', direction: 'asc' }],
                     }),
                     apiClient.post('/inventories/search', {
-                        filter: {
-                            conditions: [
-                                {
-                                    field: 'isinventory',
-                                    operator: 'eq',
-                                    value: true,
-                                },
-                            ],
-                        },
                         orderBy: [{ field: 'name', direction: 'asc' }],
                         pagination: { pageNumber: 1, pageSize: 1000 },
                     }),
@@ -933,8 +956,8 @@ const SupplierOrder = () => {
                         aria-modal="true"
                         aria-labelledby="supplier-order-workflow-title"
                         aria-busy={workflowLoading || workflowSaving}
-                        className="relative bg-white rounded-sm shadow-xl max-w-xl w-full mx-4 p-6"
-                        style={{ background: 'rgb(255, 255, 234)' }}
+                        className="relative bg-[#f4f3f2] rounded-sm shadow-xl max-w-xl w-full mx-4 p-6"
+                        
                     >
                         <div className="relative flex items-center justify-center mb-4">
                             <h2 id="supplier-order-workflow-title" className="text-sm font-semibold text-center">
@@ -1119,14 +1142,14 @@ const SupplierOrder = () => {
             />
 
             <OrderDetailLayout
-                title={supplierOrder?.id ? <>Beställning <span className="ml-2">{supplierOrder.id}</span></> : 'Ny beställning'}
+                title={supplierOrder?.id ? <>Beställning <span className="ml-2">{supplierOrder.supplierOrderNr || '-'}</span></> : 'Ny beställning'}
                 messages={messages}
                 isInfoPanelExpanded={isInfoPanelExpanded}
                 isInfoPanelUsingResponsiveDefault={isInfoPanelUsingResponsiveDefault}
                 onToggleInfoPanel={toggleInfoPanel}
                 infoContent={(
                     <div className="space-y-3">
-                        <h2 className="text-sm text-center text-gray-700">Info</h2>
+                        <h2 className="text-sm text-center text-gray-500">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
                             {renderMetaRow('Skapad:', supplierOrder?.created, supplierOrder?.createdByUserName)}
                             {renderMetaRow('Redigerad:', supplierOrder?.edited, supplierOrder?.editedByUserName)}
@@ -1134,7 +1157,7 @@ const SupplierOrder = () => {
                     </div>
                 )}
                 infoFooter={(
-                    <OrderNavigationTree
+                    <EntityOrderFlowNavigation
                         entityType="supplierOrder"
                         entityId={Number.isInteger(supplierOrder?.id) && supplierOrder.id > 0 ? supplierOrder.id : null}
                     />
@@ -1192,7 +1215,7 @@ const SupplierOrder = () => {
                     </div>
                 </div>
 
-                <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-gradient-to-br from-slate-50 via-white to-slate-100 px-5 py-4 shadow-sm">
+                <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-[#e8eeed] px-5 py-4 shadow-sm">
                     <div className="grid grid-cols-[3fr_1fr]">
                         <div className="mt-0 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                             {renderReadOnlyInfoRow('Produkt', supplierOrder?.product)}
@@ -1331,10 +1354,13 @@ const SupplierOrder = () => {
                                 />
                                 <LabeledReactSelect
                                     name="inventoryId"
-                                    label="Lager"
+                                    label="Lager *"
                                     value={supplierOrder?.inventoryId || ''}
                                     items={inventoryOptions}
-                                    onChange={(value) => updateSupplierOrder({ inventoryId: parseNullableInt(value) })}
+                                    onChange={(value) => {
+                                        updateSupplierOrder({ inventoryId: parseNullableInt(value) });
+                                        setMessages((previous) => previous.filter((message) => message.text !== inventoryRequiredMessage));
+                                    }}
                                     labelWidth="w-20"
                                     margintop="0"
                                     allowRawValueLabel
@@ -1375,20 +1401,32 @@ const SupplierOrder = () => {
                                     height="h-10"
                                 />
                                 <LabeledTextArea
-                                    label="Meddelande"
+                                    label="Notering"
                                     value={supplierOrder?.message || ''}
                                     onChange={(value) => updateSupplierOrder({ message: value })}
                                     labelWidth="w-20"
                                     margintop="0"
-                                    height="h-20"
+                                    height="h-15"
                                 />
                                 <LabeledTextArea
                                     label="Packinstrukt."
+                                    labelAction={
+                                        <button
+                                            type="button"
+                                            onClick={handleRefreshPackagingInstruction}
+                                            disabled={loadingPackagingInstruction || !(supplierOrder?.inquiryId > 0 || supplierOrder?.calculationId > 0)}
+                                            className="inline-flex items-center gap-1 mt-1 text-tiny text-sky-700 hover:underline focus-visible:underline disabled:text-gray-400 disabled:cursor-not-allowed"
+                                            title="Hämta packinstruktion och palltyp från kalkylen"
+                                        >
+                                            <RefreshCw size={12} className={loadingPackagingInstruction ? 'shrink-0 animate-spin' : 'shrink-0'} aria-hidden="true" />
+                                            {loadingPackagingInstruction ? 'Hämtar...' : 'Hämta'}
+                                        </button>
+                                    }
                                     value={supplierOrder?.loadingInstruction || ''}
                                     onChange={(value) => updateSupplierOrder({ loadingInstruction: value })}
                                     labelWidth="w-20"
                                     margintop="0"
-                                    height="h-10"
+                                    height="h-15"
                                 />
                             </span>
 
@@ -1464,6 +1502,7 @@ const SupplierOrder = () => {
                             <span className="col-span-2">
                                 <OrderCost
                                     supplierOrderId={supplierOrder?.id > 0 ? supplierOrder.id : null}
+                                    supplierOrderNr={supplierOrder?.supplierOrderNr}
                                     showForDraft
                                     rows={supplierOrder?.orderCosts ?? []}
                                     costOptions={orderCostOptions}

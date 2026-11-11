@@ -1,5 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, Plus, Search } from 'lucide-react';
+import {
+    ArrowLeftCircle,
+    ArrowRightCircle,
+    CalendarDays,
+    CheckCircle2,
+    ChevronDown,
+    ChevronUp,
+    Coins,
+    MessageCircle,
+    Percent,
+    Plus,
+    Search,
+    UserRound,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import Skeleton from 'react-loading-skeleton';
@@ -56,24 +69,28 @@ const defaultOverview = {
 const metricDefinitions = [
     {
         key: 'openedCount',
+        icon: MessageCircle,
         label: 'Nya reklamationer',
         format: (value) => formatNumber(value, 0),
         total: (rows) => rows.reduce((sum, row) => sum + (row.openedCount || 0), 0),
     },
     {
         key: 'closedCount',
+        icon: CheckCircle2,
         label: 'Avslutade reklamationer',
         format: (value) => formatNumber(value, 0),
         total: (rows) => rows.reduce((sum, row) => sum + (row.closedCount || 0), 0),
     },
     {
         key: 'openAtMonthEndCount',
+        icon: UserRound,
         label: 'Pågående vid månadens slut',
         format: (value) => formatNumber(value, 0),
         total: (rows) => rows.at(-1)?.openAtMonthEndCount || 0,
     },
     {
         key: 'averageHandlingDays',
+        icon: CalendarDays,
         label: 'Medel hanteringstid arbetsdagar',
         format: (value) => formatNumber(value, 1),
         total: (rows) => {
@@ -84,6 +101,7 @@ const metricDefinitions = [
     },
     {
         key: 'handledWithin10DaysPercent',
+        icon: Percent,
         label: '% hanterade under 10 dagar',
         format: (value) => formatNumber(value, 1),
         total: (rows) => {
@@ -94,6 +112,7 @@ const metricDefinitions = [
     },
     {
         key: 'actualInternalCostSek',
+        icon: Coins,
         label: 'Econopack kostnader',
         format: (value) => formatNumber(value, 0),
         total: (rows) => rows.reduce((sum, row) => sum + (row.actualInternalCostSek || 0), 0),
@@ -364,6 +383,33 @@ const DeviationsOverview = () => {
         URL.revokeObjectURL(url);
     };
 
+    const handleExportOpenDeviationsToExcel = () => {
+        const headers = ['Ansvarig', 'Avvikelsenr', 'Ordernr', 'Kund', 'Leverantör', 'Dagar'];
+        const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+        const lines = [
+            headers.map(escapeCsv).join(';'),
+            ...overview.openItems.map((item) => [
+                item.responsibleUserName,
+                item.deviationNr ?? item.id,
+                item.customerOrderNr,
+                item.customerName,
+                item.supplierName,
+                item.openDays,
+            ].map(escapeCsv).join(';')),
+        ];
+
+        const blob = new Blob([`\ufeff${lines.join('\n')}`], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+
+        link.href = url;
+        link.download = `oppna-avvikelser-${getSwedishTodayDateString()}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
     const handleExportStatisticsToExcel = () => {
         const headers = ['Nyckeltal', ...MONTH_LABELS, 'TOT'];
         const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -402,19 +448,19 @@ const DeviationsOverview = () => {
         const isOverdue = item.openDays > 10;
 
         return [
-            'h-6 cursor-pointer',
+            'h-7 cursor-pointer',
             isSelected ? 'bg-red-800 text-white hover:bg-red-800' : '',
             !isSelected && isOverdue ? 'bg-red-400 text-white hover:bg-red-500' : '',
             !isSelected && !isOverdue ? 'hover:bg-lime-200/70' : '',
         ].join(' ');
     };
 
-    const getSearchRowClass = (row) => {
+    const getSearchRowClass = (row, index) => {
         const isSelected = selectedSearchRowId === row.id;
         return [
             'h-6 cursor-pointer border-b border-gray-100',
             isSelected ? 'bg-lime-200/80' : '',
-            !isSelected ? 'hover:bg-lime-200/70' : 'hover:bg-lime-200/80',
+            !isSelected ? `${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-lime-200/70` : 'hover:bg-lime-200/80',
         ].join(' ');
     };
 
@@ -436,8 +482,27 @@ const DeviationsOverview = () => {
         <div className="flex h-full flex-col gap-5 pt-3 pb-4 ps-10 pe-0">
             <div className="grid grid-cols-[1.1fr_1.5fr] gap-20 px-2 mt-2">
                 <section className="overflow-hidden">
-                    <div className="px-4 text-xs text-gray-500 text-center">Öppna avvikelser</div>
-                    <div ref={openListRef} className="max-h-56 overflow-auto mt-2">
+                    <div className="relative px-4 text-xs text-gray-500 text-center">
+                        <div className="flex justify-center">
+                            <a
+                                href="#"
+                                onClick={(event) => {
+                                    event.preventDefault();
+                                    if (showOverviewSkeleton || overview.openItems.length === 0) return;
+                                    handleExportOpenDeviationsToExcel();
+                                }}
+                                aria-disabled={showOverviewSkeleton || overview.openItems.length === 0}
+                                className={`inline-flex items-center whitespace-nowrap font-medium transition-colors ${showOverviewSkeleton || overview.openItems.length === 0
+                                    ? 'text-gray-300 cursor-not-allowed pointer-events-none'
+                                    : 'text-slate-500 hover:text-slate-700'
+                                    }`}
+                            >
+                                Exportera till Excel
+                            </a>
+                        </div>
+                        <div className="mt-2 font-semibold">ÖPPNA AVVIKELSER</div>
+                    </div>
+                    <div ref={openListRef} className="mt-2 max-h-56 overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
                         <table className="table-fixed w-full border-collapse text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                             <colgroup>
                                 <col style={{ width: '20%' }} />
@@ -448,13 +513,13 @@ const DeviationsOverview = () => {
                                 <col style={{ width: '8%' }} />
                             </colgroup>
                             <thead>
-                                <tr className="border-b border-gray-200 text-tiny text-gray-500">
-                                    <th className="px-2 py-1 text-left font-medium">Ansvarig</th>
-                                    <th className="px-2 py-1 text-left font-medium">Avvikelsenr</th>
-                                    <th className="px-2 py-1 text-left font-medium">Ordernr</th>
-                                    <th className="px-2 py-1 text-left font-medium">Kund</th>
-                                    <th className="px-2 py-1 text-left font-medium">Leverantör</th>
-                                    <th className="px-2 py-1 text-right font-medium">Dagar</th>
+                                <tr className="text-tiny">
+                                    <th className="bg-slate-100 pl-4 py-2.5 text-left font-medium text-slate-600">Ansvarig</th>
+                                    <th className="border-l border-white/70 bg-slate-100 px-2 py-2.5 text-left font-medium text-slate-600">Avvikelsenr</th>
+                                    <th className="border-l border-white/70 bg-slate-100 px-2 py-2.5 text-left font-medium text-slate-600">Ordernr</th>
+                                    <th className="border-l border-white/70 bg-slate-100 px-2 py-2.5 text-left font-medium text-slate-600">Kund</th>
+                                    <th className="border-l border-white/70 bg-slate-100 px-2 py-2.5 text-left font-medium text-slate-600">Leverantör</th>
+                                    <th className="border-l border-white/70 bg-slate-100 pr-4 py-2.5 text-right font-medium text-slate-600">Dagar</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -475,7 +540,7 @@ const DeviationsOverview = () => {
                                             onClick={() => setSelectedOpenItemId((prev) => (prev === item.id ? null : item.id))}
                                             className={getOpenItemRowClass(item)}
                                         >
-                                            <td className="truncate px-2 py-1">{item.responsibleUserName}</td>
+                                            <td className="truncate pl-4 py-1">{item.responsibleUserName}</td>
                                             <td className="truncate px-2 py-1">
                                                 <button
                                                     type="button"
@@ -490,7 +555,7 @@ const DeviationsOverview = () => {
                                             <td className="truncate px-2 py-1">{item.customerOrderNr}</td>
                                             <td className="truncate px-2 py-1">{item.customerName}</td>
                                             <td className="truncate px-2 py-1">{item.supplierName}</td>
-                                            <td className="px-2 py-1 text-right">{formatNumber(item.openDays, 0)}</td>
+                                            <td className="pr-4 py-1 text-right">{formatNumber(item.openDays, 0)}</td>
                                         </tr>
                                     ))
                                 )}
@@ -548,39 +613,49 @@ const DeviationsOverview = () => {
                             </a>
                         </div>
                     </div>
-                    <div className="px-4 mt-1 text-xs text-gray-500 text-center font-semibold">{overview.year}</div>
-                    <div className="overflow-auto mt-2">
-                        <table className="min-w-full border-collapse text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                    <div className="px-4 mt-2 text-xs text-gray-500 text-center font-semibold">{overview.year}</div>
+                    <div className="mt-2 overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        <table className="w-full min-w-[760px] table-fixed border-separate border-spacing-0 text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                            <colgroup>
+                                <col style={{ width: '32%' }} />
+                                {MONTH_LABELS.map((month) => <col key={month} style={{ width: '5.16%' }} />)}
+                                <col style={{ width: '6.08%' }} />
+                            </colgroup>
                             <thead>
-                                <tr className="border-b border-gray-200 text-tiny text-gray-500">
-                                    <th className="sticky left-0 text-left font-medium">&nbsp;</th>
+                                <tr className="text-tiny">
+                                    <th className="sticky left-0 rounded-tl-2xl bg-[#91aaa8] px-3 py-2.5 text-left font-medium text-white">Nyckeltal</th>
                                     {MONTH_LABELS.map((month) => (
-                                        <th key={month} className="px-2 py-1 text-right font-medium">{month}</th>
+                                        <th key={month} className="border-l border-white/70 bg-slate-100 px-1 py-2.5 text-center font-medium text-slate-600">{month}</th>
                                     ))}
-                                    <th className="px-2 py-1 text-right font-medium">TOT</th>
+                                    <th className="rounded-tr-2xl border-l border-white/70 bg-[#688b87] px-1 py-2.5 text-center font-medium text-white">TOT</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {showOverviewSkeleton ? (
                                     Array.from({ length: 6 }).map((_, index) => (
-                                        <tr key={index}>
-                                            <td className="px-3 py-1" colSpan={14}><Skeleton height={16} /></td>
+                                        <tr key={index} className="bg-white">
+                                            <td className="border-b border-slate-100 px-3 py-2" colSpan={14}><Skeleton height={16} /></td>
                                         </tr>
                                     ))
                                 ) : (
-                                    metricDefinitions.map((metric) => (
-                                        <tr key={metric.key} className="border-b border-gray-200 last:border-b-0">
-                                            <td className="sticky left-0 px-3 py-2 text-left text-gray-700">{metric.label}</td>
+                                    metricDefinitions.map((metric, index) => (
+                                        <tr key={metric.key} className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                                            <td className="sticky left-0 border-b border-slate-100 bg-inherit px-3 py-2 text-left text-gray-700">
+                                                <span className="flex items-center gap-2 whitespace-nowrap">
+                                                    <metric.icon className="h-4 w-4 shrink-0 text-slate-600" strokeWidth={1.7} />
+                                                    {metric.label}
+                                                </span>
+                                            </td>
                                             {MONTH_LABELS.map((_, index) => {
                                                 const monthNumber = index + 1;
                                                 const month = monthlyStatsByMonth.get(monthNumber);
                                                 return (
-                                                    <td key={`${metric.key}-${monthNumber}`} className="px-2 py-2 text-right text-gray-800">
+                                                    <td key={`${metric.key}-${monthNumber}`} className="border-b border-l border-slate-100 px-1 py-2 text-center text-gray-800">
                                                         {monthNumber <= currentMonth && month ? metric.format(month[metric.key]) : ''}
                                                     </td>
                                                 );
                                             })}
-                                            <td className="px-2 py-2 text-right text-gray-900">{metric.format(metric.total(visibleMonthlyStats))}</td>
+                                            <td className="border-b border-l border-slate-100 bg-[#e5efed] px-1 py-2 text-center font-semibold text-slate-700">{metric.format(metric.total(visibleMonthlyStats))}</td>
                                         </tr>
                                     ))
                                 )}
@@ -676,7 +751,7 @@ const DeviationsOverview = () => {
                                 <col key={column.key} {...(column.width ? { style: { width: column.width } } : {})} />
                             ))}
                         </colgroup>
-                        <thead>
+                        <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                             <tr>
                                 {searchColumns.map((column) => (
                                     <th
@@ -708,11 +783,11 @@ const DeviationsOverview = () => {
                                     <td colSpan={searchColumns.length} className="px-4 py-8 text-center text-gray-400">Inga avvikelser hittades.</td>
                                 </tr>
                             ) : (
-                                rows.map((row) => (
+                                rows.map((row, index) => (
                                     <tr
                                         key={row.id}
                                         onClick={() => setSelectedSearchRowId((prev) => (prev === row.id ? null : row.id))}
-                                        className={getSearchRowClass(row)}
+                                        className={getSearchRowClass(row, index)}
                                     >
                                         <td className="truncate px-2 py-1 text-gray-800">{row.responsibleUserName}</td>
                                         <td className="truncate px-2 py-1 text-gray-800">

@@ -5,7 +5,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 
 import LabeledReactSelect from '../../../components/LabeledReactSelect';
 import apiClient from '../../../config/apiClient';
-import { formatDeliveryDate } from '../../../helpers/dateUtils';
+import { formatDateShort, formatDeliveryDate } from '../../../helpers/dateUtils';
 import { getSharedRequest } from '../../../helpers/sharedRequest';
 
 const PAGE_SIZE = 100;
@@ -204,17 +204,6 @@ const NonInvoicedOrders = () => {
         }).format(Number(value));
     };
 
-    const formatDate = (value) => {
-        if (!value) return '';
-        return new Date(value).toLocaleString('sv-SE', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-        });
-    };
-
     const formatDateShort = (value) => {
         if (!value) return '';
         return new Date(value).toLocaleDateString('sv-SE', {
@@ -319,7 +308,7 @@ const NonInvoicedOrders = () => {
             </div>
 
             <div className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
-                <table className={`table-fixed w-full border-collapse text-xs [&_thead_th]:px-2 [&_thead_th]:pt-1 [&_thead_th]:pb-2 [&_thead_th]:text-tiny [&_thead_th]:font-medium [&_thead_th]:text-gray-500 [&_tbody_>_tr]:h-6 [&_tbody_>_tr]:border-b [&_tbody_>_tr]:border-gray-100 [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:px-2 [&_tbody_td]:py-0 [&_tbody_td]:text-gray-800 ${showSkeleton ? '' : '[&_tbody_>_tr:hover]:!bg-lime-200/70'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                <table className={`table-fixed w-full border-collapse text-xs [&_thead_th]:px-2 [&_thead_th]:pt-1 [&_thead_th]:pb-2 [&_thead_th]:text-tiny [&_thead_th]:font-semibold [&_thead_th]:text-gray-900 [&_thead_th]:tracking-[0.12em] [&_tbody_>_tr]:h-6 [&_tbody_>_tr]:border-b [&_tbody_>_tr]:border-gray-100 [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:px-2 [&_tbody_td]:py-0 [&_tbody_td]:text-gray-800 ${showSkeleton ? '' : '[&_tbody_>_tr:hover]:!bg-lime-200/70'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                     <colgroup>
                         {columns.map((col) => (
                             <col key={col.key} style={{ width: col.width }} />
@@ -363,17 +352,17 @@ const NonInvoicedOrders = () => {
                                 </td>
                             </tr>
                         ) : (
-                            rows.map((row) => (
+                            rows.map((row, index) => (
                                 <tr
                                     key={row.id}
                                     onClick={() => setSelectedRowId(row.id === selectedRowId ? null : row.id)}
-                                    className={`cursor-pointer ${row.id === selectedRowId ? 'bg-lime-100' : 'hover:bg-lime-50'}`}
+                                    className={`cursor-pointer ${row.id === selectedRowId ? 'bg-lime-100' : `${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-lime-50`}`}
                                 >
                                     <td className="px-2 py-1 text-gray-800">{row.customerOrderNr}</td>
                                     <td className="px-2 py-1 text-gray-800">{row.productName}</td>
                                     <td className="px-2 py-1 text-gray-800">{row.customerName}</td>
                                     <td className="px-2 py-1 text-gray-800">{row.supplierName}</td>
-                                    <td className="px-2 py-1 text-gray-800 whitespace-nowrap">{formatDate(row.createdAt)}</td>
+                                    <td className="px-2 py-1 text-gray-800 whitespace-nowrap">{formatDateShort(row.createdAt)}</td>
                                     <td className="px-2 py-1 text-center text-gray-800">{row.isInventory ? 'Lager' : 'Direkt' }</td>
                                     <td className="px-2 py-1 text-gray-800 whitespace-nowrap">{formatDeliveryDate(row.deliveryDate, row.deliveryDateWeekMode)}</td>
                                     <td className="px-2 py-1 text-right text-gray-800">{formatAmount(row.edition)}</td>

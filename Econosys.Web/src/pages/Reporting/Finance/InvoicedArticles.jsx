@@ -170,7 +170,7 @@ const InvoicedArticles = () => {
                 <div className="ml-6 text-xs text-gray-500">Rader: <strong>{sortedRows.length}</strong></div>
             </div>
             <div className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
-                <table className={`table-fixed w-full border-collapse text-xs [&_thead_th]:px-2 [&_thead_th]:pt-1 [&_thead_th]:pb-2 [&_thead_th]:text-tiny [&_thead_th]:font-medium [&_thead_th]:text-gray-500 [&_tbody_>_tr]:h-6 [&_tbody_>_tr]:border-b [&_tbody_>_tr]:border-gray-100 [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:px-2 [&_tbody_td]:py-0 [&_tbody_td]:text-gray-800 ${showSkeleton ? '' : '[&_tbody_>_tr:hover]:!bg-lime-200/70'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                <table className={`table-fixed w-full border-collapse text-xs [&_thead_th]:px-2 [&_thead_th]:pt-1 [&_thead_th]:pb-2 [&_thead_th]:text-tiny [&_thead_th]:font-semibold [&_thead_th]:text-gray-900 [&_thead_th]:tracking-[0.12em] [&_tbody_>_tr]:h-6 [&_tbody_>_tr]:border-b [&_tbody_>_tr]:border-gray-100 [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:px-2 [&_tbody_td]:py-0 [&_tbody_td]:text-gray-800 ${showSkeleton ? '' : '[&_tbody_>_tr:hover]:!bg-lime-200/70'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                     <colgroup>
                         {columns.map((column) => (
                             <col key={column.key} style={{ width: column.width }} />
@@ -209,7 +209,7 @@ const InvoicedArticles = () => {
                             </tr>
                         ) : (
                             sortedRows.map((row, index) => (
-                                <tr key={`${row.invoiceNumber}-${index}`} className="hover:bg-amber-50">
+                                <tr key={`${row.invoiceNumber}-${index}`} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-amber-50`}>
                                     <td className="px-2 py-1 text-gray-800 whitespace-nowrap">{formatDateShort(row.invoiceDate)}</td>
                                     <td className="px-2 py-1 text-right text-gray-800">{row.invoiceNumber ?? ''}</td>
                                     <td className="px-2 py-1 text-gray-800">{row.customer}</td>

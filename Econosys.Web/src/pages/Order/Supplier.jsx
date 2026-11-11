@@ -5,6 +5,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 import { ArrowLeft, Save, Trash2 } from 'lucide-react';
 
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledInput from '../../components/LabeledInput';
@@ -16,6 +17,7 @@ import { getSharedRequest } from '../../helpers/sharedRequest';
 import { formatDateTime } from '../../helpers/dateUtils';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
+import useDocumentTitle from '../../hooks/useDocumentTitle';
 
 const defaultLanguageOptions = [
     { id: 1, name: 'Svenska' },
@@ -67,6 +69,9 @@ const Supplier = () => {
     const { id } = useParams();
     const isNewSupplier = id === 'new';
 
+    const [supplier, setSupplier] = useState(null);
+    useDocumentTitle(isNewSupplier ? 'Ny leverantör' : `Leverantör ${supplier?.name || supplier?.id || id}`);
+
     const [loading, setLoading] = useState(true);
     const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -79,7 +84,6 @@ const Supplier = () => {
     const [inquiryCommunicationOptions, setInquiryCommunicationOptions] = useState([{ id: 1, name: 'Epost' }]);
     const [supplierOrderCommunicationOptions, setSupplierOrderCommunicationOptions] = useState([{ id: 1, name: 'Epost' }]);
 
-    const [supplier, setSupplier] = useState(null);
     const [originalSupplier, setOriginalSupplier] = useState(null);
     const [selectedContactIdentity, setSelectedContactIdentity] = useState(null);
     const [selectedFactoryIdentity, setSelectedFactoryIdentity] = useState(null);
@@ -96,6 +100,7 @@ const Supplier = () => {
     }, [supplier, originalSupplier]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(() => hasUnsavedChanges() || Boolean(isNewSupplier && supplier));
 
     useEffect(() => {
         const handleBeforeUnload = (event) => {
@@ -219,26 +224,34 @@ const Supplier = () => {
         setSupplier((prev) => {
             if (!prev || prev.id !== 0) return prev;
 
-            const shouldUpdate = prev.currencyId == null || prev.languageId == null;
+            const shouldUpdate = prev.currencyId == null
+                || !languageOptions.some((item) => String(item.id) === String(prev.languageId));
             if (!shouldUpdate) return prev;
 
             return {
                 ...prev,
                 ...(prev.currencyId == null && defaultCurrencyId != null ? { currencyId: defaultCurrencyId } : {}),
-                ...(prev.languageId == null && defaultLanguageId != null ? { languageId: defaultLanguageId } : {}),
+                ...(!languageOptions.some((item) => String(item.id) === String(prev.languageId))
+                    && defaultLanguageId != null
+                    ? { languageId: defaultLanguageId }
+                    : {}),
             };
         });
 
         setOriginalSupplier((prev) => {
             if (!prev || prev.id !== 0) return prev;
 
-            const shouldUpdate = prev.currencyId == null || prev.languageId == null;
+            const shouldUpdate = prev.currencyId == null
+                || !languageOptions.some((item) => String(item.id) === String(prev.languageId));
             if (!shouldUpdate) return prev;
 
             return {
                 ...prev,
                 ...(prev.currencyId == null && defaultCurrencyId != null ? { currencyId: defaultCurrencyId } : {}),
-                ...(prev.languageId == null && defaultLanguageId != null ? { languageId: defaultLanguageId } : {}),
+                ...(!languageOptions.some((item) => String(item.id) === String(prev.languageId))
+                    && defaultLanguageId != null
+                    ? { languageId: defaultLanguageId }
+                    : {}),
             };
         });
     }, [currencyOptions, isNewSupplier, languageOptions, supplier]);
@@ -545,7 +558,7 @@ const Supplier = () => {
                 onToggleInfoPanel={toggleInfoPanel}
                 infoContent={(
                     <div className="space-y-3">
-                        <h2 className="text-sm text-center text-gray-700">Info</h2>
+                        <h2 className="text-sm text-center text-gray-500">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
                             {supplier?.createdAt && (
                                 <div className="grid grid-cols-21 gap-1 mx-2">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useBlocker } from 'react-router-dom';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledSwitch from '../../components/LabeledSwitch';
@@ -128,6 +129,7 @@ const InventoriesSettings = () => {
     }, [form, originalForm, isLoadingDetails]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(hasUnsavedChanges);
 
     const isEditDisabled = isLoadingDetails || (!isCreateMode && !form.id);
 

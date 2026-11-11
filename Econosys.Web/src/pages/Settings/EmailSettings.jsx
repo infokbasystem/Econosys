@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Save, Trash2 } from 'lucide-react';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledTextArea from '../../components/LabeledTextArea';
 import ActionButton from '../../components/ActionButton';
@@ -57,11 +58,13 @@ const buildApiErrorMessage = (error, fallbackMessage) => {
 
 const EmailSettings = () => {
     const [form, setForm] = useState(defaultForm);
+    const [originalForm, setOriginalForm] = useState(defaultForm);
     const [selectedId, setSelectedId] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState(null);
     const [search, setSearch] = useState('');
+    useAppUpdateGuard(isSaving || JSON.stringify(form) !== JSON.stringify(originalForm));
 
     const load = async () => {
         setIsLoading(true);
@@ -71,10 +74,12 @@ const EmailSettings = () => {
             const response = await apiClient.get(`/mailsettings/${COMPANY_ID}`);
             const mapped = mapDtoToForm(response?.data);
             setForm(mapped);
+            setOriginalForm(mapped);
             setSelectedId(mapped.settings[0]?.id ?? null);
         } catch (error) {
             if (error?.response?.status === 404) {
                 setForm(defaultForm);
+                setOriginalForm(defaultForm);
                 setSelectedId(null);
             } else {
                 setMessage({ type: 'error', text: buildApiErrorMessage(error, 'Kunde inte hamta epostinstallningar.') });
@@ -140,6 +145,7 @@ const EmailSettings = () => {
             const response = await apiClient.put(`/mailsettings/${COMPANY_ID}`, payload);
             const mapped = mapDtoToForm(response?.data);
             setForm(mapped);
+            setOriginalForm(mapped);
             setSelectedId(mapped.settings[0]?.id ?? null);
             setMessage({ type: 'success', text: 'Epostinstallningar sparades.' });
         } catch (error) {

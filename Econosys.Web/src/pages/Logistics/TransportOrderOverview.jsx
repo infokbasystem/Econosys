@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 import apiClient from '../../config/apiClient';
 import LabeledCheckbox from '../../components/LabeledCheckbox';
 import ReportOrderInfoModal from '../../modals/ReportOrderInfoModal';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import bg from '../../assets/content.png';
+import { sortTransportOrderOverviewRows } from './transportOrderOverviewSorting';
 import './TransportOrderOverview.css';
 
 const TABLE_FONT_STYLE = { fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" };
@@ -33,8 +35,8 @@ const topColumns = [
     { key: 'rest', label: 'Rest', width: '4%', align: 'right' },
     { key: 'pallets', label: 'PALL', width: '4%', align: 'right' },
     { key: 'palletFormat', label: 'Pallformat', width: '10%', align: 'left' },
-    { key: 'rapp', label: 'Rapp.', width: '4%', align: 'left' },
-    { key: 'planera', label: 'Plamnera', width: '4%', align: 'left' },
+    { key: 'rapp', label: 'Rapp.', width: '4%', align: 'left', sortable: false },
+    { key: 'planera', label: 'Planera', width: '4%', align: 'left', sortable: false },
 ];
 
 const planningColumns = [
@@ -256,6 +258,8 @@ const MultiSelectCheckboxFilter = ({ options, selectedValues, onChange }) => {
 };
 
 const TransportOrderOverview = () => {
+    const location = useLocation();
+    const navigate = useNavigate();
     const cachedUi = transportOrderOverviewCache.ui;
     const cachedData = transportOrderOverviewCache.data;
     const topScrollRef = useRef(null);
@@ -281,6 +285,7 @@ const TransportOrderOverview = () => {
     const [includeNotPlanned, setIncludeNotPlanned] = useState(() => cachedUi?.includeNotPlanned ?? true);
     const [supplierFilter, setSupplierFilter] = useState(() => cachedUi?.supplierFilter ?? []);
     const [customerFilter, setCustomerFilter] = useState(() => cachedUi?.customerFilter ?? []);
+    const [sortConfig, setSortConfig] = useState(() => cachedUi?.sortConfig ?? { key: null, direction: 'asc' });
     const [deliveryTimeFilter, setDeliveryTimeFilter] = useState(() => cachedUi?.deliveryTimeFilter ?? '');
     const [confirmedDeliveryTimeFilter, setConfirmedDeliveryTimeFilter] = useState(() => cachedUi?.confirmedDeliveryTimeFilter ?? '');
     const [activeDateHelpColumn, setActiveDateHelpColumn] = useState(null);
@@ -289,6 +294,9 @@ const TransportOrderOverview = () => {
     const [reportOrderInfoSaving, setReportOrderInfoSaving] = useState(false);
     const [reportOrderInfoError, setReportOrderInfoError] = useState('');
     const [topTableRefreshToken, setTopTableRefreshToken] = useState(0);
+    const [planDelivery, setPlanDelivery] = useState(null);
+    const [planningDeliveryError, setPlanningDeliveryError] = useState('');
+    const [isPlanningDelivery, setIsPlanningDelivery] = useState(false);
     const [columnFilters, setColumnFilters] = useState(() => {
         if (cachedUi?.columnFilters && typeof cachedUi.columnFilters === 'object' && !Array.isArray(cachedUi.columnFilters)) {
             return { ...cachedUi.columnFilters };
@@ -341,6 +349,7 @@ const TransportOrderOverview = () => {
             deliveryTimeFilter,
             confirmedDeliveryTimeFilter,
             columnFilters: { ...columnFilters },
+            sortConfig,
             selectedCustomerOrderId,
             selectedPlanningTransportOrderId,
             selectedActiveTransportOrderId,
@@ -355,6 +364,7 @@ const TransportOrderOverview = () => {
         deliveryTimeFilter,
         confirmedDeliveryTimeFilter,
         columnFilters,
+        sortConfig,
         selectedCustomerOrderId,
         selectedPlanningTransportOrderId,
         selectedActiveTransportOrderId,
@@ -407,6 +417,13 @@ const TransportOrderOverview = () => {
         setColumnFilters((previousFilters) => ({
             ...previousFilters,
             [columnKey]: value,
+        }));
+    };
+
+    const handleSort = (key) => {
+        setSortConfig((previous) => ({
+            key,
+            direction: previous.key === key && previous.direction === 'asc' ? 'desc' : 'asc',
         }));
     };
 
@@ -601,6 +618,11 @@ const TransportOrderOverview = () => {
         });
     }, [rows, columnFilters, supplierFilter, customerFilter, deliveryTimeFilter, confirmedDeliveryTimeFilter]);
 
+    const sortedRows = useMemo(
+        () => sortTransportOrderOverviewRows(filteredRows, sortConfig),
+        [filteredRows, sortConfig]
+    );
+
     useEffect(() => {
         if (selectedCustomerOrderId === null) return;
 
@@ -657,6 +679,53 @@ const TransportOrderOverview = () => {
             setReportOrderInfoError('Kunde inte hämta orderinformation.');
         } finally {
             setReportOrderInfoLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!location.state?.planDelivery) return;
+
+        setPlanDelivery(location.state.planDelivery);
+        setPlanningDeliveryError('');
+        navigate(location.pathname, { replace: true, state: null });
+    }, [location.pathname, location.state, navigate]);
+
+    const beginPlanningCustomerOrder = (customerOrderId) => {
+        navigate(`/logistics/newdelivery?customerOrderId=${customerOrderId}&fromPlan=1`);
+    };
+
+    const addDeliveryToTransportOrder = async (transportOrderId = null) => {
+        if (!planDelivery || isPlanningDelivery) return;
+
+        setIsPlanningDelivery(true);
+        setPlanningDeliveryError('');
+        try {
+            const response = await apiClient.post('/logistics/transportorderoverview/plan', {
+                customerOrderId: planDelivery.customerOrderId,
+                deliveryType: planDelivery.type,
+                deliveryId: planDelivery.id,
+                transportOrderId,
+            });
+            const plannedTransportOrderId = response?.data?.transportOrderId;
+            if (!plannedTransportOrderId) {
+                throw new Error('Servern returnerade ingen transportorder.');
+            }
+
+            setPlanDelivery(null);
+            setTopTableRefreshToken((previous) => previous + 1);
+            navigate(`/logistics/transportorder/${plannedTransportOrderId}`, {
+                state: { routeCalculation: response?.data?.routeCalculation },
+            });
+        } catch (error) {
+            console.error('Failed to plan customer order:', error);
+            const responseData = error?.response?.data;
+            setPlanningDeliveryError(
+                typeof responseData === 'string'
+                    ? responseData
+                    : responseData?.message ?? responseData?.title ?? error?.message ?? 'Kunde inte planera ordern.'
+            );
+        } finally {
+            setIsPlanningDelivery(false);
         }
     };
 
@@ -739,10 +808,28 @@ const TransportOrderOverview = () => {
                                 {topColumns.map((column) => (
                                     <th
                                         key={column.key}
+                                        aria-sort={column.sortable === false ? undefined : sortConfig.key === column.key ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
                                         className={`align-top px-1.5 pt-2 pb-1 text-tiny font-medium ${column.align === 'right' ? 'text-right' : 'text-left'}`}
                                         style={HEADER_BACKGROUND_STYLE}
                                     >
-                                        <div className="px-0.5 pb-1 text-tiny">{column.label}</div>
+                                        {column.sortable === false ? (
+                                            <div className="px-0.5 pb-1 text-tiny">{column.label}</div>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSort(column.key)}
+                                                className={`flex w-full cursor-pointer items-center gap-1 px-0.5 pb-1 text-tiny font-medium text-gray-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-600 ${column.align === 'right' ? 'justify-end' : 'justify-start'}`}
+                                            >
+                                                {column.label}
+                                                {sortConfig.key === column.key ? (
+                                                    sortConfig.direction === 'asc'
+                                                        ? <ChevronUp aria-hidden="true" className="h-3 w-3 shrink-0" />
+                                                        : <ChevronDown aria-hidden="true" className="h-3 w-3 shrink-0" />
+                                                ) : (
+                                                    <ChevronUp aria-hidden="true" className="h-3 w-3 shrink-0 opacity-0" />
+                                                )}
+                                            </button>
+                                        )}
                                         {column.key === 'supplierName' ? (
                                             <MultiSelectCheckboxFilter
                                                 options={supplierOptions}
@@ -818,7 +905,7 @@ const TransportOrderOverview = () => {
                                     <td colSpan={topColumns.length} className="px-4 py-8 text-center text-gray-400">Inga rader att visa.</td>
                                 </tr>
                             ) : (
-                                filteredRows.map((row) => {
+                                sortedRows.map((row) => {
                                     const isSelected = row.customerOrderId === selectedCustomerOrderId;
 
                                     return (
@@ -871,9 +958,11 @@ const TransportOrderOverview = () => {
                                         <td className="px-2 py-1 text-gray-800">
                                             <button
                                                 type="button"
-                                                className="cursor-not-allowed text-gray-400"
-                                                title="Planera kommer i nästa steg"
-                                                disabled
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    beginPlanningCustomerOrder(row.customerOrderId);
+                                                }}
+                                                className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                             >
                                                 Planera
                                             </button>
@@ -1141,6 +1230,78 @@ const TransportOrderOverview = () => {
                 isSaving={reportOrderInfoSaving}
                 errorMessage={reportOrderInfoError}
             />
+
+            {planDelivery ? (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+                    <section
+                        aria-labelledby="plan-delivery-title"
+                        aria-modal="true"
+                        className="flex max-h-[85vh] w-full max-w-2xl flex-col bg-white shadow-xl"
+                        role="dialog"
+                    >
+                        <header className="border-b border-gray-200 px-5 py-4">
+                            <h2 className="text-sm font-semibold text-gray-800" id="plan-delivery-title">Välj transportorder</h2>
+                            <p className="mt-1 text-xs text-gray-600">
+                                Välj en transportorder i planering eller skapa en ny.
+                            </p>
+                        </header>
+
+                        <div className="min-h-0 flex-1 overflow-auto px-5 py-3">
+                            {planningLoading && !hasPlanningSnapshot ? (
+                                <div className="py-4 text-center text-xs text-gray-500">Hämtar transportorder...</div>
+                            ) : planningRows.length === 0 ? (
+                                <div className="py-4 text-center text-xs text-gray-500">Inga transportorder i planering.</div>
+                            ) : (
+                                <div className="divide-y divide-gray-200">
+                                    {planningRows.map((row) => (
+                                        <div className="flex items-center justify-between gap-4 py-2 text-xs" key={row.id}>
+                                            <div className="min-w-0">
+                                                <div className="font-semibold text-gray-800">
+                                                    {row.transportOrderNr} {row.transporterName ? `- ${row.transporterName}` : ''}
+                                                </div>
+                                                <div className="truncate text-gray-500">
+                                                    Lastas: {row.loadingCities || '-'} · Lossas: {row.unloadingCities || '-'}
+                                                </div>
+                                            </div>
+                                            <button
+                                                className="shrink-0 bg-lime-700 px-4 py-1 text-white hover:bg-lime-800 disabled:opacity-50"
+                                                disabled={isPlanningDelivery}
+                                                onClick={() => addDeliveryToTransportOrder(row.id)}
+                                                type="button"
+                                            >
+                                                Välj
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {planningDeliveryError ? (
+                                <p className="mt-3 border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{planningDeliveryError}</p>
+                            ) : null}
+                        </div>
+
+                        <footer className="flex justify-between gap-3 border-t border-gray-200 px-5 py-4">
+                            <button
+                                className="bg-gray-100 px-4 py-2 text-xs text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                                disabled={isPlanningDelivery}
+                                onClick={() => setPlanDelivery(null)}
+                                type="button"
+                            >
+                                Avbryt
+                            </button>
+                            <button
+                                className="bg-lime-700 px-4 py-2 text-xs text-white hover:bg-lime-800 disabled:opacity-50"
+                                disabled={isPlanningDelivery}
+                                onClick={() => addDeliveryToTransportOrder()}
+                                type="button"
+                            >
+                                {isPlanningDelivery ? 'Sparar...' : 'Skapa ny transportorder'}
+                            </button>
+                        </footer>
+                    </section>
+                </div>
+            ) : null}
         </div>
     );
 };

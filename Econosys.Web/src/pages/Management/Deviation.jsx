@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Link, Printer, Save, Trash2, Unlink } from 'lucide-react';
+import { ArrowLeft, Link, Printer, Save, SlidersHorizontal, Trash2, Unlink } from 'lucide-react';
 import { useNavigate, useParams, useLocation, useBlocker } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
@@ -15,11 +15,13 @@ import NumberInput from '../../components/NumberInput';
 import SwitchSelector from 'react-switch-selector';
 
 import apiClient from '../../config/apiClient';
-import { formatDateShort, formatDateTime, fromDateInputToSwedishIso, toSwedishDateInputValue } from '../../helpers/dateUtils';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
+import { formatDateShort, formatDateTime, fromDateInputToSwedishIso, getSwedishTodayDateString, toSwedishDateInputValue } from '../../helpers/dateUtils';
 import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
 import { formatNumber, parseNullableInt, parseNullableNumber } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import OrderSearchModal from '../../components/OrderSearchModal';
+import DeviationWorkdaysOverrideModal from '../../components/DeviationWorkdaysOverrideModal';
 
 const statusOptions = [
     {
@@ -39,6 +41,29 @@ const statusOptions = [
     },
 ];
 
+const getSupplierWorkdayCount = (deviation) => {
+    if (deviation?.overrideHandlingWorkdays != null) {
+        return deviation.overrideHandlingWorkdays;
+    }
+
+    const startDateValue = toSwedishDateInputValue(deviation?.deviationOpened);
+    if (!startDateValue) return null;
+
+    const endDateValue = toSwedishDateInputValue(deviation?.deviationClosedToSupplier)
+        || getSwedishTodayDateString();
+    const startDate = new Date(`${startDateValue}T00:00:00Z`);
+    const endDate = new Date(`${endDateValue}T00:00:00Z`);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return null;
+
+    let weekdays = 0;
+    for (const date = new Date(startDate); date < endDate; date.setUTCDate(date.getUTCDate() + 1)) {
+        const day = date.getUTCDay();
+        if (day !== 0 && day !== 6) weekdays++;
+    }
+
+    return weekdays;
+};
+
 const createNewDeviationModel = () => ({
     id: 0,
     isInternal: false,
@@ -54,6 +79,7 @@ const Deviation = () => {
     const [unsavedWarningReason, setUnsavedWarningReason] = useState('navigate'); // 'navigate' | 'print'
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showLinkOrder, setShowLinkOrder] = useState(false);
+    const [showWorkdaysOverrideModal, setShowWorkdaysOverrideModal] = useState(false);
     const [loading, setLoading] = useState(true);
     const [messages, setMessages] = useState([]);
     const [attachedFiles, setAttachedFiles] = useState([]);
@@ -91,6 +117,7 @@ const Deviation = () => {
     }, [deviation, originalDeviation]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(() => hasUnsavedChanges() || Boolean(isNewDeviation && deviation));
 
     // Cleanup: close PDF panel when component unmounts (navigating away)
     useEffect(() => {
@@ -260,6 +287,10 @@ const Deviation = () => {
         }
     };
 
+    const handleOpenWorkdaysOverrideModal = () => {
+        setShowWorkdaysOverrideModal(true);
+    };
+
     const handleChange = (field, e) => {
         markStale();
         setMessages(prev => prev.filter(msg => msg.type !== 'success'));
@@ -362,6 +393,8 @@ const Deviation = () => {
             claimReason: source?.claimReason ?? null,
             followupInfo: source?.followupInfo ?? null,
             deviationClosedToSupplier: source?.deviationClosedToSupplier ?? null,
+            overrideHandlingWorkdays: parseNullableInt(source?.overrideHandlingWorkdays),
+            handlingWorkdaysOverrideReason: source?.handlingWorkdaysOverrideReason?.trim() || null,
             costs
         };
     };
@@ -433,7 +466,7 @@ const Deviation = () => {
                     setOriginalDeviation(structuredClone(data));
                     setAttachedFiles(attachments.map(f => ({ ...f })));
                 }
-                
+
                 if (isActive) {
                     try { setBadges && setBadges(defaultBadges); } catch (e) { /* ignore if unavailable */ }
                 }
@@ -487,6 +520,16 @@ const Deviation = () => {
     }
 
     const isClosed = String(deviation.status || '').toUpperCase() === 'CLOSED';
+    const supplierWorkdayCount = getSupplierWorkdayCount(deviation);
+    const hasWorkdayOverride = deviation.overrideHandlingWorkdays != null;
+    const workdayAdjustmentReason = hasWorkdayOverride
+        ? deviation.handlingWorkdaysOverrideReason?.trim()
+        : '';
+    const workdayAdjustmentPreview = workdayAdjustmentReason
+        ? workdayAdjustmentReason.length > 100
+            ? `${workdayAdjustmentReason.slice(0, 97).trimEnd()}...`
+            : workdayAdjustmentReason
+        : null;
 
     return (
         <div className="relative flex flex-col h-full">
@@ -496,6 +539,19 @@ const Deviation = () => {
                 onClose={() => setShowLinkOrder(false)}
                 onSelect={handleLinkOrder}
             />
+
+            {showWorkdaysOverrideModal && (
+                <DeviationWorkdaysOverrideModal
+                    overrideHandlingWorkdays={deviation.overrideHandlingWorkdays}
+                    reason={deviation.handlingWorkdaysOverrideReason}
+                    onClose={() => setShowWorkdaysOverrideModal(false)}
+                    onSaved={(workdaysOverride) => {
+                        markStale();
+                        setMessages((current) => current.filter((message) => message.type !== 'success'));
+                        setDeviation((current) => ({ ...current, ...workdaysOverride }));
+                    }}
+                />
+            )}
 
             {/* Delete Confirmation Modal */}
             <ConfirmationModal
@@ -532,7 +588,7 @@ const Deviation = () => {
                 {/* Left panel */}
                 <div className="flex flex-col w-80 shrink-0 border-r border-gray-300 px-2 py-2 mb-5 mr-5">
                     <div className="space-y-3">
-                        <h2 className="text-sm text-center text-gray-700">Info</h2>
+                        <h2 className="text-sm text-center text-gray-500">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
                             <div className="grid grid-cols-5 gap-4 mx-2">
                                 {deviation?.createdTimeStamp && (
@@ -564,6 +620,28 @@ const Deviation = () => {
                                     </>
                                 )}
                             </div>
+                            {supplierWorkdayCount != null && (
+                                <div
+                                    className="mt-3 grid grid-cols-5 gap-4 mx-2 text-red-500"
+                                    title={deviation?.handlingWorkdaysOverrideReason || 'Beräknat från öppningsdatum till stängning mot leverantör.'}
+                                >
+                                    <div className="col-span-1">
+                                        <span className="font-medium">Öppet:</span>
+                                    </div>
+                                    <div className="col-span-4">
+                                        <div>
+                                            {supplierWorkdayCount}
+                                            {hasWorkdayOverride && <span className="ml-0.5 text-[10px] font-semibold">*</span>}
+                                            {' '}arbetsdagar
+                                        </div>
+                                        {workdayAdjustmentPreview && (
+                                            <div className="mt-1 text-[10px] leading-4 text-red-600">
+                                                {workdayAdjustmentPreview}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                     {deviation?.customerOrderId && (
@@ -573,7 +651,7 @@ const Deviation = () => {
                                 <div className="font-medium text-gray-700 mb-1">Kopplad order</div>
                                 <div className="flex gap-1">
                                     <span className="text-gray-500 w-14 flex-none">Ordernr:</span>
-                                    <span className="font-medium">{deviation.customerOrderNr ?? deviation.customerOrderId}</span>
+                                    <span className="font-medium">{deviation.customerOrderNr || '-'}</span>
                                 </div>
                                 {(deviation.customerOrderCustomerName) && (
                                     <div className="flex gap-1">
@@ -630,6 +708,13 @@ const Deviation = () => {
                                 icon={Save}
                                 onClick={handleSave}
                                 accent="lime"
+                            />
+                            <ActionButton
+                                label="Justera arbetsdagar"
+                                icon={SlidersHorizontal}
+                                onClick={handleOpenWorkdaysOverrideModal}
+                                accent="slate"
+                                disabled={!deviation?.id || deviation.id === 0}
                             />
                             {deviation?.customerOrderId ? (
                                 <ActionButton
@@ -751,7 +836,7 @@ const Deviation = () => {
                                             onChange={(value) => handleChange('status', value)}
                                             options={statusOptions}
                                             backgroundColor={"#353b48"}
-                                             />
+                                        />
                                     </div>
                                     <LabeledSwitch
                                         field='isInternal'
@@ -781,12 +866,14 @@ const Deviation = () => {
                                     </div>
                                     <div className='flex items-center space-x-1 w-50 text-xs pt-[1px]'>
                                         <label className={`w-20 flex-none text-xs text-gray-700`}>Stängd mot lev.</label>
-                                        <input
-                                            type="date"
-                                            value={toSwedishDateInputValue(deviation?.deviationClosedToSupplier)}
-                                            onChange={(e) => handleChange('deviationClosedToSupplier', fromDateInputToSwedishIso(e.target.value))}
-                                            className="w-30 text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none focus:ring-1 focus:ring-green-500"
-                                        />
+                                        <div className="flex flex-col items-start gap-1">
+                                            <input
+                                                type="date"
+                                                value={toSwedishDateInputValue(deviation?.deviationClosedToSupplier)}
+                                                onChange={(e) => handleChange('deviationClosedToSupplier', fromDateInputToSwedishIso(e.target.value))}
+                                                className="w-30 text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                                            />
+                                        </div>
                                     </div>
                                 </span>
                             </div>

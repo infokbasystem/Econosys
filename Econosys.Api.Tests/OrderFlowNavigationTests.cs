@@ -28,8 +28,9 @@ public class OrderFlowNavigationTests
             new Inquiry { Id = 30, CalculationId = 20 },
             new Inquiry { Id = 31, CalculationId = 21 });
         db.Quotations.Add(new Quotation { Id = 40, CalculationId = 20, InquiryId = 30 });
-        db.SupplierOrders.Add(new SupplierOrder { Id = 50, CalculationId = 20, QuotationId = 40 });
-        db.CustomerOrders.Add(new CustomerOrder { Id = 60, SupplierOrderId = 50 });
+        db.SupplierOrders.Add(new SupplierOrder { Id = 50, CalculationId = 20, QuotationId = 40, SupplierOrderNr = "ABC-50" });
+        db.CustomerOrders.Add(new CustomerOrder { Id = 60, SupplierOrderId = 50, CustomerOrderNr = "ABC-50-2" });
+        db.CustomerOrders.Add(new CustomerOrder { Id = 61, QuotationId = 40, CustomerOrderNr = "DIRECT-61" });
         await db.SaveChangesAsync();
 
         var response = await new OrderNavigationController(db).GetTree(entityType, entityId);
@@ -39,6 +40,17 @@ public class OrderFlowNavigationTests
         var archived = Assert.Single(tree.Calculations, calculation => calculation.Id == 21);
         Assert.True(archived.IsArchived);
         Assert.Equal(31, Assert.Single(archived.Inquiries).Id);
+        var calculation = Assert.Single(tree.Calculations, x => x.Id == 20);
+        var quotation = Assert.Single(Assert.Single(calculation.Inquiries).Quotations);
+        var supplierOrder = Assert.Single(quotation.SupplierOrders);
+        Assert.Equal(50, supplierOrder.Id);
+        Assert.Equal("ABC-50", supplierOrder.SupplierOrderNr);
+        var customerOrder = Assert.Single(supplierOrder.CustomerOrders);
+        Assert.Equal(60, customerOrder.Id);
+        Assert.Equal("ABC-50-2", customerOrder.CustomerOrderNr);
+        var directCustomerOrder = Assert.Single(quotation.CustomerOrders);
+        Assert.Equal(61, directCustomerOrder.Id);
+        Assert.Equal("DIRECT-61", directCustomerOrder.CustomerOrderNr);
     }
 
     [Fact]
@@ -155,6 +167,118 @@ public class OrderFlowNavigationTests
         var response = await controller.GetCalculationFlow(999, service, default);
 
         Assert.IsType<NotFoundResult>(response.Result);
+    }
+
+    [Theory]
+    [InlineData("product", 10)]
+    [InlineData("inquiry", 30)]
+    [InlineData("quotation", 40)]
+    [InlineData("supplierOrder", 50)]
+    [InlineData("customerOrder", 60)]
+    public async Task GroupedDocumentFlowIncludesProductBranchesAndInheritedLinks(string entityType, int entityId)
+    {
+        await using var db = CreateContext();
+        db.Products.AddRange(new Product { Id = 10, Name = "Product" }, new Product { Id = 11 });
+        db.Calculations.AddRange(
+            new Calculation { Id = 20, ProductId = 10 },
+            new Calculation { Id = 21, ProductId = 10, IsArchived = true },
+            new Calculation { Id = 22, ProductId = 11 });
+        db.Inquiries.AddRange(
+            new Inquiry { Id = 30, CalculationId = 20 },
+            new Inquiry { Id = 31, CalculationId = 21 },
+            new Inquiry { Id = 32, CalculationId = 22 });
+        db.Quotations.AddRange(
+            new Quotation { Id = 40, InquiryId = 30 },
+            new Quotation { Id = 41, InquiryId = 31 });
+        db.SupplierOrders.AddRange(
+            new SupplierOrder { Id = 50, QuotationId = 40, SupplierOrderNr = "ORDER-50" },
+            new SupplierOrder { Id = 51, QuotationId = 41 });
+        db.CustomerOrders.AddRange(
+            new CustomerOrder { Id = 60, SupplierOrderId = 50, CustomerOrderNr = "ORDER-50-1" },
+            new CustomerOrder { Id = 61, SupplierOrderId = 51 },
+            new CustomerOrder { Id = 62, CalculationId = 20 });
+        await db.SaveChangesAsync();
+
+        var response = await new OrderNavigationController(db).GetFlow(
+            entityType, entityId, new OrderFlowNavigationService(db), default);
+        var items = Assert.IsAssignableFrom<IReadOnlyList<OrderFlowNavigationItemDto>>(
+            Assert.IsType<OkObjectResult>(response.Result).Value);
+
+        Assert.Equal("Product", Assert.Single(items, x => x.Type == "product").Name);
+        Assert.Equal(new[] { 20, 21 }, Ids(items, "calculation").Order().ToArray());
+        Assert.Equal(new[] { 31, 30 }, Ids(items, "inquiry"));
+        Assert.Equal(new[] { 41, 40 }, Ids(items, "quotation"));
+        Assert.Equal(new[] { 51, 50 }, Ids(items, "supplierOrder"));
+        Assert.Equal(new[] { 62, 61, 60 }, Ids(items, "customerOrder"));
+        Assert.Equal("ORDER-50", Assert.Single(items, x => x.Type == "supplierOrder" && x.Id == 50).Number);
+        Assert.Equal("ORDER-50-1", Assert.Single(items, x => x.Type == "customerOrder" && x.Id == 60).Number);
+        Assert.Equal(new[] { 21, 31, 41, 51, 61 }, items.Where(x => x.IsArchived).Select(x => x.Id).ToArray());
+        Assert.Equal(items.Count, items.Select(x => (x.Type, x.Id)).Distinct().Count());
+    }
+
+    [Theory]
+    [InlineData("inquiry", 30)]
+    [InlineData("quotation", 40)]
+    [InlineData("supplierorder", 50)]
+    [InlineData("customerorder", 60)]
+    public async Task FlowIncludesStandaloneDocumentChainWithoutCalculation(string entityType, int entityId)
+    {
+        await using var db = CreateContext();
+        db.Inquiries.Add(new Inquiry { Id = 30, CustomerName = "Legacy customer" });
+        db.Quotations.Add(new Quotation { Id = 40, InquiryId = 30, CustomerName = "Legacy customer" });
+        db.SupplierOrders.Add(new SupplierOrder
+        {
+            Id = 50, QuotationId = 40, SupplierName = "Legacy supplier", Customer2 = "Legacy customer",
+        });
+        db.CustomerOrders.Add(new CustomerOrder { Id = 60, SupplierOrderId = 50, CustomerName = "Legacy customer" });
+        await db.SaveChangesAsync();
+
+        var items = (await new OrderFlowNavigationService(db).GetFlowAsync(entityType, entityId, default))!;
+
+        Assert.Equal(new[] { "inquiry", "quotation", "supplierOrder", "customerOrder" }, items.Select(x => x.Type).ToArray());
+        Assert.All(items, x => Assert.Equal("Legacy customer", x.CustomerName));
+        Assert.Equal("Legacy supplier", Assert.Single(items, x => x.Type == "supplierOrder").SupplierName);
+        Assert.All(items, x => Assert.False(x.IsArchived));
+    }
+
+    [Theory]
+    [InlineData("product")]
+    [InlineData("calculation")]
+    [InlineData("inquiry")]
+    [InlineData("quotation")]
+    [InlineData("supplierorder")]
+    [InlineData("customerorder")]
+    public async Task GroupedFlowReturnsNotFoundForMissingEntity(string entityType)
+    {
+        await using var db = CreateContext();
+
+        var response = await new OrderNavigationController(db).GetFlow(
+            entityType, 999, new OrderFlowNavigationService(db), default);
+
+        Assert.IsType<NotFoundResult>(response.Result);
+    }
+
+    [Fact]
+    public async Task GroupedFlowRejectsUnsupportedEntityType()
+    {
+        await using var db = CreateContext();
+
+        var response = await new OrderNavigationController(db).GetFlow(
+            "unknown", 1, new OrderFlowNavigationService(db), default);
+
+        Assert.IsType<BadRequestObjectResult>(response.Result);
+    }
+
+    [Fact]
+    public async Task ProductWithoutCalculationsStillAppearsInFlow()
+    {
+        await using var db = CreateContext();
+        db.Products.Add(new Product { Id = 10, Name = "Standalone product" });
+        await db.SaveChangesAsync();
+
+        var items = await new OrderFlowNavigationService(db).GetFlowAsync("product", 10, default);
+
+        Assert.Equal("Standalone product", Assert.Single(items!).Name);
     }
 
     private static int[] Ids(IReadOnlyList<OrderFlowNavigationItemDto> items, string type) =>

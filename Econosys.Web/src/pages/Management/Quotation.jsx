@@ -8,14 +8,16 @@ import { usePdf } from '../../contexts/PdfContext';
 import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import InquirySelectionModal from '../../components/InquirySelectionModal';
-import OrderNavigationTree from '../../components/OrderNavigationTree';
+import EntityOrderFlowNavigation from '../../components/EntityOrderFlowNavigation';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
+import useDocumentTitle from '../../hooks/useDocumentTitle';
 import OrderCost from '../../components/OrderCost';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import LabeledSwitch from '../../components/LabeledSwitch';
 import apiClient, { logApiRequestSummary } from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { formatDateTime, fromDateInputToSwedishIso, toSwedishDateInputValue } from '../../helpers/dateUtils';
 import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
 import { parseNullableInt } from '../../helpers/numberUtils';
@@ -136,8 +138,8 @@ const renderQuotationMetaRow = (label, value, userName) => {
 
     return (
         <div className="grid grid-cols-21 gap-1 mx-2">
-            <div className="col-span-5"><span className="font-medium">{label}</span></div>
-            <div className="col-span-8">{formatDateTime(value)}</div>
+            <div className="col-span-5"><span>{label}</span></div>
+            <div className="col-span-8 font-semibold">{formatDateTime(value)}</div>
             <div className="col-span-8 text-gray-500">
                 {userName && `av ${userName}`}
             </div>
@@ -147,7 +149,7 @@ const renderQuotationMetaRow = (label, value, userName) => {
 
 const renderReadOnlyInfoRow = (label, value) => (
     <div className="">
-        <div className="text-tiny tracking-wide text-gray-400">
+        <div className="text-tiny tracking-wide text-black font-bold">
             {label}
         </div>
         <div className="mt-1 text-xs text-gray-800 break-words">
@@ -163,6 +165,9 @@ const Quotation = () => {
     const calculationId = parseNullableInt(searchParams.get('calculationId'));
     const inquiryId = parseNullableInt(searchParams.get('inquiryId'));
     const isNewQuotation = id === 'new' || id == null;
+
+    const [quotation, setQuotation] = useState(null);
+    useDocumentTitle(isNewQuotation ? 'Ny offert' : `Offert ${quotation?.id || id}`);
 
     const {
         openPdfPreview,
@@ -180,7 +185,6 @@ const Quotation = () => {
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
     const [unsavedWarningReason, setUnsavedWarningReason] = useState('navigate');
 
-    const [quotation, setQuotation] = useState(null);
     const [originalQuotation, setOriginalQuotation] = useState(null);
     const [selectedSupplierDetails, setSelectedSupplierDetails] = useState(null);
     const [inquiryOptions, setInquiryOptions] = useState(null);
@@ -239,6 +243,7 @@ const Quotation = () => {
     }, [quotation, originalQuotation]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(() => hasUnsavedChanges() || Boolean(isNewQuotation && quotation));
 
     useEffect(() => {
         return () => {
@@ -907,7 +912,7 @@ const Quotation = () => {
                 onToggleInfoPanel={toggleInfoPanel}
                 infoContent={(
                     <div className="space-y-3">
-                        <h2 className="text-sm text-center text-gray-700">Info</h2>
+                        <h2 className="text-sm text-center text-gray-500">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
                             {renderQuotationMetaRow('Skapad:', quotation?.createdAt, quotation?.createdByUserName)}
                             {renderQuotationMetaRow('Redigerad:', quotation?.editedAt, quotation?.editedByUserName)}
@@ -915,7 +920,7 @@ const Quotation = () => {
                     </div>
                 )}
                 infoFooter={(
-                    <OrderNavigationTree
+                    <EntityOrderFlowNavigation
                         entityType="quotation"
                         entityId={Number.isInteger(quotation?.id) && quotation.id > 0 ? quotation.id : null}
                     />
@@ -956,7 +961,7 @@ const Quotation = () => {
                         </div>
                     </div>
 
-                    <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-gradient-to-br from-slate-50 via-white to-slate-100 px-5 py-4 shadow-sm">
+                    <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-[#e8eeed] px-5 py-4 shadow-sm">
                         <div className="grid grid-cols-[3fr_1fr]">
                             <div className="mt-0 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
                                 {renderReadOnlyInfoRow('Produkt', quotation?.product)}

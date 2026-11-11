@@ -25,9 +25,9 @@ const OrderDetailLayout = ({ title, messages = EMPTY_MESSAGES, isInfoPanelExpand
                     <aside className="sticky top-[calc(66px+1rem)] z-10 max-h-[calc(100vh-66px-1rem)] overflow-y-auto px-2 py-6">
                         {infoContent}
                         <hr className="mt-5 border-gray-300" />
-                        <h2 className="mt-5 text-center text-sm text-gray-700">Meddelanden</h2>
+                        <h2 className="mt-5 text-center text-sm text-gray-500">Meddelanden</h2>
                         {messages.length === 0 ? (
-                            <p className="mt-4 text-center text-xs font-light">Inga meddelanden</p>
+                            <p className="mt-4 mb-4 text-center text-xs font-light">Inga meddelanden</p>
                         ) : (
                             <ul className="mt-2 space-y-2">
                                 {messages.map((message, index) => (

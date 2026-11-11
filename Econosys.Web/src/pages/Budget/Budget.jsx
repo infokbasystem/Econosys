@@ -9,6 +9,7 @@ import ConfirmationModal from '../../components/ConfirmationModal';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { formatDateTime } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import {
@@ -191,6 +192,7 @@ const Budget = ({ isNew = false }) => {
     }, [header, originalSnapshot, rows]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(() => hasUnsavedChanges() || saving);
 
     useEffect(() => {
         if (blocker.state === 'blocked') {
@@ -831,7 +833,7 @@ const Budget = ({ isNew = false }) => {
                 onToggleInfoPanel={toggleInfoPanel}
                 infoContent={(
                     <div className="space-y-3">
-                        <h2 className="text-sm text-center text-gray-700">Info</h2>
+                        <h2 className="text-sm text-center text-gray-500">Info</h2>
                         <div className="space-y-2 text-xs text-gray-600">
                             {renderInfoRow('År:', header.year)}
                             {renderInfoRow('Aktiv:', header.isActive ? 'Ja' : 'Nej')}

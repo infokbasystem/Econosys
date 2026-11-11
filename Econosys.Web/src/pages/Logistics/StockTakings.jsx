@@ -3,6 +3,7 @@ import { useBlocker, useSearchParams } from 'react-router-dom';
 import ExcelJS from 'exceljs';
 import { ClipboardCheck, Download, Plus, Save, Search, Warehouse } from 'lucide-react';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledDatePicker from '../../components/LabeledDatePicker';
@@ -56,6 +57,7 @@ const StockTakings = () => {
     Boolean(draft?.items?.some((item) => item.nrOfItems != null || item.nrOfPallets != null))
   ), [draft]);
   const blocker = useBlocker(hasUnsavedChanges);
+  useAppUpdateGuard(() => hasUnsavedChanges() || isSaving || isCalculating);
 
   useEffect(() => {
     let isActive = true;

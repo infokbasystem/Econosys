@@ -2,9 +2,11 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Save, X } from 'lucide-react';
 import apiClient from '../config/apiClient';
+import useAppUpdateGuard from '../hooks/useAppUpdateGuard';
 import { CALCULATION_ROW_EDIT_GROUPS, buildCalculationRowEditValues, createCalculationRowEditDraft } from './calculationRowEditFields';
 
 const CalculationRowEditModal = ({ supplierOrderId, supplierOrderNr, onClose }) => {
+    useAppUpdateGuard(true);
     const titleId = useId();
     const dialogRef = useRef(null);
     const savingRef = useRef(false);
@@ -103,7 +105,7 @@ const CalculationRowEditModal = ({ supplierOrderId, supplierOrderNr, onClose }) 
                 onClick={(event) => event.stopPropagation()}>
                 <div className="flex items-center justify-between gap-4 border-b border-gray-200 p-4">
                     <div>
-                        <h2 id={titleId} className="text-sm font-semibold">Redigera kalkylrad – beställning {supplierOrderNr || supplierOrderId}</h2>
+                        <h2 id={titleId} className="text-sm font-semibold">Redigera kalkylrad – beställning {supplierOrderNr || '-'}</h2>
                         {record && <p className="mt-1 text-xs text-gray-500">Kalkylrad {record.id} · Kalkyl {record.calculationId ?? 'saknas'} · Företag {record.companyId} · Ursprungligt ID {record.oldDbId ?? 'saknas'}</p>}
                     </div>
                     <button type="button" aria-label="Stäng kalkylrad" disabled={saving} onClick={close} className="rounded p-1 hover:bg-gray-100 disabled:opacity-50"><X size={18} /></button>

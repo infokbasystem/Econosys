@@ -9,6 +9,7 @@ import DateRangePicker from '../../../components/DaterangePicker';
 import LabeledInput from '../../../components/LabeledInput';
 import LabeledSelect from '../../../components/LabeledSelect';
 import apiClient from '../../../config/apiClient';
+import useAppUpdateGuard from '../../../hooks/useAppUpdateGuard';
 import { formatDateShort, formatDateTime } from '../../../helpers/dateUtils';
 import { getSharedRequest } from '../../../helpers/sharedRequest';
 
@@ -143,6 +144,7 @@ const HandlingTimesData = () => {
     const [modalAnchor, setModalAnchor] = useState({ top: 0, left: 0 });
     const [isModalSaving, setIsModalSaving] = useState(false);
     const [modalError, setModalError] = useState(null);
+    useAppUpdateGuard(Boolean(modalRow) || isModalSaving);
     const popupRef = useRef(null);
 
     const handleOpenOverrideModal = (event, row) => {
@@ -410,8 +412,8 @@ const HandlingTimesData = () => {
 
                 items.forEach((row) => {
                     worksheet.addRow([
-                        row.supplierOrderNr || row.supplierOrderId || '',
-                        row.customerOrderNr || row.customerOrderId || '',
+                        row.supplierOrderNr || '',
+                        row.customerOrderNr || '',
                         row.supplierName ?? '',
                         formatDateShort(row.supplierOrderCreatedDate),
                         formatDateShort(row.customerOrderCreatedDate),
@@ -548,7 +550,7 @@ const HandlingTimesData = () => {
                             <col key={column.key} style={{ width: column.width }} />
                         ))}
                     </colgroup>
-                    <thead>
+                    <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                         <tr className="text-tiny text-gray-500">
                             {columns.map((column) => (
                                 <th
@@ -589,14 +591,14 @@ const HandlingTimesData = () => {
                                 </td>
                             </tr>
                         ) : (
-                            rows.map((row) => (
-                                <tr key={`${row.supplierOrderId}-${row.customerOrderId ?? 'none'}`} className="h-6 border-b border-gray-100 hover:bg-lime-200/70">
+                            rows.map((row, index) => (
+                                <tr key={`${row.supplierOrderId}-${row.customerOrderId ?? 'none'}`} className={`h-6 border-b border-gray-100 ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-lime-200/70`}>
                                     <td className="truncate px-2 py-0 text-gray-800">
                                         <Link
                                             to={`/order/supplierorders/${row.supplierOrderId}`}
                                             className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                         >
-                                            {row.supplierOrderNr || row.supplierOrderId}
+                                            {row.supplierOrderNr || '-'}
                                         </Link>
                                     </td>
                                     <td className="truncate px-2 py-0 text-gray-800">
@@ -605,7 +607,7 @@ const HandlingTimesData = () => {
                                                 to={`/order/customerorders/${row.customerOrderId}`}
                                                 className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
                                             >
-                                                {row.customerOrderNr || row.customerOrderId}
+                                                {row.customerOrderNr || '-'}
                                             </Link>
                                         ) : ''}
                                     </td>
@@ -650,7 +652,7 @@ const HandlingTimesData = () => {
 
                     <div className="flex items-center justify-between py-2">
                         <h3 className="truncate pr-2 text-xs font-semibold text-gray-800 mx-auto">
-                            Hanteringstid {modalRow.supplierOrderNr || modalRow.supplierOrderId}
+                            Hanteringstid {modalRow.supplierOrderNr || '-'}
                         </h3>
                         {/* <button
                             type="button"

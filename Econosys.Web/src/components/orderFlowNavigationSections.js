@@ -23,3 +23,9 @@ export const getOrderFlowSections = (items, currentEntityType) => ORDER_FLOW_SEC
         return b.id - a.id;
     }),
 })).filter((section) => section.items.length > 0);
+
+export const getVisibleOrderFlowItems = (section, currentEntityType, currentEntityId, showAll) => {
+    if (showAll || !section.limit) return section.items;
+    return section.items.filter((item, index) => index < section.limit
+        || (section.type === currentEntityType && item.id === currentEntityId));
+};

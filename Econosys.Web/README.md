@@ -31,6 +31,17 @@ History formatting/navigation checks can be run with:
 node --test src/helpers/orderHistory.test.js
 ```
 
+## Transport order overview
+
+Click a data-column header in the top planning table to sort ascending; click it
+again to sort descending. Chevrons indicate the active sort. Sorting applies to
+the filtered rows and is retained when navigating away and back. Report/planning
+action columns are not sortable. Missing values stay last in either direction.
+Delivery and confirmed-delivery times sort by date; week-mode values use the
+Monday of their stored week and year, while still displaying the week label.
+
+Sorting checks: `node --test src/pages/Logistics/transportOrderOverviewSorting.test.js`.
+
 ## Prerequisites
 
 - Node.js (latest version)

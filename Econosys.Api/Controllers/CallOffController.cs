@@ -19,11 +19,13 @@ namespace Econosys.Api.Controllers
     {
         private readonly ApplicationDbContext _dbContext;
         private readonly ILegacyUserResolutionService _legacyUserResolution;
+        private readonly ICallOffRouteService _routeService;
 
-        public CallOffController(ApplicationDbContext dbContext, ILegacyUserResolutionService legacyUserResolution)
+        public CallOffController(ApplicationDbContext dbContext, ILegacyUserResolutionService legacyUserResolution, ICallOffRouteService routeService)
         {
             _dbContext = dbContext;
             _legacyUserResolution = legacyUserResolution;
+            _routeService = routeService;
         }
 
         [HttpPost("search")]
@@ -144,7 +146,7 @@ namespace Econosys.Api.Controllers
         }
 
         [HttpPost]
-        public async Task<ActionResult<CallOffAggregateDto>> CreateCallOff([FromBody] SaveCallOffAggregateRequest request)
+        public async Task<ActionResult<CallOffAggregateDto>> CreateCallOff([FromBody] SaveCallOffAggregateRequest request, CancellationToken cancellationToken = default)
         {
             if (request is null)
             {
@@ -193,8 +195,6 @@ namespace Econosys.Api.Controllers
             }
 
             _dbContext.CallOffs.Add(callOff);
-            await _dbContext.SaveChangesAsync();
-
             var createSyncError = await SyncCallOffDeliveriesAsync(callOff, request.CallOffDeliveryList ?? new List<SaveCallOffDeliveryDto>(), new List<CallOffDelivery>());
             if (createSyncError is not null)
             {
@@ -203,11 +203,12 @@ namespace Econosys.Api.Controllers
 
             await _dbContext.SaveChangesAsync();
 
-            return Ok(await BuildAggregateDtoAsync(callOff));
+            var routeCalculation = await RecalculateRouteIfNeededAsync(callOff.Id, routeInputsChanged: true, cancellationToken);
+            return Ok(await BuildAggregateDtoAsync(callOff, routeCalculation));
         }
 
         [HttpPut("{id:int}/aggregate")]
-        public async Task<ActionResult<CallOffAggregateDto>> SaveAggregateById(int id, [FromBody] SaveCallOffAggregateRequest request)
+        public async Task<ActionResult<CallOffAggregateDto>> SaveAggregateById(int id, [FromBody] SaveCallOffAggregateRequest request, CancellationToken cancellationToken = default)
         {
             if (request is null || string.IsNullOrWhiteSpace(request.Version))
             {
@@ -269,6 +270,12 @@ namespace Econosys.Api.Controllers
                 callOff.CreatedByUserId = legacyUser.Id;
             }
 
+            // Legacy parity: CallOffViewModel recalculates the legs when deliveries or the delivery address change.
+            var incomingExistingIds = incomingDeliveryList.Where(x => x.Id != 0).Select(x => x.Id).ToHashSet();
+            var routeInputsChanged = callOff.CustomerDeliveryAddressId != request.CustomerDeliveryAddressId
+                || incomingDeliveryList.Any(x => x.Id == 0)
+                || existingDeliveryList.Any(x => !incomingExistingIds.Contains(x.Id));
+
             callOff.ShipperId = request.ShipperId;
             callOff.Reference = request.Reference;
             callOff.Note = request.Note;
@@ -285,20 +292,27 @@ namespace Econosys.Api.Controllers
                 return BadRequest(syncError);
             }
 
+            if (routeInputsChanged)
+            {
+                await RemoveRouteLegsAsync(id);
+            }
+
             await _dbContext.SaveChangesAsync();
+
+            var routeCalculation = await RecalculateRouteIfNeededAsync(id, routeInputsChanged, cancellationToken);
 
             var updatedCallOff = await _dbContext.CallOffs
                 .AsNoTracking()
                 .Include(x => x.CreatedByUser)
                 .FirstOrDefaultAsync(x => x.Id == id);
 
-            return Ok(await BuildAggregateDtoAsync(updatedCallOff ?? callOff));
+            return Ok(await BuildAggregateDtoAsync(updatedCallOff ?? callOff, routeCalculation));
         }
 
         // Legacy parity: SaveCallOff deletes the removed CallOffDelivery rows (and their underlying stock deliveries)
         // immediately; this endpoint exposes that behaviour so removal does not have to wait for a full save.
         [HttpDelete("{id:int}/deliveries/{callOffDeliveryId:int}")]
-        public async Task<IActionResult> DeleteCallOffDelivery(int id, int callOffDeliveryId)
+        public async Task<ActionResult<CallOffDeliveryDeletedResponseDto>> DeleteCallOffDelivery(int id, int callOffDeliveryId, CancellationToken cancellationToken = default)
         {
             var callOff = await _dbContext.CallOffs.FirstOrDefaultAsync(x => x.Id == id);
             if (callOff is null)
@@ -326,28 +340,153 @@ namespace Econosys.Api.Controllers
                 }
             }
 
+            await RemoveRouteLegsAsync(id);
             await _dbContext.SaveChangesAsync();
 
+            var routeCalculation = await RecalculateRouteIfNeededAsync(id, routeInputsChanged: true, cancellationToken);
+
             var remainingDeliveries = await _dbContext.CallOffDeliveries
+                .AsNoTracking()
                 .Where(x => x.CallOffId == id)
                 .OrderBy(x => x.Id)
                 .ToListAsync();
 
-            return Ok(new { version = CalculateVersion(callOff, remainingDeliveries) });
+            return Ok(new CallOffDeliveryDeletedResponseDto
+            {
+                Version = CalculateVersion(callOff, remainingDeliveries),
+                DeliveryLegs = await BuildDeliveryLegsAsync(id),
+                RouteCalculation = routeCalculation,
+            });
+        }
+
+        /// <summary>Previews transport legs for unsaved call-off deliveries and delivery address.</summary>
+        [HttpPost("route-preview")]
+        public async Task<ActionResult<CallOffRouteResponseDto>> PreviewRoute([FromBody] CallOffRoutePreviewRequest request, CancellationToken cancellationToken)
+        {
+            var deliveries = request?.Deliveries ?? new List<CallOffRoutePreviewDeliveryDto>();
+            if (deliveries.Count > 100)
+            {
+                return BadRequest("För många leveranser.");
+            }
+
+            var stops = new List<CallOffRouteStop>();
+            foreach (var delivery in deliveries)
+            {
+                if (delivery is null || delivery.DeliveryFromStockId.HasValue == (delivery.NewDelivery is not null))
+                {
+                    return BadRequest("Varje leverans måste ange antingen en lagerleverans eller en ny leverans.");
+                }
+
+                if (delivery.NewDelivery is { } newDelivery)
+                {
+                    if (newDelivery.CustomerOrderId <= 0)
+                    {
+                        return BadRequest("Ordern för den nya leveransen saknas.");
+                    }
+
+                    stops.Add(new CallOffRouteStop(null, newDelivery.CustomerOrderId, await ResolveDraftInventoryIdAsync(newDelivery, cancellationToken)));
+                }
+                else
+                {
+                    stops.Add(new CallOffRouteStop(delivery.DeliveryFromStockId));
+                }
+            }
+
+            var result = await _routeService.PreviewAsync(request?.CustomerDeliveryAddressId, stops, cancellationToken);
+            return Ok(new CallOffRouteResponseDto
+            {
+                DeliveryLegs = result.DeliveryLegs,
+                RouteCalculation = MapRouteCalculation(result),
+            });
+        }
+
+        /// <summary>Recalculates and stores the transport legs of a saved call-off.</summary>
+        [HttpPost("{id:int}/route/recalculate")]
+        public async Task<ActionResult<CallOffRouteResponseDto>> RecalculateRoute(int id, CancellationToken cancellationToken)
+        {
+            if (!await _dbContext.CallOffs.AnyAsync(x => x.Id == id, cancellationToken))
+            {
+                return NotFound();
+            }
+
+            var result = await _routeService.RecalculateAsync(id, cancellationToken);
+            return Ok(new CallOffRouteResponseDto
+            {
+                DeliveryLegs = await BuildDeliveryLegsAsync(id),
+                RouteCalculation = MapRouteCalculation(result),
+            });
+        }
+
+        private async Task RemoveRouteLegsAsync(int callOffId)
+        {
+            var legs = await _dbContext.DeliveryLegs.Where(x => x.CallOffId == callOffId).ToListAsync();
+            _dbContext.DeliveryLegs.RemoveRange(legs);
+        }
+
+        // Unchanged route inputs only trigger a calculation when legs are missing, e.g. after an earlier failure.
+        private async Task<CallOffRouteCalculationDto?> RecalculateRouteIfNeededAsync(int callOffId, bool routeInputsChanged, CancellationToken cancellationToken)
+        {
+            if (!routeInputsChanged)
+            {
+                var hasDeliveries = await _dbContext.CallOffDeliveries.AnyAsync(x => x.CallOffId == callOffId && x.DeliveryFromStockId.HasValue, cancellationToken);
+                var hasLegs = await _dbContext.DeliveryLegs.AnyAsync(x => x.CallOffId == callOffId, cancellationToken);
+                if (!hasDeliveries || hasLegs)
+                {
+                    return null;
+                }
+            }
+
+            return MapRouteCalculation(await _routeService.RecalculateAsync(callOffId, cancellationToken));
+        }
+
+        private static CallOffRouteCalculationDto MapRouteCalculation(CallOffRouteResult result) => new()
+        {
+            Status = result.Status,
+            Message = result.Message,
+        };
+
+        // Mirrors BuildStockDeliveryAsync so a previewed draft starts from the same inventory as the saved delivery.
+        private async Task<int?> ResolveDraftInventoryIdAsync(AddCallOffDeliveryFromStockRequest request, CancellationToken cancellationToken)
+        {
+            if (request.InventoryId.HasValue)
+            {
+                return request.InventoryId;
+            }
+
+            var order = await _dbContext.CustomerOrders
+                .AsNoTracking()
+                .Where(x => x.Id == request.CustomerOrderId)
+                .Select(x => new { x.SupplierOrderId, SupplierInventoryId = x.SupplierOrder != null ? x.SupplierOrder.InventoryId : null })
+                .FirstOrDefaultAsync(cancellationToken);
+            if (order?.SupplierOrderId is int supplierOrderId)
+            {
+                var templateInventoryId = await _dbContext.DeliveryToStocks
+                    .AsNoTracking()
+                    .Where(x => x.SupplierOrderId == supplierOrderId && x.EditionPerPallet == request.EditionPerPallet)
+                    .OrderByDescending(x => x.Id)
+                    .Select(x => x.InventoryId)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (templateInventoryId.HasValue)
+                {
+                    return templateInventoryId;
+                }
+            }
+
+            return order?.SupplierInventoryId;
         }
 
         // Legacy parity: CreateDeliveryFromStockViewModel.LoadDeliveryList groups stock balance by EditionPerPallet.
         [HttpGet("delivery-candidates")]
-        public async Task<ActionResult<CallOffDeliveryCandidateResponseDto>> GetDeliveryCandidates([FromQuery] string? customerOrderNr)
+        public async Task<ActionResult<CallOffDeliveryCandidateResponseDto>> GetDeliveryCandidates([FromQuery] string? customerOrderNr, [FromQuery] int? customerOrderId = null)
         {
-            if (string.IsNullOrWhiteSpace(customerOrderNr))
+            if (!customerOrderId.HasValue && string.IsNullOrWhiteSpace(customerOrderNr))
             {
                 return BadRequest("Ordernummer krävs.");
             }
 
             var customerOrder = await _dbContext.CustomerOrders
                 .AsNoTracking()
-                .FirstOrDefaultAsync(x => x.CustomerOrderNr == customerOrderNr);
+                .FirstOrDefaultAsync(x => customerOrderId.HasValue ? x.Id == customerOrderId.Value : x.CustomerOrderNr == customerOrderNr);
 
             if (customerOrder is null)
             {
@@ -436,13 +575,27 @@ namespace Econosys.Api.Controllers
                 return BadRequest("Ingen data att spara.");
             }
 
+            var (newDelivery, customerOrder) = await BuildStockDeliveryAsync(request);
+            if (newDelivery is null || customerOrder is null)
+            {
+                return BadRequest("Ordern kunde inte hittas.");
+            }
+
+            _dbContext.DeliveryFromStocks.Add(newDelivery);
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(await BuildUnlinkedDeliveryRowDtoAsync(newDelivery, customerOrder));
+        }
+
+        private async Task<(DeliveryFromStock? Delivery, CustomerOrder? CustomerOrder)> BuildStockDeliveryAsync(AddCallOffDeliveryFromStockRequest request)
+        {
             var customerOrder = await _dbContext.CustomerOrders
                 .Include(x => x.SupplierOrder)
                 .FirstOrDefaultAsync(x => x.Id == request.CustomerOrderId);
 
             if (customerOrder is null)
             {
-                return BadRequest("Ordern kunde inte hittas.");
+                return (null, null);
             }
 
             var (toStockRows, fromStockRows) = await LoadStockBalanceRowsAsync(customerOrder.Id, customerOrder.SupplierOrderId, request.EditionPerPallet);
@@ -479,10 +632,39 @@ namespace Econosys.Api.Controllers
                 IsSlattPallet = false,
             };
 
-            _dbContext.DeliveryFromStocks.Add(newDelivery);
-            await _dbContext.SaveChangesAsync();
+            return (newDelivery, customerOrder);
+        }
 
-            return Ok(await BuildUnlinkedDeliveryRowDtoAsync(newDelivery, customerOrder));
+        /// <summary>Adds a newly planned stock delivery to an active call-off.</summary>
+        [HttpPost("{id:int}/planned-deliveries")]
+        public async Task<IActionResult> AddPlannedDelivery(int id, [FromBody] AddCallOffDeliveryFromStockRequest request, CancellationToken cancellationToken)
+        {
+            var callOff = await _dbContext.CallOffs.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+            if (callOff is null) return NotFound();
+            if (callOff.DeliveryStatus == 2) return Conflict("Avropet är avslutat.");
+
+            var (delivery, customerOrder) = await BuildStockDeliveryAsync(request);
+            if (delivery is null) return BadRequest("Ordern kunde inte hittas.");
+            delivery.DeliveryDate = callOff.DeliveryDate;
+            var addressIds = await _dbContext.CallOffDeliveries
+                .Where(x => x.CallOffId == id && x.DeliveryFromStock != null && x.DeliveryFromStock.CustomerOrder != null
+                    && x.DeliveryFromStock.CustomerOrder.CustomerDeliveryAddressId.HasValue)
+                .Select(x => x.DeliveryFromStock!.CustomerOrder!.CustomerDeliveryAddressId!.Value)
+                .ToListAsync(cancellationToken);
+            if (customerOrder?.CustomerDeliveryAddressId is int addressId) addressIds.Add(addressId);
+            if (addressIds.Count == 1) callOff.CustomerDeliveryAddressId = addressIds[0];
+            var sortOrder = await _dbContext.CallOffDeliveries.Where(x => x.CallOffId == id)
+                .MaxAsync(x => x.SortOrder, cancellationToken) ?? 0;
+            _dbContext.CallOffDeliveries.Add(new CallOffDelivery
+            {
+                CallOff = callOff,
+                DeliveryFromStock = delivery,
+                SortOrder = sortOrder + 1,
+            });
+            await RemoveRouteLegsAsync(id);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            var routeCalculation = await RecalculateRouteIfNeededAsync(id, routeInputsChanged: true, cancellationToken);
+            return CreatedAtAction(nameof(GetAggregateById), new { id }, await BuildAggregateDtoAsync(callOff, routeCalculation));
         }
 
         // Legacy parity: CallOffViewModel.OnClosedAsync deletes deliveries that were added but never saved as a CallOffDelivery.
@@ -586,12 +768,12 @@ namespace Econosys.Api.Controllers
                 return "En eller flera avropsleveranser kunde inte hittas på avropet.";
             }
 
-            if (incomingNewItems.Any(x => !x.DeliveryFromStockId.HasValue))
+            if (incomingNewItems.Any(x => x.DeliveryFromStockId.HasValue == (x.NewDelivery is not null)))
             {
                 return "En ny avropsleverans saknar koppling till en lagerleverans.";
             }
 
-            var newDeliveryFromStockIds = incomingNewItems.Select(x => x.DeliveryFromStockId!.Value).ToList();
+            var newDeliveryFromStockIds = incomingNewItems.Where(x => x.DeliveryFromStockId.HasValue).Select(x => x.DeliveryFromStockId!.Value).ToList();
             if (newDeliveryFromStockIds.Count > 0)
             {
                 var alreadyLinkedIds = await _dbContext.CallOffDeliveries
@@ -642,10 +824,17 @@ namespace Econosys.Api.Controllers
             var nextSortOrder = existingDeliveryList.Select(x => x.SortOrder ?? 0).DefaultIfEmpty(0).Max() + 1;
             foreach (var item in incomingNewItems)
             {
+                DeliveryFromStock? newDelivery = null;
+                if (item.NewDelivery is not null)
+                {
+                    (newDelivery, _) = await BuildStockDeliveryAsync(item.NewDelivery);
+                    if (newDelivery is null) return "Ordern kunde inte hittas.";
+                }
                 _dbContext.CallOffDeliveries.Add(new CallOffDelivery
                 {
-                    CallOffId = callOff.Id,
+                    CallOff = callOff,
                     DeliveryFromStockId = item.DeliveryFromStockId,
+                    DeliveryFromStock = newDelivery,
                     SortOrder = nextSortOrder++,
                     Note = item.Note,
                     NrOfPalletPlaces = item.NrOfPalletPlaces,
@@ -691,7 +880,7 @@ namespace Econosys.Api.Controllers
 
         private sealed record StockBalanceRow(int? EditionPerPallet, double? NrOfItems, int? NrOfPallets, int? DeliveryStatus, DateTime? DeliveryDate);
 
-        private async Task<CallOffAggregateDto> BuildAggregateDtoAsync(CallOff callOff)
+        private async Task<CallOffAggregateDto> BuildAggregateDtoAsync(CallOff callOff, CallOffRouteCalculationDto? routeCalculation = null)
         {
             var deliveryRows = await _dbContext.CallOffDeliveries
                 .AsNoTracking()
@@ -812,13 +1001,19 @@ namespace Econosys.Api.Controllers
                 .OrderBy(x => x.Id)
                 .ToListAsync();
 
+            var deliveryLegs = await BuildDeliveryLegsAsync(callOff.Id);
+
             return new CallOffAggregateDto
             {
                 CallOff = MapToDto(callOff),
                 CallOffDeliveryList = deliveryList,
                 DeliveryAddressOptions = deliveryAddressOptions,
-                DeliveryLegs = await BuildDeliveryLegsAsync(callOff.Id),
+                DeliveryLegs = deliveryLegs,
                 Version = CalculateVersion(callOff, existingDeliveryEntities),
+                RouteCalculation = routeCalculation,
+                IsRouteMissing = deliveryList.Any(x => x.DeliveryFromStockId.HasValue)
+                    && deliveryLegs.DeliveryLegGroupedList.Count == 0
+                    && deliveryLegs.DistributionDeliveryLegGroupedList.Count == 0,
             };
         }
 
@@ -828,6 +1023,7 @@ namespace Econosys.Api.Controllers
                 .AsNoTracking()
                 .Where(x => x.CallOffId == callOffId)
                 .OrderBy(x => x.SortOrder)
+                .ThenBy(x => x.Id)
                 .Select(x => new TransportOrderDeliveryLegDto
                 {
                     Id = x.Id,
@@ -858,38 +1054,7 @@ namespace Econosys.Api.Controllers
                 })
                 .ToListAsync();
 
-            var deliveryLegGroupedList = deliveryLegList
-                .Where(x => !IsDistributionLeg(x))
-                .GroupBy(x => new { x.SortOrder, x.LatitudeStart, x.LongitudeStart })
-                .OrderBy(x => x.Key.SortOrder)
-                .Select(x => x.First())
-                .ToList();
-
-            var distributionDeliveryLegGroupedList = deliveryLegList
-                .Where(IsDistributionLeg)
-                .GroupBy(x => new { x.SortOrder, x.LatitudeStart, x.LongitudeStart })
-                .OrderBy(x => x.Key.SortOrder)
-                .Select(x => x.First())
-                .ToList();
-
-            var distributionLegList = deliveryLegList
-                .Where(IsDistributionLeg)
-                .GroupBy(x => new { x.DeliveryToCustomerId, x.DeliveryToStockId })
-                .Select(x => x.OrderBy(y => y.SortOrder).ToList())
-                .ToList();
-
-            return new TransportOrderDeliveryLegsResponseDto
-            {
-                DeliveryLegGroupedList = deliveryLegGroupedList,
-                DistributionDeliveryLegGroupedList = distributionDeliveryLegGroupedList,
-                DistributionLegList = distributionLegList,
-            };
-        }
-
-        private static bool IsDistributionLeg(TransportOrderDeliveryLegDto deliveryLeg)
-        {
-            return !string.IsNullOrWhiteSpace(deliveryLeg.TypeOfTransport)
-                && deliveryLeg.TypeOfTransport.Contains("SPEDITION", StringComparison.OrdinalIgnoreCase);
+            return CallOffRouteService.GroupLegs(deliveryLegList);
         }
 
         private static CallOffDto MapToDto(CallOff callOff)

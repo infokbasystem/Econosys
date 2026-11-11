@@ -11,6 +11,26 @@ namespace Econosys.Api.Tests;
 
 public class CalculationDetailTests
 {
+    [Theory]
+    [InlineData(null)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void PackagingDetailsIncludeSavedInstructionFreightNoteAndPalletType(int? palletType)
+    {
+        var calculation = new Calculation
+        {
+            LoadingInstruction = "1200x800x1300 - 960pcs/pallet",
+            FreightNote = "2 pallets in height on truck",
+            PalletType = palletType,
+        };
+
+        var details = CalculationDetailMapper.Map(calculation, new Dictionary<int, string?>());
+
+        Assert.Equal(calculation.LoadingInstruction, details.LoadingInstruction);
+        Assert.Equal(calculation.FreightNote, details.FreightNote);
+        Assert.Equal(palletType, details.PalletType);
+    }
+
     [Fact]
     public void ArchiveMigrationOnlyAddsTheRequiredFlagWithAnUnarchivedDefault()
     {

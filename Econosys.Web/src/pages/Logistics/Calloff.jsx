@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useBlocker, useNavigate, useParams } from 'react-router-dom';
+import { useBlocker, useLocation, useNavigate, useParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 import { ArrowLeft, CirclePlus, PanelLeftClose, PanelLeftOpen, Printer, RefreshCw, Save, Trash2 } from 'lucide-react';
@@ -15,6 +15,7 @@ import LabeledInput from '../../components/LabeledInput';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import LabeledTextArea from '../../components/LabeledTextArea';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import { toSwedishDateInputValue } from '../../helpers/dateUtils';
 
@@ -112,6 +113,7 @@ const mapAggregateResponse = (dto) => ({
         }))
         : [],
     deliveryLegData: mapDeliveryLegsResponse(dto?.deliveryLegs),
+    routeStatus: getRouteStatus(dto?.routeCalculation, Boolean(dto?.isRouteMissing)),
     version: String(dto?.version ?? ''),
 });
 
@@ -120,6 +122,30 @@ const deliveryStatusOptions = [
     { value: 1, label: 'Lastad' },
     { value: 2, label: 'Lossad' },
 ];
+
+const EMPTY_DELIVERY_LEG_DATA = { deliveryLegGroupedList: [], distributionDeliveryLegGroupedList: [], distributionLegList: [] };
+const ROUTE_PREVIEW_DELAY_MS = 600;
+const ROUTE_OK_STATUSES = new Set(['Calculated', 'Empty']);
+
+// Route inputs: which deliveries are on the call-off and where they are delivered.
+const getRouteDeliveryKey = (delivery) => (delivery.deliveryFromStockId
+    ? `stock:${delivery.deliveryFromStockId}`
+    : `new:${delivery.newDelivery?.customerOrderId ?? ''}:${delivery.newDelivery?.editionPerPallet ?? ''}:${delivery.newDelivery?.inventoryId ?? ''}`);
+
+const buildRouteKey = (deliveries, customerDeliveryAddressId) => JSON.stringify({
+    address: String(customerDeliveryAddressId ?? ''),
+    deliveries: (deliveries ?? []).map(getRouteDeliveryKey),
+});
+
+const getRouteStatus = (routeCalculation, isRouteMissing) => {
+    if (routeCalculation?.status && !ROUTE_OK_STATUSES.has(routeCalculation.status)) {
+        return { status: routeCalculation.status, message: routeCalculation.message || 'Transportbenen kunde inte beräknas.' };
+    }
+    if (isRouteMissing) {
+        return { status: 'Missing', message: 'Transportben saknas för avropet.' };
+    }
+    return null;
+};
 
 const getRouteRequestFromLegs = (legs) => {
     if (!Array.isArray(legs) || legs.length === 0) {
@@ -204,6 +230,8 @@ const formatDistance = (distanceKm) => {
 
 const Calloff = () => {
     const navigate = useNavigate();
+    const location = useLocation();
+    const plannedDeliveryRef = useRef(location.state?.plannedDelivery ?? null);
     const { id } = useParams();
     const { openPdfPreview, closePdfPreview } = usePdf();
 
@@ -213,10 +241,18 @@ const Calloff = () => {
     const [loading, setLoading] = useState(true);
     const [messages, setMessages] = useState([]);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
+    const [pendingPdfType, setPendingPdfType] = useState(null);
+    const [isPdfLoading, setIsPdfLoading] = useState(false);
     const [callOffForm, setCallOffForm] = useState(defaultCallOffForm);
     const [callOffDeliveryList, setCallOffDeliveryList] = useState([]);
     const [deliveryAddressOptions, setDeliveryAddressOptions] = useState([]);
-    const [deliveryLegData, setDeliveryLegData] = useState({ deliveryLegGroupedList: [], distributionDeliveryLegGroupedList: [], distributionLegList: [] });
+    const [deliveryLegData, setDeliveryLegData] = useState(EMPTY_DELIVERY_LEG_DATA);
+    // Legs/status as stored on the server; deliveryLegData/routeStatus may show a preview of unsaved changes instead.
+    const [savedDeliveryLegData, setSavedDeliveryLegData] = useState(EMPTY_DELIVERY_LEG_DATA);
+    const [savedRouteStatus, setSavedRouteStatus] = useState(null);
+    const [routeStatus, setRouteStatus] = useState(null);
+    const [routePreviewRetryToken, setRoutePreviewRetryToken] = useState(0);
+    const [isRecalculatingRoute, setIsRecalculatingRoute] = useState(false);
     const [googleApiKey, setGoogleApiKey] = useState('');
     const [mapError, setMapError] = useState('');
     const [shipperOptions, setShipperOptions] = useState([]);
@@ -239,8 +275,22 @@ const Calloff = () => {
     const skipUnsavedCheckRef = useRef(false);
     const mapContainerRef = useRef(null);
     const isSavingRef = useRef(false);
+    const pdfRequestRef = useRef(0);
+    const pdfObjectUrlRef = useRef(null);
     const mapRuntimeRef = useRef({ map: null, renderers: [] });
     const infoPanelAutoCloseRef = useRef(null);
+    const routePreviewRequestRef = useRef(0);
+    const routeInputRef = useRef({ deliveries: [], customerDeliveryAddressId: '' });
+    routeInputRef.current = { deliveries: callOffDeliveryList, customerDeliveryAddressId: callOffForm.customerDeliveryAddressId };
+
+    const routeKey = useMemo(
+        () => buildRouteKey(callOffDeliveryList, callOffForm.customerDeliveryAddressId),
+        [callOffDeliveryList, callOffForm.customerDeliveryAddressId],
+    );
+    const savedRouteKey = useMemo(
+        () => buildRouteKey(originalCallOffState?.callOffDeliveryList ?? [], originalCallOffState?.callOffForm?.customerDeliveryAddressId ?? ''),
+        [originalCallOffState],
+    );
 
     const flashInfoPanel = useCallback((hasIssue) => {
         if (infoPanelAutoCloseRef.current) {
@@ -279,6 +329,7 @@ const Calloff = () => {
     }, [createSnapshot, originalCallOffState]);
 
     const blocker = useBlocker(hasUnsavedChanges);
+    useAppUpdateGuard(() => hasUnsavedChanges() || isSaving || showAddDeliveryModal);
 
     const applyAggregateResponse = (dto) => {
         const aggregate = mapAggregateResponse(dto);
@@ -291,6 +342,9 @@ const Calloff = () => {
         setCallOffDeliveryList(aggregate.callOffDeliveryList);
         setDeliveryAddressOptions(aggregate.deliveryAddressOptions);
         setDeliveryLegData(aggregate.deliveryLegData);
+        setSavedDeliveryLegData(aggregate.deliveryLegData);
+        setRouteStatus(aggregate.routeStatus);
+        setSavedRouteStatus(aggregate.routeStatus);
         setAggregateVersion(aggregate.version);
         setOriginalCallOffState(nextSnapshot);
     };
@@ -321,11 +375,26 @@ const Calloff = () => {
 
                 if (isNewCallOff) {
                     setCallOffForm(defaultCallOffForm);
-                    setCallOffDeliveryList([]);
+                    const planned = plannedDeliveryRef.current;
+                    setCallOffDeliveryList(planned ? [{
+                        ...mapDeliveryRowDto({
+                            customerOrderNr: planned.candidate.customerOrderNr,
+                            customerName: planned.candidate.customerName,
+                            productName: planned.candidate.productName,
+                            inventoryName: planned.group.inventoryName,
+                            nrOfPallets: planned.details.nrOfPallets,
+                            kolliFormat: `${planned.details.palletLength ?? 0} x ${planned.details.palletWidth ?? 0} x ${planned.details.palletHeight ?? 0}`,
+                        }),
+                        rowKey: 'planned-draft',
+                        newDelivery: planned.details,
+                    }] : []);
                     setDeliveryAddressOptions([]);
-                    setDeliveryLegData({ deliveryLegGroupedList: [], distributionDeliveryLegGroupedList: [], distributionLegList: [] });
+                    setDeliveryLegData(EMPTY_DELIVERY_LEG_DATA);
+                    setSavedDeliveryLegData(EMPTY_DELIVERY_LEG_DATA);
+                    setRouteStatus(null);
+                    setSavedRouteStatus(null);
                     setAggregateVersion('');
-                    setOriginalCallOffState(null);
+                    setOriginalCallOffState(planned ? { callOffForm: defaultCallOffForm, callOffDeliveryList: [] } : null);
                 } else {
                     const aggregateResponse = await getSharedRequest(
                         `calloff:${id}:aggregate`,
@@ -350,7 +419,10 @@ const Calloff = () => {
                 setMessages([{ type: 'error', text: 'Kunde inte hämta avropet.' }]);
                 setCallOffDeliveryList([]);
                 setDeliveryAddressOptions([]);
-                setDeliveryLegData({ deliveryLegGroupedList: [], distributionDeliveryLegGroupedList: [], distributionLegList: [] });
+                setDeliveryLegData(EMPTY_DELIVERY_LEG_DATA);
+                setSavedDeliveryLegData(EMPTY_DELIVERY_LEG_DATA);
+                setRouteStatus(null);
+                setSavedRouteStatus(null);
                 setAggregateVersion('');
                 setGoogleApiKey('');
             } finally {
@@ -390,10 +462,95 @@ const Calloff = () => {
         skipUnsavedCheckRef.current = false;
     }, [id]);
 
+    // Legacy parity: CallOffViewModel recalculates the legs as soon as deliveries or the delivery address change.
     useEffect(() => {
-        return () => {
-            closePdfPreview?.();
-        };
+        if (loading) {
+            return undefined;
+        }
+
+        if (routeKey === savedRouteKey) {
+            routePreviewRequestRef.current += 1;
+            setDeliveryLegData(savedDeliveryLegData);
+            setRouteStatus(savedRouteStatus);
+            return undefined;
+        }
+
+        const { deliveries, customerDeliveryAddressId } = routeInputRef.current;
+        const requestId = routePreviewRequestRef.current + 1;
+        routePreviewRequestRef.current = requestId;
+        setDeliveryLegData(EMPTY_DELIVERY_LEG_DATA);
+
+        if (deliveries.length === 0) {
+            setRouteStatus(null);
+            return undefined;
+        }
+
+        setRouteStatus({ status: 'Loading', message: 'Beräknar transportben...' });
+        const timeoutId = setTimeout(async () => {
+            try {
+                const response = await apiClient.post('/calloff/route-preview', {
+                    customerDeliveryAddressId: customerDeliveryAddressId === '' ? null : Number(customerDeliveryAddressId),
+                    deliveries: deliveries.map((delivery) => (delivery.deliveryFromStockId
+                        ? { deliveryFromStockId: delivery.deliveryFromStockId }
+                        : { newDelivery: delivery.newDelivery })),
+                });
+                if (routePreviewRequestRef.current !== requestId) {
+                    return;
+                }
+                setDeliveryLegData(mapDeliveryLegsResponse(response?.data?.deliveryLegs));
+                setRouteStatus(getRouteStatus(response?.data?.routeCalculation, false));
+            } catch (error) {
+                if (routePreviewRequestRef.current !== requestId) {
+                    return;
+                }
+                console.error('Failed to preview call-off route:', error);
+                setRouteStatus({ status: 'Failed', message: 'Kunde inte beräkna transportben.' });
+            }
+        }, ROUTE_PREVIEW_DELAY_MS);
+
+        return () => clearTimeout(timeoutId);
+    }, [loading, routeKey, savedRouteKey, savedDeliveryLegData, savedRouteStatus, routePreviewRetryToken]);
+
+    const retryRouteCalculation = async () => {
+        if (routeKey !== savedRouteKey || isNewCallOff) {
+            setRoutePreviewRetryToken((value) => value + 1);
+            return;
+        }
+
+        setIsRecalculatingRoute(true);
+        setRouteStatus({ status: 'Loading', message: 'Beräknar transportben...' });
+        try {
+            const response = await apiClient.post(`/calloff/${id}/route/recalculate`);
+            const legs = mapDeliveryLegsResponse(response?.data?.deliveryLegs);
+            const hasLegs = legs.deliveryLegGroupedList.length > 0 || legs.distributionDeliveryLegGroupedList.length > 0;
+            const nextStatus = getRouteStatus(response?.data?.routeCalculation, !hasLegs && callOffDeliveryList.some((item) => item.deliveryFromStockId));
+            setSavedDeliveryLegData(legs);
+            setSavedRouteStatus(nextStatus);
+            setDeliveryLegData(legs);
+            setRouteStatus(nextStatus);
+        } catch (error) {
+            console.error('Failed to recalculate call-off route:', error);
+            setRouteStatus({ status: 'Failed', message: 'Kunde inte beräkna transportben.' });
+        } finally {
+            setIsRecalculatingRoute(false);
+        }
+    };
+
+    const addRouteMessage = (routeCalculation) => {
+        const status = getRouteStatus(routeCalculation, false);
+        if (status) {
+            setMessages((prev) => [...prev, { type: 'warning', text: status.message }]);
+        }
+        return status;
+    };
+
+    useEffect(() => () => {
+        pdfRequestRef.current += 1;
+        if (pdfObjectUrlRef.current) {
+            URL.revokeObjectURL(pdfObjectUrlRef.current);
+            pdfObjectUrlRef.current = null;
+        }
+        closePdfPreview?.();
     }, [closePdfPreview]);
 
     const titleText = useMemo(() => (isNewCallOff ? 'Ny avrop' : `Avrop ${id}`), [id, isNewCallOff]);
@@ -603,8 +760,13 @@ const Calloff = () => {
             if (response?.data?.version) {
                 setAggregateVersion(String(response.data.version));
             }
+            setSavedDeliveryLegData(mapDeliveryLegsResponse(response?.data?.deliveryLegs));
+            setSavedRouteStatus(getRouteStatus(response?.data?.routeCalculation, false));
             setOriginalCallOffState(pruneSnapshot);
             setMessages((prev) => [...prev, { type: 'info', text: 'Leveransen raderades.' }]);
+            if (addRouteMessage(response?.data?.routeCalculation)) {
+                flashInfoPanel(true);
+            }
         } catch (error) {
             console.error('Failed to delete call-off delivery:', error);
             // Restore the row so local state matches the database again.
@@ -623,20 +785,76 @@ const Calloff = () => {
         navigate('/logistics/calloffoverview');
     };
 
-    const handleUnsavedWarningConfirm = () => {
+    const handleUnsavedWarningConfirm = async () => {
         setShowUnsavedWarning(false);
+        if (pendingPdfType) {
+            const pdfType = pendingPdfType;
+            setPendingPdfType(null);
+            const savedCallOffId = await saveCallOff();
+            if (savedCallOffId) {
+                await requestCallOffPdf(pdfType, savedCallOffId);
+            }
+            return;
+        }
         blocker.proceed();
     };
 
     const handleUnsavedWarningAbort = () => {
         setShowUnsavedWarning(false);
+        setPendingPdfType(null);
         if (blocker.state === 'blocked') {
             blocker.reset();
         }
     };
 
-    const handleOpenPdfPanel = () => {
+    const requestCallOffPdf = async (pdfType, callOffId) => {
+        const numericCallOffId = Number(callOffId);
+        if (!(numericCallOffId > 0) || isPdfLoading) {
+            return;
+        }
+
+        const requestId = ++pdfRequestRef.current;
+        const endpoint = pdfType === 'confirmation'
+            ? `/pdf/calloff-confirmation/${numericCallOffId}`
+            : `/pdf/calloff/${numericCallOffId}`;
+        setIsPdfLoading(true);
         openPdfPreview?.('');
+        try {
+            const response = await apiClient.get(endpoint, { responseType: 'blob' });
+            if (requestId !== pdfRequestRef.current) return;
+
+            if (pdfObjectUrlRef.current) {
+                URL.revokeObjectURL(pdfObjectUrlRef.current);
+            }
+            const url = URL.createObjectURL(response.data);
+            pdfObjectUrlRef.current = url;
+            const prefix = pdfType === 'confirmation' ? 'calloffconfirmation' : 'calloff';
+            openPdfPreview?.(url, `${prefix}_${numericCallOffId}.pdf`);
+        } catch (error) {
+            if (requestId !== pdfRequestRef.current) return;
+            console.error('Failed to load call-off PDF:', error);
+            const apiMessage = typeof error.response?.data === 'string' ? error.response.data : '';
+            setMessages((previous) => [
+                ...previous.filter((message) => message.type !== 'error'),
+                { type: 'error', text: apiMessage || 'Kunde inte ladda avrops-PDF.' },
+            ]);
+        } finally {
+            if (requestId === pdfRequestRef.current) {
+                setIsPdfLoading(false);
+            }
+        }
+    };
+
+    const handleOpenPdfPanel = (pdfType) => {
+        if (isSaving || isStaleConflict || isPdfLoading) {
+            return;
+        }
+        if (isNewCallOff || hasUnsavedChanges()) {
+            setPendingPdfType(pdfType);
+            setShowUnsavedWarning(true);
+            return;
+        }
+        requestCallOffPdf(pdfType, id);
     };
 
     const handleDeleteCallOff = async () => {
@@ -734,7 +952,7 @@ const Calloff = () => {
 
     const saveCallOff = async () => {
         if (isSavingRef.current || isStaleConflict || (!aggregateVersion && !isNewCallOff)) {
-            return;
+            return null;
         }
         isSavingRef.current = true;
 
@@ -753,6 +971,7 @@ const Calloff = () => {
                 note: delivery.note || null,
                 nrOfPalletPlaces: delivery.nrOfPalletPlaces === '' ? null : Number(delivery.nrOfPalletPlaces),
                 deliveryFromStockId: delivery.id === 0 ? delivery.deliveryFromStockId : null,
+                newDelivery: delivery.newDelivery ?? null,
             })),
         };
 
@@ -763,7 +982,12 @@ const Calloff = () => {
                 const response = await apiClient.post('/calloff', payload);
                 skipUnsavedCheckRef.current = true;
                 setMessages((prev) => [...prev, { type: 'info', text: 'Avropet sparades.' }]);
-                navigate(`/logistics/calloff/${response?.data?.callOff?.id}`, { replace: true });
+                const savedId = Number(response?.data?.callOff?.id);
+                if (!(savedId > 0)) {
+                    return null;
+                }
+                navigate(`/logistics/calloff/${savedId}`, { replace: true });
+                return savedId;
             } else {
                 const response = await apiClient.put(`/calloff/${id}/aggregate`, {
                     ...payload,
@@ -772,7 +996,8 @@ const Calloff = () => {
                 applyAggregateResponse(response?.data);
                 setIsStaleConflict(false);
                 setMessages((prev) => [...prev, { type: 'info', text: 'Avropet sparades.' }]);
-                flashInfoPanel(false);
+                flashInfoPanel(Boolean(addRouteMessage(response?.data?.routeCalculation)));
+                return Number(response?.data?.callOff?.id ?? id);
             }
         } catch (error) {
             console.error('Failed to save call-off:', error);
@@ -784,6 +1009,7 @@ const Calloff = () => {
                 setMessages((prev) => [...prev, { type: 'error', text: apiMessage || 'Kunde inte spara avropet.' }]);
             }
             flashInfoPanel(true);
+            return null;
         } finally {
             setIsSaving(false);
             isSavingRef.current = false;
@@ -843,9 +1069,11 @@ const Calloff = () => {
                 isOpen={showUnsavedWarning}
                 onClose={handleUnsavedWarningAbort}
                 onConfirm={handleUnsavedWarningConfirm}
-                title="Osparade ändringar"
-                message="Det finns osparade ändringar, vill du ändå fortsätta?"
-                confirmText="Fortsätt ändå"
+                title={pendingPdfType ? 'Spara innan utskrift' : 'Osparade ändringar'}
+                message={pendingPdfType
+                    ? 'Avropet måste sparas innan PDF:en skapas. Vill du spara och fortsätta?'
+                    : 'Det finns osparade ändringar, vill du ändå fortsätta?'}
+                confirmText={pendingPdfType ? 'Spara och skriv ut' : 'Fortsätt ändå'}
                 cancelText="Avbryt"
                 isDestructive={false}
             />
@@ -963,13 +1191,15 @@ const Calloff = () => {
                                     <ActionButton
                                         label="Fraktbeställning/följesedel"
                                         icon={Printer}
-                                        onClick={handleOpenPdfPanel}
+                                        onClick={() => handleOpenPdfPanel('freight-order')}
+                                        disabled={isSaving || isStaleConflict || isPdfLoading}
                                         accent="sky"
                                     />
                                     <ActionButton
                                         label="Avropsbekräftelse"
                                         icon={Printer}
-                                        onClick={handleOpenPdfPanel}
+                                        onClick={() => handleOpenPdfPanel('confirmation')}
+                                        disabled={isSaving || isStaleConflict || isPdfLoading}
                                         accent="sky"
                                     />
                                 </div>
@@ -1244,6 +1474,25 @@ const Calloff = () => {
                                             </div>
                                         ) : null}
                                     </div>
+
+                                    {routeStatus ? (
+                                        <div
+                                            role={routeStatus.status === 'Loading' ? 'status' : 'alert'}
+                                            className={`mt-3 flex items-center justify-between gap-3 border px-3 py-2 text-xs ${routeStatus.status === 'Loading' ? 'border-gray-200 bg-white text-gray-600' : 'border-amber-300 bg-yellow-50 text-gray-800'}`}
+                                        >
+                                            <span>{routeStatus.message}</span>
+                                            {routeStatus.status !== 'Loading' ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={retryRouteCalculation}
+                                                    disabled={isRecalculatingRoute}
+                                                    className="shrink-0 text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800 disabled:text-gray-400"
+                                                >
+                                                    Försök igen
+                                                </button>
+                                            ) : null}
+                                        </div>
+                                    ) : null}
 
                                     <div className="mt-5 overflow-hidden">
                                         <table className="w-full text-xs text-gray-700">

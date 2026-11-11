@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Save } from 'lucide-react';
 import apiClient from '../../config/apiClient';
+import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import LabeledInput from '../../components/LabeledInput';
 import ActionButton from '../../components/ActionButton';
 
@@ -73,9 +74,11 @@ const mapFormToPayload = (form) => ({
 
 const BudgetMonthDistributionSettings = () => {
     const [form, setForm] = useState(defaultForm);
+    const [originalForm, setOriginalForm] = useState(defaultForm);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [message, setMessage] = useState(null);
+    useAppUpdateGuard(isSaving || JSON.stringify(form) !== JSON.stringify(originalForm));
 
     const total = useMemo(() => monthFields.reduce((acc, field) => {
         const value = parseNullableDecimal(form[field.key]);
@@ -88,9 +91,11 @@ const BudgetMonthDistributionSettings = () => {
         try {
             const response = await apiClient.get('/budgetmonthdistribution');
             setForm(mapDtoToForm(response.data));
+            setOriginalForm(mapDtoToForm(response.data));
         } catch (error) {
             if (error.response?.status === 404) {
                 setForm(defaultForm);
+                setOriginalForm(defaultForm);
             } else {
                 console.error('Failed to load budget month distribution:', error);
                 setMessage({ type: 'error', text: 'Kunde inte hamta budgetens manadsfordelning.' });
@@ -115,6 +120,7 @@ const BudgetMonthDistributionSettings = () => {
             const payload = mapFormToPayload(form);
             const response = await apiClient.put('/budgetmonthdistribution', payload);
             setForm(mapDtoToForm(response.data));
+            setOriginalForm(mapDtoToForm(response.data));
             setMessage({ type: 'success', text: 'Budgetens manadsfordelning sparades.' });
         } catch (error) {
             console.error('Failed to save budget month distribution:', error);

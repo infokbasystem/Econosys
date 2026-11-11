@@ -4,6 +4,7 @@ import axios from 'axios';
 import apiClient, { selectBackend, setUnauthorizedHandler } from './apiClient.js';
 import { getBackendMode } from './backend.js';
 import { getSharedRequest } from '../helpers/sharedRequest.js';
+import { isAppUpdateBlocked } from '../helpers/appUpdateGuards.js';
 
 const response = (config, data = {}) => ({ config, data, status: 200, statusText: 'OK', headers: {} });
 const unauthorized = (config) => new axios.AxiosError('Unauthorized', 'ERR_BAD_REQUEST', config, null, {
@@ -17,6 +18,27 @@ const deferred = () => {
 afterEach(() => {
   setUnauthorizedHandler(null);
   selectBackend('login');
+});
+
+test('app updates wait for active API requests and release the guard on success or failure', async () => {
+  for (const shouldFail of [false, true]) {
+    const started = deferred();
+    const completed = deferred();
+    const request = apiClient.put('/supplierorders/1', {}, {
+      adapter: async (config) => {
+        started.resolve();
+        await completed.promise;
+        if (shouldFail) throw new axios.AxiosError('Save failed', 'ERR_NETWORK', config);
+        return response(config);
+      },
+    });
+    await started.promise;
+    assert.equal(isAppUpdateBlocked(), true);
+    completed.resolve();
+    if (shouldFail) await assert.rejects(request, /Save failed/);
+    else await request;
+    assert.equal(isAppUpdateBlocked(), false);
+  }
 });
 
 test('demo login and subsequent requests use the demo API with cookies', async () => {

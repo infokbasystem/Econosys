@@ -10,6 +10,9 @@ namespace Econosys.Api.Models
         [Column("lngCustomer_ID")]
         public int Id { get; set; }
 
+        [Column("CompanyId")]
+        public int CompanyId { get; set; }
+
         [Column("strCustomer")]
         [MaxLength(50)]
         public string? Name { get; set; }
@@ -57,6 +60,10 @@ namespace Econosys.Api.Models
         [Column("strNote")]
         [MaxLength(255)]
         public string? Note { get; set; }
+
+        [Column("ImportantCalculationInfo")]
+        [MaxLength(1000)]
+        public string? ImportantCalculationInfo { get; set; }
 
         [Column("strLoadingInstruction")]
         [MaxLength(255)]

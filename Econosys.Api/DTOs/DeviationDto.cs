@@ -52,6 +52,8 @@ namespace Econosys.Api.DTOs
         public string? ClaimReason { get; set; }
         public string? FollowupInfo { get; set; }
         public DateTime? DeviationClosedToSupplier { get; set; }
+        public int? OverrideHandlingWorkdays { get; set; }
+        public string? HandlingWorkdaysOverrideReason { get; set; }
         public IReadOnlyList<DeviationCostDto> Costs { get; set; } = Array.Empty<DeviationCostDto>();
         public IReadOnlyList<DocumentFileDto> AttachedFiles { get; set; } = Array.Empty<DocumentFileDto>();
     }
@@ -236,6 +238,13 @@ namespace Econosys.Api.DTOs
         public string? FollowupInfo { get; set; }
 
         public DateTime? DeviationClosedToSupplier { get; set; }
+
+        [Range(0, int.MaxValue)]
+        public int? OverrideHandlingWorkdays { get; set; }
+
+        [MaxLength(4000)]
+        public string? HandlingWorkdaysOverrideReason { get; set; }
+
         public List<CreateDeviationCostRequest>? Costs { get; set; }
     }
 
@@ -299,6 +308,13 @@ namespace Econosys.Api.DTOs
         public string? FollowupInfo { get; set; }
 
         public DateTime? DeviationClosedToSupplier { get; set; }
+
+        [Range(0, int.MaxValue)]
+        public int? OverrideHandlingWorkdays { get; set; }
+
+        [MaxLength(4000)]
+        public string? HandlingWorkdaysOverrideReason { get; set; }
+
         public List<CreateDeviationCostRequest>? Costs { get; set; }
     }
 

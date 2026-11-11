@@ -52,6 +52,7 @@ public static class CalculationDetailMapper
             DeliveryAddressCountryCode = calculation.DeliveryAddressCountryCode,
             DeliveryAddressPostalNr = calculation.DeliveryAddressPostalNr,
             PalletFormatId = calculation.PalletFormatId,
+            PalletType = calculation.PalletType,
             PalletFormatName = calculation.PalletFormat?.Name,
             PalletLength = calculation.PalletLength,
             PalletWidth = calculation.PalletWidth,

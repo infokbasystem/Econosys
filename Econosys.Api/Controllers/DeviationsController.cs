@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
+using Econosys.Api.Common;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
@@ -159,10 +160,10 @@ namespace Econosys.Api.Controllers
             var startOfYear = new DateTime(selectedYear, 1, 1);
             var endOfYear = new DateTime(selectedYear, 12, 31, 23, 59, 59);
 
-            var openItems = await BuildBaseQuery()
+            var openItemRows = await BuildBaseQuery()
                 .Where(x => x.Status.ToUpper() == "OPEN")
                 .OrderByDescending(x => x.DeviationOpened)
-                .Select(x => new DeviationOpenItemDto
+                .Select(x => new
                 {
                     Id = x.Id,
                     ResponsibleUserName = x.ResponsibleUser != null ? x.ResponsibleUser.Name : null,
@@ -170,11 +171,21 @@ namespace Econosys.Api.Controllers
                     CustomerOrderNr = x.CustomerOrder != null ? x.CustomerOrder.CustomerOrderNr : null,
                     CustomerName = x.Customer != null ? x.Customer.Name : null,
                     SupplierName = x.Supplier != null ? x.Supplier.Name : null,
-                    OpenDays = x.DeviationOpened.HasValue
-                        ? EF.Functions.DateDiffDay(x.DeviationOpened.Value, SwedishTime.Today)
-                        : 0
+                    x.DeviationOpened
                 })
                 .ToListAsync();
+            var openItems = openItemRows.Select(x => new DeviationOpenItemDto
+            {
+                Id = x.Id,
+                ResponsibleUserName = x.ResponsibleUserName,
+                DeviationNr = x.DeviationNr,
+                CustomerOrderNr = x.CustomerOrderNr,
+                CustomerName = x.CustomerName,
+                SupplierName = x.SupplierName,
+                OpenDays = x.DeviationOpened.HasValue
+                    ? DeviationWorkdayCalculator.CountElapsedWeekdays(x.DeviationOpened.Value, SwedishTime.Today)
+                    : 0
+            }).ToList();
 
             var yearRows = await _dbContext.Deviations
                 .AsNoTracking()
@@ -186,6 +197,7 @@ namespace Econosys.Api.Controllers
                 {
                     x.DeviationOpened,
                     x.DeviationClosed,
+                    x.OverrideHandlingWorkdays,
                     x.ActualInternalCostSEK
                 })
                 .ToListAsync();
@@ -209,7 +221,9 @@ namespace Econosys.Api.Controllers
 
                     var handlingDays = closedInMonth
                         .Where(x => x.DeviationOpened.HasValue)
-                        .Select(x => (decimal)(x.DeviationClosed!.Value.Date - x.DeviationOpened!.Value.Date).TotalDays)
+                        .Select(x => (decimal)(x.OverrideHandlingWorkdays ?? DeviationWorkdayCalculator.CountElapsedWeekdays(
+                            x.DeviationOpened!.Value,
+                            x.DeviationClosed!.Value)))
                         .ToList();
 
                     var handledWithin10DaysPercent = handlingDays.Count == 0
@@ -256,33 +270,53 @@ namespace Econosys.Api.Controllers
                     (!x.DeviationClosedToSupplier.HasValue && x.DeviationOpened.HasValue && x.DeviationOpened.Value >= from && x.DeviationOpened.Value <= to));
             }
 
-            var rows = await query
+            var reportRows = await query
                 .Select(x => new
                 {
                     SupplierId = x.SupplierId!.Value,
                     SupplierName = x.Supplier != null ? x.Supplier.Name : null,
-                    Row = new SupplierDeviationReportRowDto
-                    {
-                        DeviationId = x.Id,
-                        DeviationNr = x.DeviationNr,
-                        CustomerOrderId = x.CustomerOrderId,
-                        CustomerOrderNr = x.CustomerOrder != null ? x.CustomerOrder.CustomerOrderNr : null,
-                        CustomerName = x.Customer != null
-                            ? x.Customer.Name
-                            : (x.CustomerOrder != null && x.CustomerOrder.Customer != null ? x.CustomerOrder.Customer.Name : null),
-                        DeviationOpened = x.DeviationOpened,
-                        DeviationClosedToSupplier = x.DeviationClosedToSupplier,
-                        DeviationClosed = x.DeviationClosed,
-                        DaysToCloseToSupplier = x.DeviationOpened.HasValue && x.DeviationClosedToSupplier.HasValue
-                            ? EF.Functions.DateDiffDay(x.DeviationOpened.Value, x.DeviationClosedToSupplier.Value)
-                            : (int?)null,
-                        DeviationTypeCode = x.DeviationTypeCode,
-                        DeviationProcessCode = x.DeviationProcessCode,
-                        Status = x.Status,
-                        Description = x.Description
-                    }
+                    DeviationId = x.Id,
+                    DeviationNr = x.DeviationNr,
+                    CustomerOrderId = x.CustomerOrderId,
+                    CustomerOrderNr = x.CustomerOrder != null ? x.CustomerOrder.CustomerOrderNr : null,
+                    CustomerName = x.Customer != null
+                        ? x.Customer.Name
+                        : (x.CustomerOrder != null && x.CustomerOrder.Customer != null ? x.CustomerOrder.Customer.Name : null),
+                    x.DeviationOpened,
+                    x.DeviationClosedToSupplier,
+                    x.DeviationClosed,
+                    x.OverrideHandlingWorkdays,
+                    x.DeviationTypeCode,
+                    x.DeviationProcessCode,
+                    x.Status,
+                    x.Description
                 })
                 .ToListAsync();
+            var rows = reportRows.Select(x => new
+            {
+                x.SupplierId,
+                x.SupplierName,
+                Row = new SupplierDeviationReportRowDto
+                {
+                    DeviationId = x.DeviationId,
+                    DeviationNr = x.DeviationNr,
+                    CustomerOrderId = x.CustomerOrderId,
+                    CustomerOrderNr = x.CustomerOrderNr,
+                    CustomerName = x.CustomerName,
+                    DeviationOpened = x.DeviationOpened,
+                    DeviationClosedToSupplier = x.DeviationClosedToSupplier,
+                    DeviationClosed = x.DeviationClosed,
+                    DaysToCloseToSupplier = x.DeviationOpened.HasValue && x.DeviationClosedToSupplier.HasValue
+                        ? x.OverrideHandlingWorkdays ?? DeviationWorkdayCalculator.CountElapsedWeekdays(
+                            x.DeviationOpened.Value,
+                            x.DeviationClosedToSupplier.Value)
+                        : null,
+                    DeviationTypeCode = x.DeviationTypeCode,
+                    DeviationProcessCode = x.DeviationProcessCode,
+                    Status = x.Status,
+                    Description = x.Description
+                }
+            }).ToList();
 
             var groups = rows
                 .GroupBy(x => new { x.SupplierId, x.SupplierName })
@@ -426,6 +460,14 @@ namespace Econosys.Api.Controllers
                 return BadRequest(ModelState);
             }
 
+            var workdaysOverrideError = ValidateWorkdaysOverride(
+                request.OverrideHandlingWorkdays,
+                request.HandlingWorkdaysOverrideReason);
+            if (workdaysOverrideError is not null)
+            {
+                return BadRequest(new { message = workdaysOverrideError });
+            }
+
             var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
             if (legacyUser is null)
             {
@@ -466,6 +508,10 @@ namespace Econosys.Api.Controllers
                 ClaimReason = request.ClaimReason,
                 FollowupInfo = request.FollowupInfo,
                 DeviationClosedToSupplier = request.DeviationClosedToSupplier,
+                OverrideHandlingWorkdays = request.OverrideHandlingWorkdays,
+                HandlingWorkdaysOverrideReason = request.OverrideHandlingWorkdays.HasValue
+                    ? request.HandlingWorkdaysOverrideReason!.Trim()
+                    : null,
                 DeviationCosts = (request.Costs ?? new List<CreateDeviationCostRequest>())
                     .Select(cost => new DeviationCost
                     {
@@ -499,6 +545,14 @@ namespace Econosys.Api.Controllers
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
+            }
+
+            var workdaysOverrideError = ValidateWorkdaysOverride(
+                request.OverrideHandlingWorkdays,
+                request.HandlingWorkdaysOverrideReason);
+            if (workdaysOverrideError is not null)
+            {
+                return BadRequest(new { message = workdaysOverrideError });
             }
 
             var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
@@ -542,6 +596,10 @@ namespace Econosys.Api.Controllers
             deviation.ClaimReason = request.ClaimReason;
             deviation.FollowupInfo = request.FollowupInfo;
             deviation.DeviationClosedToSupplier = request.DeviationClosedToSupplier;
+            deviation.OverrideHandlingWorkdays = request.OverrideHandlingWorkdays;
+            deviation.HandlingWorkdaysOverrideReason = request.OverrideHandlingWorkdays.HasValue
+                ? request.HandlingWorkdaysOverrideReason!.Trim()
+                : null;
 
             deviation.CreatedTimeStamp ??= SwedishTime.Now;
             deviation.CreatedByUserId = legacyUser.Id;
@@ -598,6 +656,26 @@ namespace Econosys.Api.Controllers
                 .Include(x => x.Customer)
                 .Include(x => x.Supplier)
                 .Include(x => x.ResponsibleUser);
+        }
+
+        private static string? ValidateWorkdaysOverride(int? days, string? reason)
+        {
+            if (days < 0)
+            {
+                return "The workday count cannot be negative.";
+            }
+
+            if (days.HasValue && string.IsNullOrWhiteSpace(reason))
+            {
+                return "A reason is required when overriding the workday count.";
+            }
+
+            if (!days.HasValue && !string.IsNullOrWhiteSpace(reason))
+            {
+                return "Clear the reason when clearing the workday count.";
+            }
+
+            return null;
         }
 
         private static IOrderedQueryable<Deviation> ApplyOrdering(IQueryable<Deviation> query, List<SortRequest>? orderBy)
@@ -783,6 +861,8 @@ namespace Econosys.Api.Controllers
                 ClaimReason = entity.ClaimReason,
                 FollowupInfo = entity.FollowupInfo,
                 DeviationClosedToSupplier = entity.DeviationClosedToSupplier,
+                OverrideHandlingWorkdays = entity.OverrideHandlingWorkdays,
+                HandlingWorkdaysOverrideReason = entity.HandlingWorkdaysOverrideReason,
                 PricePer1000 = entity.CustomerOrder != null && entity.CustomerOrder.SupplierOrder != null ? (decimal?)entity.CustomerOrder.SupplierOrder.PurchasePrice : (decimal?)null,
                 Costs = entity.DeviationCosts
                     .OrderBy(x => x.Id)
@@ -830,8 +910,13 @@ namespace Econosys.Api.Controllers
                 return null;
             }
 
+            if (entity.DeviationClosed.HasValue && entity.OverrideHandlingWorkdays.HasValue)
+            {
+                return entity.OverrideHandlingWorkdays.Value;
+            }
+
             var endDate = entity.DeviationClosed?.Date ?? SwedishTime.Today;
-            return Math.Max(0, (endDate - entity.DeviationOpened.Value.Date).Days);
+            return DeviationWorkdayCalculator.CountElapsedWeekdays(entity.DeviationOpened.Value, endDate);
         }
     }
 }

@@ -21,6 +21,7 @@ export default function SearchCustomer({
     onPendingSelectionChange,
     selectedCustomerName,
     selectedCustomerId,
+    disabled = false,
     placeholder = 'Sök kund',
     minQueryLength = 1,
     debounceMs = 200,
@@ -37,7 +38,7 @@ export default function SearchCustomer({
     const [isSearching, setIsSearching] = useState(false)
     const [isOpen, setIsOpen] = useState(false)
     const mayHaveMoreMatches = !isSearching && take > 0 && matches.length >= take
-    const showMatches = isOpen && (query.trim() === '**' || query.trim().length >= minQueryLength)
+    const showMatches = !disabled && isOpen && (query.trim() === '**' || query.trim().length >= minQueryLength)
 
     useSearchPopupPosition(showMatches, containerRef, popupRef)
 
@@ -53,7 +54,7 @@ export default function SearchCustomer({
     }, [])
 
     useEffect(() => {
-        if (!hasEditedSinceSelection) {
+        if (disabled || !hasEditedSinceSelection) {
             return
         }
 
@@ -97,9 +98,11 @@ export default function SearchCustomer({
         }, debounceMs)
 
         return () => clearTimeout(timer)
-    }, [debounceMs, hasEditedSinceSelection, minQueryLength, query, take])
+    }, [debounceMs, disabled, hasEditedSinceSelection, minQueryLength, query, take])
 
     function handlePick(customer) {
+        if (disabled) return
+
         onCustomerSelect?.(customer)
         onPendingSelectionChange?.(false)
         setQuery(customer?.name ?? '')
@@ -113,6 +116,7 @@ export default function SearchCustomer({
             <div className="relative">
                 <input
                     value={query}
+                    disabled={disabled}
                     onChange={(event) => {
                         const nextQuery = event.target.value
                         setQuery(nextQuery)
@@ -136,7 +140,7 @@ export default function SearchCustomer({
                     }}
                     placeholder={placeholder}
                     autoComplete="off"
-                    className={`h-6 w-full rounded-full border border-lime-600 bg-white px-4 pt-[1px] ${selectedCustomerId ? 'pr-14' : 'pr-9'} text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700`}
+                    className={`h-6 w-full rounded-full border border-lime-600 bg-white px-4 pt-[1px] ${selectedCustomerId ? 'pr-14' : 'pr-9'} text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700 disabled:cursor-not-allowed disabled:border-gray-300 disabled:bg-gray-100`}
                 />
                 {selectedCustomerId && (
                     <button

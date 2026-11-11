@@ -43,9 +43,11 @@ const getNodeLink = (type, id) => {
 
 const getNodeClassName = (isActive) => `${nodeBaseClass} ${isActive ? 'bg-lime-50 text-stone-900 font-semibold shadow-sm shadow-lime-900/10' : 'text-gray-700 hover:bg-gray-100'}`;
 
-const OrderNode = ({ label, type, id, isActive = false, depth = 0, disclosure }) => {
+const OrderNode = ({ label, type, id, supplierOrderNr, customerOrderNr, isActive = false, depth = 0, disclosure }) => {
     const link = getNodeLink(type, id);
-    const text = `${label}${id ? ` ${id}` : ''}`;
+    const number = type === 'supplierOrder' ? supplierOrderNr || '-'
+        : type === 'customerOrder' ? customerOrderNr || '-' : id;
+    const text = `${label}${number ? ` ${number}` : ''}`;
 
     return (
         <div className="relative" style={{ marginLeft: `${depth * 14}px` }}>
@@ -111,6 +113,8 @@ const OrderBranch = ({ node, type, depth, isCurrent, visibleIds }) => {
                 label={nodeLabels[type]}
                 type={type}
                 id={node.id}
+                supplierOrderNr={node.supplierOrderNr}
+                customerOrderNr={node.customerOrderNr}
                 isActive={isCurrent(type, node.id, node.isCurrent)}
                 depth={depth}
                 disclosure={hasChildren ? {
