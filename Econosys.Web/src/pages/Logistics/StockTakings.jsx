@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useBlocker, useSearchParams } from 'react-router-dom';
+import { Link, useBlocker, useSearchParams } from 'react-router-dom';
 import ExcelJS from 'exceljs';
-import { ClipboardCheck, Download, Plus, Save, Search, Warehouse } from 'lucide-react';
+import { Check, ClipboardCheck, Download, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react';
 import apiClient from '../../config/apiClient';
 import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import ActionButton from '../../components/ActionButton';
@@ -22,6 +22,17 @@ const getDifference = (count, calculated) => (
   count === null || count === undefined || calculated === null || calculated === undefined
     ? null
     : count - calculated
+);
+
+const SupplierOrderLink = ({ id, nr }) => (
+  id ? (
+    <Link
+      to={`/order/supplierorders/${id}`}
+      className="text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
+    >
+      {nr || '-'}
+    </Link>
+  ) : (nr ?? '')
 );
 
 const getApiErrorMessage = (error, fallback) => {
@@ -52,12 +63,20 @@ const StockTakings = () => {
   const [message, setMessage] = useState(null);
   const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
+  const [editingItem, setEditingItem] = useState(null);
+  const [isSavingItem, setIsSavingItem] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const hasUnsavedChanges = useCallback(() => (
-    Boolean(draft?.items?.some((item) => item.nrOfItems != null || item.nrOfPallets != null))
-  ), [draft]);
+  const hasUnsavedChanges = useCallback(() => {
+    if (draft?.items?.some((item) => item.nrOfItems != null || item.nrOfPallets != null)) return true;
+    if (!editingItem) return false;
+    const original = selectedStockTaking?.items?.find((item) => item.id === editingItem.id);
+    return (original?.nrOfItems ?? null) !== (editingItem.nrOfItems ?? null)
+      || (original?.nrOfPallets ?? null) !== (editingItem.nrOfPallets ?? null);
+  }, [draft, editingItem, selectedStockTaking]);
   const blocker = useBlocker(hasUnsavedChanges);
-  useAppUpdateGuard(() => hasUnsavedChanges() || isSaving || isCalculating);
+  useAppUpdateGuard(() => hasUnsavedChanges() || isSaving || isCalculating || isSavingItem || isDeleting);
 
   useEffect(() => {
     let isActive = true;
@@ -169,6 +188,7 @@ const StockTakings = () => {
     setSelectedId(null);
     setSelectedStockTaking(null);
     setDraft(null);
+    setEditingItem(null);
     setStockTakingDate(getSwedishTodayDateString());
     setInventoryId('0');
     setMode('configure');
@@ -186,6 +206,7 @@ const StockTakings = () => {
   const selectStockTaking = (id) => {
     setMessage(null);
     setDraft(null);
+    setEditingItem(null);
     setSelectedStockTaking(null);
     setMode('view');
     setSelectedId(id);
@@ -311,6 +332,57 @@ const StockTakings = () => {
     }
   };
 
+  const startEditItem = (item) => {
+    setMessage(null);
+    setEditingItem({ id: item.id, nrOfItems: item.nrOfItems ?? null, nrOfPallets: item.nrOfPallets ?? null });
+  };
+
+  const handleSaveItem = async () => {
+    if (!editingItem || !selectedStockTaking) return;
+    if (editingItem.nrOfItems == null && editingItem.nrOfPallets == null) {
+      setMessage({ type: 'error', text: 'Ange antal eller pallar för raden.' });
+      return;
+    }
+
+    setIsSavingItem(true);
+    setMessage(null);
+    try {
+      const response = await apiClient.put(
+        `/stocktakings/${selectedStockTaking.id}/items/${editingItem.id}`,
+        { nrOfItems: editingItem.nrOfItems, nrOfPallets: editingItem.nrOfPallets },
+      );
+      setSelectedStockTaking(response?.data ?? selectedStockTaking);
+      setEditingItem(null);
+      setMessage({ type: 'success', text: 'Raden uppdaterades.' });
+    } catch (error) {
+      setMessage({ type: 'error', text: getApiErrorMessage(error, 'Kunde inte uppdatera raden.') });
+    } finally {
+      setIsSavingItem(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedStockTaking) return;
+    const deletedId = selectedStockTaking.id;
+    setShowDeleteConfirm(false);
+    setIsDeleting(true);
+    setMessage(null);
+    try {
+      await apiClient.delete(`/stocktakings/${deletedId}`);
+      const response = await apiClient.get('/stocktakings/history');
+      const items = Array.isArray(response?.data) ? response.data : [];
+      setHistory(items);
+      setEditingItem(null);
+      setSelectedStockTaking(null);
+      setSelectedId(items[0]?.id ?? null);
+      setMessage({ type: 'success', text: `Inventering #${deletedId} raderades.` });
+    } catch (error) {
+      setMessage({ type: 'error', text: getApiErrorMessage(error, 'Kunde inte radera inventeringen.') });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleExport = async () => {
     if (!selectedStockTaking || isExporting) return;
 
@@ -367,6 +439,17 @@ const StockTakings = () => {
         message="Räkneraderna har ändrats. Vill du lämna inventeringen utan att spara?"
         confirmText="Lämna utan att spara"
         cancelText="Stanna kvar"
+        isDestructive={true}
+      />
+
+      <ConfirmationModal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDelete}
+        title="Radera inventering"
+        message={`Vill du radera inventering #${selectedStockTaking?.id ?? ''} med alla dess rader? Detta kan inte ångras.`}
+        confirmText="Radera"
+        cancelText="Avbryt"
         isDestructive={true}
       />
 
@@ -511,7 +594,9 @@ const StockTakings = () => {
                         const palletDifference = getDifference(item.nrOfPallets, item.calculatedNrOfPallets);
                         return (
                           <tr key={item.supplierOrderId} className="border-b border-gray-100 hover:bg-gray-50/70 h-7">
-                            <td className="px-2 text-gray-600">{item.supplierOrderNr}</td>
+                            <td className="px-2 text-gray-600">
+                              <SupplierOrderLink id={item.supplierOrderId} nr={item.supplierOrderNr} />
+                            </td>
                             <td className="max-w-48 truncate px-2" title={item.productName}>{item.productName}</td>
                             <td className="max-w-40 truncate px-2" title={item.customerName}>{item.customerName}</td>
                             <td className="px-2 text-right">{formatCount(item.edition)}</td>
@@ -588,6 +673,15 @@ const StockTakings = () => {
                       onClick={handleExport}
                       disabled={isExporting}
                     />
+                    {selectedStockTaking.canDelete && (
+                      <ActionButton
+                        label={isDeleting ? 'Raderar...' : 'Radera'}
+                        icon={Trash2}
+                        onClick={() => setShowDeleteConfirm(true)}
+                        disabled={isDeleting || isSavingItem}
+                        accent="rose"
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -606,21 +700,97 @@ const StockTakings = () => {
                           <th className="px-2 py-2 text-right">Pallar</th>
                           <th className="px-2 py-2 text-right">Diff antal</th>
                           <th className="px-2 py-2 text-right">Diff pall</th>
+                          <th className="w-16 px-2 py-2" aria-label="Åtgärder"></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedStockTaking.items.map((item) => (
-                          <tr key={item.id} className="border-b border-gray-100">
-                            <td className="px-2 py-1.5 text-gray-600">{item.supplierOrderNr}</td>
-                            <td className="max-w-48 truncate px-2 py-1.5" title={item.productName}>{item.productName}</td>
-                            <td className="max-w-40 truncate px-2 py-1.5" title={item.customerName}>{item.customerName}</td>
-                            <td className="px-2 py-1.5 text-right">{formatCount(item.edition)}</td>
-                            <td className="px-2 py-1.5 text-right">{formatCount(item.nrOfItems)}</td>
-                            <td className="px-2 py-1.5 text-right">{formatCount(item.nrOfPallets)}</td>
-                            <td className="px-2 py-1.5 text-right">{formatCount(item.diffNrOfItems)}</td>
-                            <td className="px-2 py-1.5 text-right">{formatCount(item.diffNrOfPallets)}</td>
-                          </tr>
-                        ))}
+                        {selectedStockTaking.items.map((item) => {
+                          const isEditing = editingItem?.id === item.id;
+                          return (
+                            <tr key={item.id} className="border-b border-gray-200 hover:bg-lime-50">
+                              <td className="px-2 py-0.5 text-gray-600">
+                                <SupplierOrderLink id={item.supplierOrderId} nr={item.supplierOrderNr} />
+                              </td>
+                              <td className="max-w-48 truncate px-2 py-0.5" title={item.productName}>{item.productName}</td>
+                              <td className="max-w-40 truncate px-2 py-0.5" title={item.customerName}>{item.customerName}</td>
+                              <td className="px-2 py-0.5 text-right">{formatCount(item.edition)}</td>
+                              {isEditing ? (
+                                <>
+                                  <td className="w-24 px-2 py-0.5">
+                                    <LabeledInput
+                                      label=""
+                                      labelWidth="w-0"
+                                      margintop="0"
+                                      type="number"
+                                      integerOnly
+                                      min="0"
+                                      aria-label={`Antal ${item.supplierOrderNr}`}
+                                      value={editingItem.nrOfItems}
+                                      onChange={(value) => setEditingItem((current) => ({ ...current, nrOfItems: value }))}
+                                    />
+                                  </td>
+                                  <td className="w-24 px-2 py-0.5">
+                                    <LabeledInput
+                                      label=""
+                                      labelWidth="w-0"
+                                      margintop="0"
+                                      type="number"
+                                      integerOnly
+                                      min="0"
+                                      aria-label={`Pallar ${item.supplierOrderNr}`}
+                                      value={editingItem.nrOfPallets}
+                                      onChange={(value) => setEditingItem((current) => ({ ...current, nrOfPallets: value }))}
+                                    />
+                                  </td>
+                                </>
+                              ) : (
+                                <>
+                                  <td className="px-2 py-0.5 text-right">{formatCount(item.nrOfItems)}</td>
+                                  <td className="px-2 py-0.5 text-right">{formatCount(item.nrOfPallets)}</td>
+                                </>
+                              )}
+                              <td className="px-2 py-0.5 text-right">{formatCount(item.diffNrOfItems)}</td>
+                              <td className="px-2 py-0.5 text-right">{formatCount(item.diffNrOfPallets)}</td>
+                              <td className="px-2 py-0.5 text-right whitespace-nowrap">
+                                {isEditing ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      title="Spara rad"
+                                      aria-label={`Spara rad ${item.supplierOrderNr}`}
+                                      onClick={handleSaveItem}
+                                      disabled={isSavingItem}
+                                      className="mr-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-lime-700 hover:bg-lime-100 disabled:opacity-50"
+                                    >
+                                      <Check size={14} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      title="Avbryt"
+                                      aria-label={`Avbryt redigering ${item.supplierOrderNr}`}
+                                      onClick={() => setEditingItem(null)}
+                                      disabled={isSavingItem}
+                                      className="inline-flex h-6 w-6 items-center justify-center rounded-full text-gray-500 hover:bg-gray-200 disabled:opacity-50"
+                                    >
+                                      <X size={14} />
+                                    </button>
+                                  </>
+                                ) : item.isEditable ? (
+                                  <button
+                                    type="button"
+                                    title="Redigera rad"
+                                    aria-label={`Redigera rad ${item.supplierOrderNr}`}
+                                    onClick={() => startEditItem(item)}
+                                    disabled={isSavingItem || isDeleting || Boolean(editingItem)}
+                                    className="inline-flex h-6 w-6 items-center justify-center rounded-full text-gray-500 hover:bg-gray-200 disabled:opacity-30"
+                                  >
+                                    <Pencil size={13} />
+                                  </button>
+                                ) : null}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>

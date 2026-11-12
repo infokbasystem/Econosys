@@ -29,6 +29,7 @@ namespace Econosys.Api.DTOs
         public int Id { get; set; }
         public DateTime? StockTakingDate { get; set; }
         public string InventoryNames { get; set; } = string.Empty;
+        public bool CanDelete { get; set; }
         public List<StockTakingLineDto> Items { get; set; } = new();
     }
 
@@ -48,6 +49,7 @@ namespace Econosys.Api.DTOs
         public int? DiffNrOfItems { get; set; }
         public int? DiffNrOfPallets { get; set; }
         public DateTime? LastStockTakingDate { get; set; }
+        public bool IsEditable { get; set; }
     }
 
     public class CalculateStockTakingRequestDto
@@ -73,6 +75,15 @@ namespace Econosys.Api.DTOs
 
         [Required]
         public List<StockTakingCountDto> Items { get; set; } = new();
+    }
+
+    public class UpdateStockTakingItemRequestDto
+    {
+        [Range(0, int.MaxValue)]
+        public int? NrOfItems { get; set; }
+
+        [Range(0, int.MaxValue)]
+        public int? NrOfPallets { get; set; }
     }
 
     public class StockTakingCountDto

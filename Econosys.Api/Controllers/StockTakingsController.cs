@@ -232,6 +232,122 @@ namespace Econosys.Api.Controllers
             return CreatedAtAction(nameof(GetAggregate), new { id = stockTaking.Id }, result);
         }
 
+        [HttpPut("{id:int}/items/{itemId:int}")]
+        public async Task<ActionResult<StockTakingAggregateDto>> UpdateItem(int id, int itemId, [FromBody] UpdateStockTakingItemRequestDto request)
+        {
+            if (!request.NrOfItems.HasValue && !request.NrOfPallets.HasValue)
+            {
+                return BadRequest(new { message = "Ange antal eller pallar för raden." });
+            }
+
+            var item = await _dbContext.StockTakingItems
+                .Include(x => x.StockTaking)
+                .FirstOrDefaultAsync(x => x.Id == itemId && x.StockTakingId == id);
+
+            if (item is null)
+            {
+                return NotFound();
+            }
+
+            if (!(await GetLatestItemIdsAsync([item])).Contains(item.Id))
+            {
+                return BadRequest(new { message = "Endast den senaste inventeringsraden för en beställning kan ändras." });
+            }
+
+            int? calculatedItems = item.NrOfItems.HasValue && item.DiffNrOfItems.HasValue
+                ? item.NrOfItems.Value - item.DiffNrOfItems.Value
+                : null;
+            int? calculatedPallets = item.NrOfPallets.HasValue && item.DiffNrOfPallets.HasValue
+                ? item.NrOfPallets.Value - item.DiffNrOfPallets.Value
+                : null;
+
+            // The original calculated level can only be derived from count - diff; recalculate when that is not possible.
+            if ((request.NrOfItems.HasValue && !calculatedItems.HasValue)
+                || (request.NrOfPallets.HasValue && !calculatedPallets.HasValue))
+            {
+                var calculated = item.StockTaking?.StockTakingDate is { } stockTakingDate && item.SupplierOrderId.HasValue
+                    ? (await CalculateStockTakingItemsAsync(stockTakingDate, 0))
+                        .FirstOrDefault(x => x.SupplierOrderId == item.SupplierOrderId.Value)
+                    : null;
+                calculatedItems ??= calculated?.CalculatedNrOfItems ?? 0;
+                calculatedPallets ??= calculated?.CalculatedNrOfPallets ?? 0;
+            }
+
+            item.NrOfItems = request.NrOfItems;
+            item.NrOfPallets = request.NrOfPallets;
+            item.DiffNrOfItems = request.NrOfItems.HasValue ? request.NrOfItems.Value - calculatedItems!.Value : null;
+            item.DiffNrOfPallets = request.NrOfPallets.HasValue ? request.NrOfPallets.Value - calculatedPallets!.Value : null;
+
+            await _dbContext.SaveChangesAsync();
+            return Ok(await BuildAggregateDtoAsync(id));
+        }
+
+        [HttpDelete("{id:int}")]
+        public async Task<IActionResult> Delete(int id)
+        {
+            var stockTaking = await _dbContext.StockTakings.FirstOrDefaultAsync(x => x.Id == id);
+            if (stockTaking is null)
+            {
+                return NotFound();
+            }
+
+            if (await GetLatestStockTakingIdAsync() != id)
+            {
+                return BadRequest(new { message = "Endast den senaste inventeringen kan raderas." });
+            }
+
+            var items = await _dbContext.StockTakingItems
+                .Where(x => x.StockTakingId == id)
+                .ToListAsync();
+
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            _dbContext.StockTakingItems.RemoveRange(items);
+            await _dbContext.SaveChangesAsync();
+            _dbContext.StockTakings.Remove(stockTaking);
+            await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return NoContent();
+        }
+
+        // Same ordering as the history list and the snapshot lookup in CalculateStockTakingItemsAsync.
+        private Task<int> GetLatestStockTakingIdAsync()
+        {
+            return _dbContext.StockTakings
+                .AsNoTracking()
+                .OrderByDescending(x => x.StockTakingDate)
+                .ThenByDescending(x => x.Id)
+                .Select(x => x.Id)
+                .FirstOrDefaultAsync();
+        }
+
+        private async Task<HashSet<int>> GetLatestItemIdsAsync(IEnumerable<StockTakingItem> items)
+        {
+            var itemList = items.ToList();
+            var latestIds = itemList.Where(x => !x.SupplierOrderId.HasValue).Select(x => x.Id).ToHashSet();
+            var supplierOrderIds = itemList
+                .Where(x => x.SupplierOrderId.HasValue)
+                .Select(x => x.SupplierOrderId!.Value)
+                .Distinct()
+                .ToList();
+
+            if (supplierOrderIds.Count == 0)
+            {
+                return latestIds;
+            }
+
+            var rows = await _dbContext.StockTakingItems
+                .AsNoTracking()
+                .Where(x => x.SupplierOrderId.HasValue && supplierOrderIds.Contains(x.SupplierOrderId.Value) && x.StockTaking != null)
+                .Select(x => new { SupplierOrderId = x.SupplierOrderId!.Value, x.Id, x.StockTaking!.StockTakingDate })
+                .ToListAsync();
+
+            latestIds.UnionWith(rows
+                .GroupBy(x => x.SupplierOrderId)
+                .Select(group => group.OrderByDescending(x => x.StockTakingDate).ThenByDescending(x => x.Id).First().Id));
+            return latestIds;
+        }
+
         private async Task<StockTakingAggregateDto?> BuildAggregateDtoAsync(int id)
         {
             var stockTaking = await _dbContext.StockTakings
@@ -272,10 +388,21 @@ namespace Econosys.Api.Controllers
                 })
                 .ToListAsync();
 
+            var latestItemIds = await GetLatestItemIdsAsync(items.Select(x => new StockTakingItem
+            {
+                Id = x.Id,
+                SupplierOrderId = x.SupplierOrderId == 0 ? null : x.SupplierOrderId
+            }));
+            foreach (var item in items)
+            {
+                item.IsEditable = latestItemIds.Contains(item.Id);
+            }
+
             return new StockTakingAggregateDto
             {
                 Id = stockTaking.Id,
                 StockTakingDate = stockTaking.StockTakingDate,
+                CanDelete = await GetLatestStockTakingIdAsync() == stockTaking.Id,
                 InventoryNames = string.Join(
                     ", ",
                     items.Select(x => x.InventoryName)
