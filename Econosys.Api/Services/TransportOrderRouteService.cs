@@ -130,7 +130,7 @@ namespace Econosys.Api.Services
 
                     Position? to;
                     Position? distributionTo = null;
-                    if (toStock is not null)
+                    if (toStock is not null && stop.ForcedOmlastStatus is null or 0)
                     {
                         (to, error) = await ResolveTransportInventoryAsync(toStock.InventoryId ?? supplier?.InventoryId, cache, apiKey, cancellationToken);
                     }
@@ -139,11 +139,12 @@ namespace Econosys.Api.Services
                         var customerOrderId = toCustomer?.CustomerOrderId ?? fromStock?.CustomerOrderId;
                         var addressId = customerOrderId.HasValue
                             ? await _dbContext.CustomerOrders.AsNoTracking().Where(x => x.Id == customerOrderId)
-                                .Select(x => x.CustomerDeliveryAddressId).FirstOrDefaultAsync(cancellationToken) : null;
+                                .Select(x => x.CustomerDeliveryAddressId).FirstOrDefaultAsync(cancellationToken) : supplier?.CustomerDeliveryAddressId;
                         var address = addressId.HasValue
                             ? await _dbContext.CustomerDeliveryAddresses.FirstOrDefaultAsync(x => x.Id == addressId, cancellationToken) : null;
                         if (address is null) return Calculation.Failure("Leveransadress saknas för en leverans på transportordern.");
-                        var forced = fromStock is not null ? 2 : stop.ForcedOmlastStatus ?? 0;
+                        var forced = stop.ForcedOmlastStatus ?? 0;
+                        if (fromStock is not null && forced == 0) forced = 2;
                         if (forced is < 0 or > 2) return Calculation.Failure("Ogiltig omlastningsinställning på transportordern.");
 
                         if (fromStock is null && forced == 2 && address.NextTransportDeliveryAddressId.HasValue)

@@ -31,7 +31,6 @@ const topColumns = [
     { key: 'confirmedDeliveryTime', label: 'Bekräftad', width: '7%', align: 'left', filterable: true },
     { key: 'editionOrdered', label: 'Best.', width: '4%', align: 'right' },
     { key: 'editionProduced', label: 'Prod.', width: '4%', align: 'right' },
-    { key: 'editionCustomerOrder', label: 'OE', width: '4%', align: 'right' },
     { key: 'rest', label: 'Rest', width: '4%', align: 'right' },
     { key: 'pallets', label: 'PALL', width: '4%', align: 'right' },
     { key: 'palletFormat', label: 'Pallformat', width: '10%', align: 'left' },
@@ -929,7 +928,21 @@ const TransportOrderOverview = () => {
                                             'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-amber-600',
                                         ].join(' ')}
                                     >
-                                        <td className="truncate px-2 py-1 text-gray-800">{row.customerOrderNr}</td>
+                                        <td className="truncate px-2 py-1 text-gray-800">
+                                            {row.supplierOrderId ? (
+                                                <Link
+                                                    to={`/order/supplierorders/${row.supplierOrderId}`}
+                                                    onClick={(event) => event.stopPropagation()}
+                                                    onKeyDown={(event) => event.stopPropagation()}
+                                                    className="truncate text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800"
+                                                    title={`Öppna leverantörsorder ${row.customerOrderNr}`}
+                                                >
+                                                    {row.customerOrderNr}
+                                                </Link>
+                                            ) : (
+                                                row.customerOrderNr
+                                            )}
+                                        </td>
                                         <td className="truncate px-2 py-1 text-gray-800">{row.supplierName}</td>
                                         <td className="truncate px-2 py-1 text-gray-800 font-semibold">{row.supplierCity}</td>
                                         <td className="truncate px-2 py-1 text-gray-800">{row.customerName}</td>
@@ -939,7 +952,6 @@ const TransportOrderOverview = () => {
                                         <td className="truncate px-2 py-1 text-gray-800">{row.confirmedDeliveryTime}</td>
                                         <td className="px-2 py-1 text-right text-gray-800">{formatNumber(row.editionOrdered, 0)}</td>
                                         <td className="px-2 py-1 text-right text-gray-800">{formatNumber(row.editionProduced, 0)}</td>
-                                        <td className="px-2 py-1 text-right text-gray-800">{formatNumber(row.editionCustomerOrder, 0)}</td>
                                         <td className="px-2 py-1 text-right text-gray-800">{formatNumber(row.rest, 0)}</td>
                                         <td className="px-2 py-1 text-right text-gray-800">{formatNumber(row.pallets, 1)}</td>
                                         <td className="truncate px-2 py-1 text-gray-800">{row.palletFormat}</td>

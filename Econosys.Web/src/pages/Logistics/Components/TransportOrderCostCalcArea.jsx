@@ -239,7 +239,8 @@ const TransportOrderCostCalcArea = forwardRef(function TransportOrderCostCalcAre
         .sort(compareVersionsOldestFirst)
         .map((v) => ({
             value: v.id,
-            label: `${statusNames.get(v.id) ?? ''} · ${formatDateTime(v.createdDateTime)}`,
+            // label: `${statusNames.get(v.id) ?? ''} · ${formatDateTime(v.createdDateTime)}`,
+            label: `${statusNames.get(v.id) ?? ''}`,
         })), [versions, statusNames]);
 
     // Renders a real checkbox per option row, independent of which option is the selected value.
@@ -454,8 +455,8 @@ const TransportOrderCostCalcArea = forwardRef(function TransportOrderCostCalcAre
     return (
         <div className="w-full overflow-y-auto text-xs">
             <div className="mb-2 flex flex-wrap items-center gap-3 pb-2">
-                <span className="text-xs font-bold text-gray-700">KALKYL</span>
-                <div className="flex w-53 items-center gap-2">
+                {/* <span className="text-xs font-bold text-gray-700">KALKYL</span> */}
+                <div className="flex w-30 items-center gap-2">
                     <Select
                         options={versionOptions}
                         value={versionOptions.find((option) => option.value === selectedId) ?? null}
@@ -467,10 +468,10 @@ const TransportOrderCostCalcArea = forwardRef(function TransportOrderCostCalcAre
                     />
                 </div>
                 <ActionButton label="" icon={Trash2} onClick={handleDeleteSelected} disabled={deleteSelection.size === 0} accent="rose" />
-                <div className="ml-0 w-50">
+                <div className="ml-0 w-80">
                     <LabeledReactSelect
-                        label="Tvinga prisl."
-                        labelWidth="w-18"
+                        label="Prisl."
+                        labelWidth="w-10"
                         items={priceListItems}
                         value={draft.costCalcForcePriceListId}
                         onChange={handleForcePriceListChange}

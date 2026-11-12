@@ -1,6 +1,10 @@
-@baseUrl = http://localhost:5000
+@baseUrl = https://localhost:5001
 @transportOrderId = 1
 @deliveryId = 1
+@omlastInventoryId = 1
+
+### Load read-only legacy Omlast/direkt modal context; Save in the modal only changes the client draft
+GET {{baseUrl}}/api/transportorder/{{transportOrderId}}/deliveries/{{deliveryId}}/omlast-info
 
 ### Preview unsaved delivery ordering without replacing saved legs
 POST {{baseUrl}}/api/transportorder/{{transportOrderId}}/route-preview
@@ -14,6 +18,21 @@ Content-Type: application/json
 
 ### Recalculate and persist the saved transport order's legs
 POST {{baseUrl}}/api/transportorder/{{transportOrderId}}/route/recalculate
+
+### Preview a forced transshipment without saving transport-order settings
+POST {{baseUrl}}/api/transportorder/{{transportOrderId}}/route-preview
+Content-Type: application/json
+
+{
+  "deliveries": [
+    {
+      "id": {{deliveryId}},
+      "sortOrder": 1,
+      "forcedOmlastStatus": 1,
+      "omlastInventoryId": {{omlastInventoryId}}
+    }
+  ]
+}
 
 ### Invalid transport order
 POST {{baseUrl}}/api/transportorder/999999999/route/recalculate

@@ -7,6 +7,7 @@ using Econosys.Api.Data;
 using Econosys.Api.DTOs;
 using Econosys.Api.Models;
 using Econosys.Api.Common;
+using Econosys.Api.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Authorization;
@@ -662,6 +663,71 @@ namespace Econosys.Api.Controllers
             };
 
             return result is null ? NotFound() : Ok(result);
+        }
+
+        [HttpGet("{type}/{id:int}/edit")]
+        [ProducesResponseType(typeof(DeliveryEditResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<DeliveryEditResponse>> GetEditor(
+            string type, int id, [FromServices] DeliveryEditingService service, CancellationToken cancellationToken)
+        {
+            var normalizedType = NormalizeType(type);
+            if (string.IsNullOrEmpty(normalizedType)) return BadRequest(new DeliveryEditError("Validation", "Leveranstypen är ogiltig."));
+            var response = await service.LoadAsync(normalizedType, id, cancellationToken);
+            return response is null ? NotFound() : Ok(response);
+        }
+
+        [HttpPost("{type}/{id:int}/edit/preview")]
+        [ProducesResponseType(typeof(DeliveryEditResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(DeliveryEditError), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<DeliveryEditResponse>> PreviewEditor(
+            string type, int id, [FromBody] UpdateDeliveryRequest request,
+            [FromServices] DeliveryEditingService service, CancellationToken cancellationToken)
+        {
+            var normalizedType = NormalizeType(type);
+            if (string.IsNullOrEmpty(normalizedType)) return BadRequest(new DeliveryEditError("Validation", "Leveranstypen är ogiltig."));
+            var result = await service.PreviewAsync(normalizedType, id, request, cancellationToken);
+            return EditorResult(result.Response, result.Error);
+        }
+
+        [HttpPut("{type}/{id:int}/edit")]
+        [ProducesResponseType(typeof(DeliveryEditResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(DeliveryEditError), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(DeliveryEditError), StatusCodes.Status409Conflict)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<DeliveryEditResponse>> SaveEditor(
+            string type, int id, [FromBody] UpdateDeliveryRequest request,
+            [FromServices] DeliveryEditingService service, CancellationToken cancellationToken)
+        {
+            var normalizedType = NormalizeType(type);
+            if (string.IsNullOrEmpty(normalizedType)) return BadRequest(new DeliveryEditError("Validation", "Leveranstypen är ogiltig."));
+            if (string.IsNullOrWhiteSpace(request.Version)) return BadRequest(new DeliveryEditError("Validation", "En aktuell versionsnyckel krävs."));
+            try
+            {
+                var result = await service.SaveAsync(normalizedType, id, request, cancellationToken);
+                return EditorResult(result.Response, result.Error);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return Conflict(new DeliveryEditError("StaleVersion", "Leveransen har ändrats. Läs in den igen innan du sparar."));
+            }
+            catch (Microsoft.Data.SqlClient.SqlException exception) when (exception.Number == 1205)
+            {
+                return Conflict(new DeliveryEditError("ConcurrentSave", "En annan användare sparar samtidigt. Försök igen."));
+            }
+            catch (DbUpdateException exception) when (exception.InnerException is Microsoft.Data.SqlClient.SqlException { Number: 1205 })
+            {
+                return Conflict(new DeliveryEditError("ConcurrentSave", "En annan användare sparar samtidigt. Försök igen."));
+            }
+        }
+
+        private ActionResult<DeliveryEditResponse> EditorResult(DeliveryEditResponse? response, DeliveryEditError? error)
+        {
+            if (error is not null)
+                return error.Code is "StaleVersion" or "StockTakingConfirmationRequired" ? Conflict(error) : BadRequest(error);
+            return response is null ? NotFound() : Ok(response);
         }
 
         [HttpPost("search")]

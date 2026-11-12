@@ -39,7 +39,11 @@ namespace Econosys.Api.DTOs
     }
 
     /// <summary>A transport-order delivery and its proposed sort order.</summary>
-    public sealed record TransportOrderRoutePreviewDelivery(int Id, int SortOrder);
+    public sealed record TransportOrderRoutePreviewDelivery(int Id, int SortOrder)
+    {
+        public int? ForcedOmlastStatus { get; init; }
+        public int? OmlastInventoryId { get; init; }
+    }
 
     public class SaveTransportOrderAggregateRequest
     {

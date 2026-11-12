@@ -36,12 +36,23 @@ namespace Econosys.Api.Controllers
         {
             if (!await _dbContext.TransportOrders.AnyAsync(x => x.Id == id, cancellationToken)) return NotFound();
             var requested = request?.Deliveries;
-            if (requested is null || requested.Any(x => x.Id <= 0) || requested.Select(x => x.Id).Distinct().Count() != requested.Count)
+            if (requested is null || requested.Any(x => x is null || x.Id <= 0 || x.ForcedOmlastStatus is < 0 or > 2)
+                || requested.Select(x => x.Id).Distinct().Count() != requested.Count)
                 return BadRequest("Leveranserna är ogiltiga.");
             var rows = await _dbContext.TransportOrderDeliveries.AsNoTracking().Where(x => x.TransportOrderId == id)
                 .ToDictionaryAsync(x => x.Id, cancellationToken);
             if (requested.Any(x => !rows.ContainsKey(x.Id))) return BadRequest("En leverans tillhör inte transportordern.");
-            var stops = requested.Select(x => ToRouteStop(rows[x.Id]) with { SortOrder = x.SortOrder }).ToList();
+            var inventoryIds = requested.Where(x => x.ForcedOmlastStatus == 1).Select(x => x.OmlastInventoryId).ToList();
+            if (inventoryIds.Any(x => !x.HasValue)
+                || await _dbContext.Inventories.CountAsync(x => x.IsOmlast && inventoryIds.Contains(x.Id), cancellationToken)
+                    != inventoryIds.Distinct().Count())
+                return BadRequest("Välj ett giltigt omlastningslager.");
+            var stops = requested.Select(x => ToRouteStop(rows[x.Id]) with
+            {
+                SortOrder = x.SortOrder,
+                ForcedOmlastStatus = x.ForcedOmlastStatus ?? rows[x.Id].ForcedOmlastStatus,
+                OmlastInventoryId = x.ForcedOmlastStatus.HasValue ? x.OmlastInventoryId : rows[x.Id].OmlastInventoryId,
+            }).ToList();
             var result = await _routeService.PreviewTransportOrderAsync(stops, cancellationToken);
             return Ok(new CallOffRouteResponseDto { DeliveryLegs = result.DeliveryLegs, RouteCalculation = MapRouteCalculation(result) });
         }
@@ -62,6 +73,76 @@ namespace Econosys.Api.Controllers
 
         private static CallOffRouteCalculationDto MapRouteCalculation(CallOffRouteResult result) =>
             new() { Status = result.Status, Message = result.Message };
+
+        [HttpGet("{id:int}/deliveries/{deliveryId:int}/omlast-info")]
+        [ProducesResponseType(typeof(TransportOrderOmlastInfoDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<TransportOrderOmlastInfoDto>> GetOmlastInfo(
+            int id, int deliveryId, [FromServices] DeliveryEditingService deliveryService, CancellationToken cancellationToken)
+        {
+            var row = await _dbContext.TransportOrderDeliveries.AsNoTracking()
+                .FirstOrDefaultAsync(item => item.Id == deliveryId && item.TransportOrderId == id, cancellationToken);
+            if (row is null) return NotFound();
+            var type = row.DeliveryFromStockId.HasValue ? "DeliveryFromStock"
+                : row.DeliveryToCustomerId.HasValue ? "DeliveryToCustomer" : "DeliveryToStock";
+            var underlyingId = row.DeliveryFromStockId ?? row.DeliveryToCustomerId ?? row.DeliveryToStockId;
+            var editor = underlyingId.HasValue ? await deliveryService.LoadAsync(type, underlyingId.Value, cancellationToken) : null;
+            if (editor is null) return NotFound();
+            var delivery = editor.Delivery;
+            var customerOrder = delivery.CustomerOrderId.HasValue
+                ? await _dbContext.CustomerOrders.AsNoTracking().FirstOrDefaultAsync(item => item.Id == delivery.CustomerOrderId, cancellationToken) : null;
+            var supplierId = delivery.SupplierOrderId ?? row.SupplierOrderId;
+            var supplier = supplierId.HasValue
+                ? await _dbContext.SupplierOrders.AsNoTracking().FirstOrDefaultAsync(item => item.Id == supplierId, cancellationToken) : null;
+            var addressId = customerOrder?.CustomerDeliveryAddressId ?? supplier?.CustomerDeliveryAddressId;
+            var address = addressId.HasValue
+                ? await _dbContext.CustomerDeliveryAddresses.AsNoTracking().FirstOrDefaultAsync(item => item.Id == addressId, cancellationToken) : null;
+            if (address?.NextTransportDeliveryAddressId is int finalId)
+                address = await _dbContext.CustomerDeliveryAddresses.AsNoTracking().FirstOrDefaultAsync(item => item.Id == finalId, cancellationToken);
+            var automaticAddress = address is not null
+                ? await _dbContext.CustomerDeliveryAddresses.AsNoTracking().Where(item => item.NextTransportDeliveryAddressId == address.Id)
+                    .OrderBy(item => item.Id).FirstOrDefaultAsync(cancellationToken) : null;
+            var calculationRowId = customerOrder?.SelectedCalculationRowId ?? supplier?.SelectedCalculationRowId;
+            var calculationId = calculationRowId.HasValue
+                ? await _dbContext.CalculationRows.Where(item => item.Id == calculationRowId).Select(item => item.CalculationId).FirstOrDefaultAsync(cancellationToken) : null;
+            if (!calculationId.HasValue && customerOrder?.QuotationId is int quotationId)
+                calculationId = await _dbContext.Quotations.Where(item => item.Id == quotationId).Select(item => item.CalculationId).FirstOrDefaultAsync(cancellationToken);
+            var productId = calculationId.HasValue
+                ? await _dbContext.Calculations.Where(item => item.Id == calculationId).Select(item => item.ProductId).FirstOrDefaultAsync(cancellationToken) : null;
+            var netWeight = productId.HasValue
+                ? await _dbContext.Products.Where(item => item.Id == productId).Select(item => item.NetWeightPer1000).FirstOrDefaultAsync(cancellationToken) : null;
+            var inventories = await _dbContext.Inventories.AsNoTracking().Where(item => item.IsOmlast)
+                .OrderBy(item => item.Name).ToListAsync(cancellationToken);
+            var customerName = delivery.CustomerName ?? string.Empty;
+            return Ok(new TransportOrderOmlastInfoDto
+            {
+                IsOmlast = automaticAddress is not null && row.ForcedOmlastStatus != 1,
+                DefaultInventoryId = automaticAddress?.InventoryId,
+                DeliveryAddress = FormatCustomerAddress(string.Empty, address),
+                DirectCustomerAddress = FormatCustomerAddress(customerName, address),
+                DefaultCustomerAddress = FormatCustomerAddress(customerName, automaticAddress ?? address),
+                OmlastAddress = automaticAddress?.Name ?? string.Empty,
+                CustomerName = customerName,
+                NrOfItems = delivery.NrOfItems,
+                NrOfPallets = delivery.NrOfPallets,
+                PalletLength = delivery.PalletLength,
+                PalletWidth = delivery.PalletWidth,
+                PalletHeight = delivery.PalletHeight,
+                EditionPerPallet = delivery.EditionPerPallet,
+                PalletIsStackable = delivery.PalletIsStackable,
+                DefaultTotalWeight = netWeight.HasValue
+                    ? Math.Round(netWeight.Value * (decimal)(delivery.NrOfItems ?? 0) / 1000 + (delivery.NrOfPallets ?? 0) * 20m, 0) : null,
+                Inventories = inventories.Select(item => new TransportOrderOmlastInventoryDto(item.Id, item.Name ?? string.Empty,
+                    JoinAddress(item.Name, item.Address, item.AddressExtra, $"{item.PostalNrText ?? item.PostalNr?.ToString()} {item.PostalAddress}".Trim()))).ToList(),
+            });
+        }
+
+        private static string FormatCustomerAddress(string customerName, CustomerDeliveryAddress? address) => address is null
+            ? string.Empty
+            : JoinAddress(customerName, address.Name, address.Address, address.AddressExtra,
+                $"{address.PostalNr ?? address.PostalNrValue?.ToString(CultureInfo.InvariantCulture)} {address.PostalAddress}".Trim());
+
+        private static string JoinAddress(params string?[] parts) => string.Join(Environment.NewLine, parts.Where(part => !string.IsNullOrWhiteSpace(part)));
 
         [HttpPost("search")]
         public async Task<ActionResult<List<HeaderSearchResultDto>>> Search([FromBody] HeaderSearchRequest? request)
@@ -266,6 +347,11 @@ namespace Econosys.Api.Controllers
                     DeliveryToStock = x.DeliveryToStock,
                     DeliveryToCustomer = x.DeliveryToCustomer,
                     DeliveryFromStock = x.DeliveryFromStock,
+                    DeliveryAddressId = x.DeliveryToCustomer != null && x.DeliveryToCustomer.CustomerOrder != null
+                        ? x.DeliveryToCustomer.CustomerOrder.CustomerDeliveryAddressId
+                        : x.DeliveryFromStock != null && x.DeliveryFromStock.CustomerOrder != null
+                            ? x.DeliveryFromStock.CustomerOrder.CustomerDeliveryAddressId
+                            : x.SupplierOrder != null ? x.SupplierOrder.CustomerDeliveryAddressId : null,
                     SupplierFactoryId = x.SupplierOrder != null ? x.SupplierOrder.SupplierFactoryId : null,
                 })
                 .ToListAsync();
@@ -293,6 +379,16 @@ namespace Econosys.Api.Controllers
                 .Where(x => !string.IsNullOrWhiteSpace(x.SupplierName) || !string.IsNullOrWhiteSpace(x.FactoryName))
                 .DistinctBy(x => $"{x.SupplierName}|{x.FactoryName}")
                 .ToList();
+
+            var addressIds = deliveryRows.Where(row => row.DeliveryAddressId.HasValue).Select(row => row.DeliveryAddressId!.Value).Distinct().ToList();
+            var initialAddresses = await _dbContext.CustomerDeliveryAddresses.AsNoTracking()
+                .Where(address => addressIds.Contains(address.Id)).ToListAsync();
+            var finalIds = initialAddresses.Select(address => address.NextTransportDeliveryAddressId ?? address.Id).Distinct().ToList();
+            var routeAddresses = await _dbContext.CustomerDeliveryAddresses.AsNoTracking()
+                .Where(address => finalIds.Contains(address.Id) || address.NextTransportDeliveryAddressId.HasValue
+                    && finalIds.Contains(address.NextTransportDeliveryAddressId.Value)).ToListAsync();
+            var finalAddressByOriginalId = initialAddresses.ToDictionary(address => address.Id,
+                address => routeAddresses.FirstOrDefault(final => final.Id == (address.NextTransportDeliveryAddressId ?? address.Id)));
 
             var cardList = new List<TransportOrderDeliveryCardDto>();
             var colorIndex = 0;
@@ -350,6 +446,19 @@ namespace Econosys.Api.Controllers
                     addressPostalAddress = row.OmlastInventory.PostalAddress ?? addressPostalAddress;
                 }
 
+                if (forcedStatus != 1 && row.DeliveryAddressId.HasValue
+                    && finalAddressByOriginalId.TryGetValue(row.DeliveryAddressId.Value, out var finalAddress)
+                    && finalAddress is not null && (row.DeliveryToStock is null || forcedStatus == 2))
+                {
+                    var displayAddress = forcedStatus == 0
+                        ? routeAddresses.FirstOrDefault(address => address.NextTransportDeliveryAddressId == finalAddress.Id) ?? finalAddress
+                        : finalAddress;
+                    addressName = displayAddress.Name ?? string.Empty;
+                    addressStreet = JoinAddress(displayAddress.Address, displayAddress.AddressExtra);
+                    addressPostalNr = displayAddress.PostalNr ?? displayAddress.PostalNrValue?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+                    addressPostalAddress = displayAddress.PostalAddress ?? string.Empty;
+                }
+
                 var customerNameAddress = string.Join(Environment.NewLine, new[]
                 {
                     customerName,
@@ -377,11 +486,14 @@ namespace Econosys.Api.Controllers
                     Note = row.Note,
                     CustomerYourOrderNr = row.CustomerYourOrderNr,
                     SupplierOrderConfirmedDeliveryDate = confirmedDeliveryDate,
-                    ForcedOmlastCaption = "Omlast / direkt",
+                    ForcedOmlastCaption = forcedStatus == 1 ? "Tvingad omlast" : forcedStatus == 2 ? "Tvingad direkt" : "Omlast / direkt",
                     ForcedOmlastStatus = forcedStatus,
                     IsSlattPallet = isSlattPallet,
                     NrOfPallets = numberOfPallets,
                     PalletIsStackable = palletIsStackable,
+                    PalletLength = row.DeliveryToStock?.PalletLength ?? row.DeliveryToCustomer?.PalletLength ?? row.DeliveryFromStock?.PalletLength,
+                    PalletWidth = row.DeliveryToStock?.PalletWidth ?? row.DeliveryToCustomer?.PalletWidth ?? row.DeliveryFromStock?.PalletWidth,
+                    PalletHeight = row.DeliveryToStock?.PalletHeight ?? row.DeliveryToCustomer?.PalletHeight ?? row.DeliveryFromStock?.PalletHeight,
                     PalletInfo = palletIsStackable
                         ? $"{numberOfPallets}/{Math.Round(numberOfPallets / 2d, 0, MidpointRounding.AwayFromZero)}"
                         : numberOfPallets.ToString(CultureInfo.InvariantCulture),
@@ -567,6 +679,18 @@ namespace Econosys.Api.Controllers
                 return BadRequest("Leveransstatus är ogiltig.");
             }
 
+            if (request.TransportOrderDeliveryList?.Any(item => item is null || item.ForcedOmlastStatus is < 0 or > 2
+                || item.OmlastPalletPlaces < 0 || item.OmlastPalletPlaces > 999999.9999m
+                || item.TotalWeight < 0 || item.TotalWeight > 999999.9999m
+                || item.OmlastNote?.Length > 500) == true)
+                return BadRequest("Omlastningsinställningarna är ogiltiga. Kontrollera status, pallplatser, vikt och notering.");
+            var forcedInventoryIds = request.TransportOrderDeliveryList?.Where(item => item.ForcedOmlastStatus == 1)
+                .Select(item => item.OmlastInventoryId).ToList() ?? [];
+            if (forcedInventoryIds.Any(item => !item.HasValue)
+                || await _dbContext.Inventories.CountAsync(item => item.IsOmlast && forcedInventoryIds.Contains(item.Id), cancellationToken)
+                    != forcedInventoryIds.Distinct().Count())
+                return BadRequest("Välj ett giltigt omlastningslager.");
+
             await using var transaction = await _dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
 
             var transportOrder = await _dbContext.TransportOrders
@@ -594,6 +718,8 @@ namespace Econosys.Api.Controllers
                 .OrderBy(x => x.Id)
                 .ToListAsync();
             var previousRouteInputs = existingDeliveryList.Select(ToRouteStop).OrderBy(x => x.Id).ToList();
+            var previousOmlastInputs = existingDeliveryList.Select(item =>
+                (item.Id, item.ForcedOmlastStatus, item.OmlastInventoryId, item.OmlastPalletPlaces, item.TotalWeight)).ToList();
 
             var currentVersion = CalculateVersion(transportOrder, existingDeliveryList, existingPalletList);
             if (!CryptographicOperations.FixedTimeEquals(
@@ -782,7 +908,9 @@ namespace Econosys.Api.Controllers
             if (routeInputsChanged || (hasDeliveries && !hasLegs))
                 routeCalculation = MapRouteCalculation(await _routeService.RecalculateTransportOrderAsync(id, cancellationToken));
 
-            if (prevDeliveryStatus != request.DeliveryStatus)
+            var omlastInputsChanged = !previousOmlastInputs.SequenceEqual(existingDeliveryList.Select(item =>
+                (item.Id, item.ForcedOmlastStatus, item.OmlastInventoryId, item.OmlastPalletPlaces, item.TotalWeight)));
+            if (prevDeliveryStatus != request.DeliveryStatus || omlastInputsChanged)
             {
                 // Legacy parity: CreateFromData recalculates/creates a cost-calc version on every status change.
                 await _costCalculationService.RecalculateAsync(id, request.DeliveryStatus ?? prevDeliveryStatus);

@@ -53,6 +53,9 @@ namespace Econosys.Api.DTOs
         public bool IsSlattPallet { get; set; }
         public int NrOfPallets { get; set; }
         public bool PalletIsStackable { get; set; }
+        public int? PalletLength { get; set; }
+        public int? PalletWidth { get; set; }
+        public int? PalletHeight { get; set; }
         public string PalletInfo { get; set; } = string.Empty;
         public string PalletsLeftToPlace { get; set; } = "0 kvar";
         public string Background { get; set; } = "#2F4E7388";
@@ -60,6 +63,28 @@ namespace Econosys.Api.DTOs
         public bool InfoPopupVisible { get; set; }
         public string LogisticsInfoInternal { get; set; } = string.Empty;
     }
+
+    public sealed record TransportOrderOmlastInfoDto
+    {
+        public bool IsOmlast { get; init; }
+        public int? DefaultInventoryId { get; init; }
+        public string DeliveryAddress { get; init; } = string.Empty;
+        public string DirectCustomerAddress { get; init; } = string.Empty;
+        public string DefaultCustomerAddress { get; init; } = string.Empty;
+        public string OmlastAddress { get; init; } = string.Empty;
+        public string CustomerName { get; init; } = string.Empty;
+        public double? NrOfItems { get; init; }
+        public int? NrOfPallets { get; init; }
+        public int? PalletLength { get; init; }
+        public int? PalletWidth { get; init; }
+        public int? PalletHeight { get; init; }
+        public int? EditionPerPallet { get; init; }
+        public bool PalletIsStackable { get; init; }
+        public decimal? DefaultTotalWeight { get; init; }
+        public IReadOnlyList<TransportOrderOmlastInventoryDto> Inventories { get; init; } = [];
+    }
+
+    public sealed record TransportOrderOmlastInventoryDto(int Id, string Name, string Address);
 
     public class TransportOrderDeliveryOverviewDto
     {

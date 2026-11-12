@@ -305,7 +305,7 @@ namespace Econosys.Api.Services
                         {
                             group.IsOmlast = false;
                             group.OmlastInventoryId = null;
-                            if (resolved.CustomerDeliveryAddressId.HasValue)
+                            if (delivery.ForcedOmlastStatus != 2 && resolved.CustomerDeliveryAddressId.HasValue)
                             {
                                 var omlastAddress = await _dbContext.CustomerDeliveryAddresses
                                     .AsNoTracking()

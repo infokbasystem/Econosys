@@ -93,6 +93,171 @@ public class TransportOrderRouteTests
     }
 
     [Fact]
+    public async Task PreviewUsesDraftTransshipmentWithoutPersistingTheOverride()
+    {
+        await using var db = CreateDb();
+        await Seed(db);
+        (await db.Inventories.FindAsync(30))!.IsOmlast = true;
+        await db.SaveChangesAsync();
+        var client = new FakeClient();
+        var response = Ok<CallOffRouteResponseDto>((await Controller(db, client).PreviewRoute(1,
+            new TransportOrderRoutePreviewRequest
+            {
+                Deliveries = new() { new(50, 1) { ForcedOmlastStatus = 1, OmlastInventoryId = 30 } },
+            }, default)).Result);
+        Assert.Equal(CallOffRouteStatus.Calculated, response.RouteCalculation.Status);
+        Assert.Equal((Factory, Stock), (client.Requests[0].Origin, client.Requests[0].Destination));
+        Assert.Equal((Stock, Customer), (client.Requests[1].Origin, client.Requests[1].Destination));
+        Assert.Null((await db.TransportOrderDeliveries.FindAsync(50))!.ForcedOmlastStatus);
+        Assert.Empty(await db.DeliveryLegs.ToListAsync());
+    }
+
+    [Fact]
+    public async Task DraftDirectModeSuppressesAutomaticTransshipment()
+    {
+        await using var db = CreateDb();
+        await Seed(db);
+        db.CustomerDeliveryAddresses.Add(Address(41, "Stock", 40));
+        await db.SaveChangesAsync();
+        var client = new FakeClient();
+        var response = Ok<CallOffRouteResponseDto>((await Controller(db, client).PreviewRoute(1,
+            new TransportOrderRoutePreviewRequest { Deliveries = new() { new(50, 1) { ForcedOmlastStatus = 2 } } }, default)).Result);
+        Assert.Equal(CallOffRouteStatus.Calculated, response.RouteCalculation.Status);
+        Assert.Equal((Factory, Customer), (Assert.Single(client.Requests).Origin, client.Requests[0].Destination));
+        Assert.Empty(response.DeliveryLegs.DistributionDeliveryLegGroupedList);
+    }
+
+    [Fact]
+    public async Task DraftTransshipmentRequiresAnEligibleWarehouse()
+    {
+        await using var db = CreateDb();
+        await Seed(db);
+        var response = await Controller(db, new FakeClient()).PreviewRoute(1,
+            new TransportOrderRoutePreviewRequest { Deliveries = new() { new(50, 1) { ForcedOmlastStatus = 1, OmlastInventoryId = 30 } } }, default);
+        Assert.IsType<BadRequestObjectResult>(response.Result);
+    }
+
+    [Fact]
+    public async Task OmlastContextProvidesLegacyAddressesWeightAndEligibleWarehouses()
+    {
+        await using var db = CreateDb();
+        await Seed(db);
+        db.CustomerDeliveryAddresses.Add(new CustomerDeliveryAddress { Id = 41, Name = "Transfer", Address = "Stock", NextTransportDeliveryAddressId = 40, InventoryId = 30 });
+        (await db.Inventories.FindAsync(30))!.IsOmlast = true;
+        db.Products.Add(new Product { Id = 70, NetWeightPer1000 = 525 });
+        db.Calculations.Add(new Calculation { Id = 71, ProductId = 70 });
+        db.CalculationRows.Add(new CalculationRow { Id = 72, CalculationId = 71 });
+        (await db.CustomerOrders.FindAsync(11))!.SelectedCalculationRowId = 72;
+        var delivery = (await db.DeliveryToCustomers.FindAsync(21))!;
+        delivery.NrOfItems = 220;
+        delivery.NrOfPallets = 1;
+        delivery.PalletIsStackable = true;
+        delivery.PalletLength = 1200;
+        delivery.PalletWidth = 800;
+        await db.SaveChangesAsync();
+        var controller = Controller(db, new FakeClient());
+        var info = Ok<TransportOrderOmlastInfoDto>((await controller.GetOmlastInfo(1, 50, new DeliveryEditingService(db), default)).Result);
+        Assert.True(info.IsOmlast);
+        Assert.Equal(30, info.DefaultInventoryId);
+        Assert.Contains("Transfer", info.DefaultCustomerAddress);
+        Assert.Contains("Customer", info.DirectCustomerAddress);
+        Assert.Equal(136m, info.DefaultTotalWeight);
+        Assert.Equal(220, info.NrOfItems);
+        Assert.Equal(1200, info.PalletLength);
+        Assert.Equal(30, Assert.Single(info.Inventories).Id);
+        Assert.IsType<NotFoundResult>((await controller.GetOmlastInfo(2, 50, new DeliveryEditingService(db), default)).Result);
+    }
+
+    [Theory]
+    [InlineData(0, "Transfer", "Omlast / direkt")]
+    [InlineData(1, "Stock", "Tvingad omlast")]
+    [InlineData(2, "Customer", "Tvingad direkt")]
+    public async Task SavedOmlastModeUpdatesCardRouteAndFreight(int mode, string addressText, string caption)
+    {
+        await using var db = CreateDb();
+        await Seed(db);
+        (await db.Inventories.FindAsync(30))!.IsOmlast = true;
+        db.CustomerDeliveryAddresses.Add(new CustomerDeliveryAddress { Id = 41, Name = "Transfer", Address = "Stock", NextTransportDeliveryAddressId = 40 });
+        await db.SaveChangesAsync();
+        var costs = new TestCosts();
+        var controller = new TransportOrderController(db, new TestUser(), costs, Service(db, new FakeClient()))
+        { ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() } };
+        var aggregate = Ok<TransportOrderAggregateDto>((await controller.GetAggregateById(1)).Result);
+        var row = Assert.Single(aggregate.DeliveryOverview.TransportOrderDeliveryList).TransportOrderDelivery;
+        row.ForcedOmlastStatus = mode;
+        row.OmlastInventoryId = mode == 1 ? 30 : null;
+        row.OmlastPalletPlaces = 1.5m;
+        row.TotalWeight = 136m;
+        row.OmlastNote = "Transfer note";
+        row.OmlastInDate = new DateTime(2026, 11, 12);
+        row.OmlastDeliveryDate = new DateTime(2026, 11, 13);
+        var saved = Ok<TransportOrderAggregateDto>((await controller.SaveAggregateById(1, new SaveTransportOrderAggregateRequest
+        {
+            Version = aggregate.Version, DeliveryStatus = 0, TransportOrderDeliveryList = new() { row },
+        })).Result);
+        var card = Assert.Single(saved.DeliveryOverview.TransportOrderDeliveryList);
+        Assert.Contains(addressText, card.CustomerNameAddress);
+        Assert.Equal(caption, card.ForcedOmlastCaption);
+        Assert.Equal(mode, card.TransportOrderDelivery.ForcedOmlastStatus);
+        Assert.Equal(1.5m, card.TransportOrderDelivery.OmlastPalletPlaces);
+        Assert.Equal(136m, card.TransportOrderDelivery.TotalWeight);
+        Assert.Equal("Transfer note", card.TransportOrderDelivery.OmlastNote);
+        Assert.Equal(1, costs.Calls);
+        Assert.NotEqual(aggregate.Version, saved.Version);
+    }
+
+    private sealed class TestCosts : ITransportOrderCostCalculationService
+    {
+        public int Calls { get; private set; }
+        public Task<TransportOrderCostCalculationResult> RecalculateAsync(int transportOrderId, int deliveryStatus)
+        {
+            Calls++;
+            return Task.FromResult(TransportOrderCostCalculationResult.Ok(new TransportOrderCostCalc()));
+        }
+    }
+
+    [Theory]
+    [InlineData(3, 1, 136)]
+    [InlineData(0, -1, 136)]
+    [InlineData(0, 1000000, 136)]
+    [InlineData(0, 1, -1)]
+    [InlineData(0, 1, 1000000)]
+    public async Task InvalidOmlastPayloadIsRejectedBeforeUpdatingTheTransportOrder(int mode, int places, int weight)
+    {
+        await using var db = CreateDb();
+        await Seed(db);
+        var result = await Controller(db, new FakeClient()).SaveAggregateById(1, new SaveTransportOrderAggregateRequest
+        {
+            Version = "validation-test",
+            TransportOrderDeliveryList = new()
+            {
+                new() { Id = 50, ForcedOmlastStatus = mode, OmlastPalletPlaces = places, TotalWeight = weight },
+            },
+        });
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        var row = (await db.TransportOrderDeliveries.FindAsync(50))!;
+        Assert.Null(row.ForcedOmlastStatus);
+        Assert.Null(row.OmlastPalletPlaces);
+        Assert.Null(row.TotalWeight);
+    }
+
+    [Fact]
+    public async Task ToStockDeliveryCanBeExplicitlyRoutedDirectlyToCustomer()
+    {
+        await using var db = CreateDb();
+        await Seed(db);
+        (await db.SupplierOrders.FindAsync(10))!.CustomerDeliveryAddressId = 40;
+        db.DeliveryToStocks.Add(new DeliveryToStock { Id = 22, SupplierOrderId = 10, InventoryId = 30 });
+        await db.SaveChangesAsync();
+        var client = new FakeClient();
+        var result = await Service(db, client).PreviewTransportOrderAsync(
+            new[] { new TransportOrderRouteStop(1, 1, null, null, 22, 10, 2, null) }, default);
+        Assert.Equal(CallOffRouteStatus.Calculated, result.Status);
+        Assert.Equal((Factory, Customer), (Assert.Single(client.Requests).Origin, client.Requests[0].Destination));
+        Assert.Equal(30, (await db.DeliveryToStocks.FindAsync(22))!.InventoryId);
+    }
+
+    [Fact]
     public async Task ViaAddressCreatesDistributionLeg()
     {
         await using var db = CreateDb();

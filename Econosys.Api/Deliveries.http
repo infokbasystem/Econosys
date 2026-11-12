@@ -1,0 +1,56 @@
+@baseUrl = https://localhost:5001/api
+@token =
+@deliveryType = DeliveryToCustomer
+@deliveryId = 0
+@version = replace-with-the-version-returned-by-the-editor
+
+### Load an existing delivery editor (type: DeliveryToCustomer, DeliveryToStock or DeliveryFromStock)
+GET {{baseUrl}}/deliveries/{{deliveryType}}/{{deliveryId}}/edit
+Authorization: Bearer {{token}}
+
+### Preview validation and pallet factor without persisting any changes
+POST {{baseUrl}}/deliveries/{{deliveryType}}/{{deliveryId}}/edit/preview
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "version": "{{version}}",
+  "deliveryDate": "2026-11-12",
+  "nrOfItems": 200,
+  "nrOfPallets": 2,
+  "palletLength": 1200,
+  "palletWidth": 800,
+  "palletHeight": 1000,
+  "palletIsStackable": false,
+  "palletCalcFactor": 1,
+  "isDelivered": true
+}
+
+### Save delivery details immediately, independently of the transport order
+PUT {{baseUrl}}/deliveries/{{deliveryType}}/{{deliveryId}}/edit
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "version": "{{version}}",
+  "deliveryDate": "2026-11-12",
+  "nrOfItems": 200,
+  "nrOfPallets": 2,
+  "palletLength": 1200,
+  "palletWidth": 800,
+  "palletHeight": 1000,
+  "palletIsStackable": false,
+  "palletCalcFactor": 1,
+  "isDelivered": true,
+  "spcsRefNr": "Reference",
+  "supplierInvoiceNr": 1234,
+  "confirmedStockTakingDate": null
+}
+
+### Invalid delivery type returns 400
+GET {{baseUrl}}/deliveries/invalid/0/edit
+Authorization: Bearer {{token}}
+
+### Missing delivery returns 404
+GET {{baseUrl}}/deliveries/DeliveryToStock/0/edit
+Authorization: Bearer {{token}}

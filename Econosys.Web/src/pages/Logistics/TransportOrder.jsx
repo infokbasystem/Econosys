@@ -17,6 +17,10 @@ import apiClient from '../../config/apiClient';
 import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import { toSwedishDateInputValue } from '../../helpers/dateUtils';
+import { getDeliveryPlacementStatus, getDeliveryReference, mergeEditedDeliveryOverview } from '../../helpers/deliveryEditing';
+import DeliveryModal from '../../modals/DeliveryModal';
+import TransportOrderOmlastModal from '../../modals/TransportOrderOmlastModal';
+import { applyOmlastDraft } from '../../helpers/transportOrderOmlast';
 import TruckLoadingArea, {
     PALLET_LENGTH_CM,
     PALLET_WIDTH_CM,
@@ -67,6 +71,8 @@ const getRouteStatus = (calculation, isMissing) => {
 
 const routeKeyForDeliveries = (deliveries) => JSON.stringify((deliveries ?? []).map((item) => ({
     id: item.id, sortOrder: item.sortOrder,
+    forcedOmlastStatus: Number(item.transportOrderDelivery?.forcedOmlastStatus ?? 0),
+    omlastInventoryId: item.transportOrderDelivery?.omlastInventoryId ?? null,
 })));
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
@@ -165,6 +171,11 @@ const mapDeliveryOverviewResponse = (dto) => ({
             forcedOmlastStatus: Number(item?.forcedOmlastStatus ?? 0),
             isSlattPallet: Boolean(item?.isSlattPallet),
             palletInfo: String(item?.palletInfo ?? ''),
+            nrOfPallets: Number(item?.nrOfPallets ?? 0),
+            palletIsStackable: Boolean(item?.palletIsStackable),
+            palletLength: item?.palletLength ?? null,
+            palletWidth: item?.palletWidth ?? null,
+            palletHeight: item?.palletHeight ?? null,
             palletsLeftToPlace: String(item?.palletsLeftToPlace ?? '0 kvar'),
             background: String(item?.background ?? '#2F4E7388'),
             borderBrush: String(item?.borderBrush ?? '#2F4E73'),
@@ -361,6 +372,10 @@ const TransportOrder = () => {
     const [truckPlanPallets, setTruckPlanPallets] = useState([]);
     const [draggingSourceDeliveryId, setDraggingSourceDeliveryId] = useState(null);
     const [editingDeliveryNoteId, setEditingDeliveryNoteId] = useState(null);
+    const [selectedDelivery, setSelectedDelivery] = useState(null);
+    const [selectedOmlastDelivery, setSelectedOmlastDelivery] = useState(null);
+    const [isRefreshingDelivery, setIsRefreshingDelivery] = useState(false);
+    const deliveryRefreshRef = useRef(0);
     const [originalTransportOrderState, setOriginalTransportOrderState] = useState(null);
     const skipUnsavedCheckRef = useRef(false);
     const mapContainerRef = useRef(null);
@@ -374,39 +389,15 @@ const TransportOrder = () => {
     // two rapid calls can both read it as false before the first render commits.
     const isSavingRef = useRef(false);
     const mapRuntimeRef = useRef({ map: null, renderers: [] });
-    const infoPanelAutoCloseRef = useRef(null);
+    const issueMessages = messages.filter((message) => message.type === 'error' || message.type === 'warning');
+    const panelMessages = messages.filter((message) => message.type !== 'error' && message.type !== 'warning');
+    const dismissIssueMessages = () => {
+        setMessages((previous) => previous.filter((message) => message.type !== 'error' && message.type !== 'warning'));
+    };
 
-    // Flash the info panel open briefly to show a save result; keep it open if there are errors/warnings.
-    const flashInfoPanel = useCallback((hasIssue) => {
-        if (infoPanelAutoCloseRef.current) {
-            clearTimeout(infoPanelAutoCloseRef.current);
-            infoPanelAutoCloseRef.current = null;
-        }
-        setIsInfoPanelExpanded((prev) => {
-            if (prev) {
-                return prev;
-            }
-            if (!hasIssue) {
-                infoPanelAutoCloseRef.current = setTimeout(() => {
-                    setIsInfoPanelExpanded(false);
-                    infoPanelAutoCloseRef.current = null;
-                }, 2000);
-            }
-            return true;
-        });
-    }, []);
-
-    useEffect(() => () => {
-        if (infoPanelAutoCloseRef.current) {
-            clearTimeout(infoPanelAutoCloseRef.current);
-        }
-    }, []);
-
-    // Surfaces messages from the cost calc child component in this page's own messages area.
     const handleCostCalcMessage = useCallback((type, text) => {
         setMessages((prev) => [...prev, { type, text }]);
-        flashInfoPanel(type === 'error' || type === 'warning');
-    }, [flashInfoPanel]);
+    }, []);
 
     const createSnapshot = useCallback(() => ({
         transportOrderForm,
@@ -780,6 +771,49 @@ const TransportOrder = () => {
         setTruckPlanPallets((prev) => prev.filter((pallet) => pallet.deliveryId !== normalizedDeliveryId));
     };
 
+    useEffect(() => {
+        setSelectedDelivery(null);
+        setSelectedOmlastDelivery(null);
+        setIsRefreshingDelivery(false);
+        return () => { deliveryRefreshRef.current += 1; };
+    }, [id]);
+
+    const handleDeliverySaved = async (saved) => {
+        const requestId = ++deliveryRefreshRef.current;
+        setIsRefreshingDelivery(true);
+        try {
+            const response = await apiClient.get(`/transportorder/${id}/aggregate`);
+            if (requestId !== deliveryRefreshRef.current) return;
+            const refreshed = mapDeliveryOverviewResponse(response.data.deliveryOverview);
+            const freshById = new Map(refreshed.transportOrderDeliveryList.map((row) => [row.id, row]));
+            const affected = new Set([saved.delivery.id, ...(saved.relatedDeliveryIds ?? [])]);
+            const affectedLinkIds = new Set(refreshed.transportOrderDeliveryList.filter((row) => {
+                const reference = getDeliveryReference(row);
+                return reference?.deliveryType === saved.delivery.type && affected.has(reference.deliveryId);
+            }).map((row) => row.id));
+            const updatePalletCaptions = (pallets) => pallets.map((pallet) => affectedLinkIds.has(pallet.deliveryId)
+                ? { ...pallet, palletInfo: freshById.get(pallet.deliveryId).palletInfo }
+                : pallet);
+            setDeliveryOverviewData((previous) => mergeEditedDeliveryOverview(previous, refreshed, saved));
+            setTruckPlanPallets(updatePalletCaptions);
+            setOriginalTransportOrderState((previous) => previous ? {
+                ...previous,
+                deliveryOverviewData: mergeEditedDeliveryOverview(previous.deliveryOverviewData, refreshed, saved),
+                truckPlanPallets: updatePalletCaptions(previous.truckPlanPallets),
+            } : previous);
+            if (String(response.data.version) !== aggregateVersion) {
+                setIsStaleConflict(true);
+                setMessages((previous) => [...previous, { type: 'warning', text: 'Leveransen sparades, men transportordern har ändrats av en annan användare. Ditt utkast har behållits.' }]);
+            }
+        } catch (error) {
+            if (requestId !== deliveryRefreshRef.current) return;
+            console.error('Failed to refresh saved delivery:', error);
+            setMessages((previous) => [...previous, { type: 'warning', text: 'Leveransen sparades, men transportorderns leveransuppgifter kunde inte uppdateras. Läs in transportordern igen för att se dem.' }]);
+        } finally {
+            if (requestId === deliveryRefreshRef.current) setIsRefreshingDelivery(false);
+        }
+    };
+
     const handleBackClick = () => {
         if (window.history.length > 1) {
             navigate(-1);
@@ -884,9 +918,11 @@ const TransportOrder = () => {
             if (options.length === 0) {
                 setMessages((previous) => [
                     ...previous.filter((message) => message.type !== 'error'),
-                    { type: 'error', text: receiverType === 'SUPPLIER'
-                        ? 'Det finns inga leverantörer på transportordern.'
-                        : 'Det finns inga lagerleveranser på transportordern.' },
+                    {
+                        type: 'error', text: receiverType === 'SUPPLIER'
+                            ? 'Det finns inga leverantörer på transportordern.'
+                            : 'Det finns inga lagerleveranser på transportordern.'
+                    },
                 ]);
                 return;
             }
@@ -918,7 +954,7 @@ const TransportOrder = () => {
 
     // deliveryStatusOverride lets the delivery-status radio trigger an immediate save without waiting for the async form-field update to land in state.
     const saveTransportOrder = async (deliveryStatusOverride) => {
-        if (isSavingRef.current || isStaleConflict || !aggregateVersion) {
+        if (isSavingRef.current || isRefreshingDelivery || isStaleConflict || !aggregateVersion) {
             return;
         }
         isSavingRef.current = true;
@@ -976,16 +1012,8 @@ const TransportOrder = () => {
 
             if (deliveryStatusChanged) {
                 await costCalcAreaRef.current?.reload();
-                setMessages((prev) => [...prev, { type: 'info', text: 'Transportordern sparades.' }]);
-                flashInfoPanel(false);
             } else {
-                const costCalcSaved = await costCalcAreaRef.current?.save();
-                if (costCalcSaved === false) {
-                    flashInfoPanel(true);
-                } else {
-                    setMessages((prev) => [...prev, { type: 'info', text: 'Transportordern sparades.' }]);
-                    flashInfoPanel(false);
-                }
+                await costCalcAreaRef.current?.save();
             }
         } catch (error) {
             console.error('Failed to save transport order:', error);
@@ -999,7 +1027,6 @@ const TransportOrder = () => {
                 }
                 setMessages((prev) => [...prev, { type: 'error', text: apiMessage || 'Kunde inte spara transportordern.' }]);
             }
-            flashInfoPanel(true);
         } finally {
             setIsSaving(false);
             isSavingRef.current = false;
@@ -1030,7 +1057,7 @@ const TransportOrder = () => {
 
     if (loading) {
         return (
-            <div className="relative flex flex-col h-full md:px-[clamp(4px,3vw,6vw)] animate-pulse">
+            <div className="relative flex flex-col h-full md:px-[clamp(4px,1vw,2vw)] animate-pulse">
                 <div className="mt-1 flex min-h-0 flex-1 flex-col">
                     <div className={`grid min-h-0 flex-1 gap-6 ${isInfoPanelExpanded ? 'lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-8' : 'lg:grid-cols-[56px_minmax(0,1fr)] lg:gap-6'} lg:items-start`}>
                         <div className={`mt-6 mb-8 pr-3 border-b border-gray-300 lg:mb-6 lg:self-stretch lg:border-b-0 ${isInfoPanelExpanded ? 'lg:border-r' : 'lg:border-r-0'}`}>
@@ -1064,7 +1091,37 @@ const TransportOrder = () => {
     }
 
     return (
-        <div className="relative flex flex-col h-full md:px-[clamp(6px,4vw,8vw)]">
+        <div className="relative flex flex-col h-full md:px-[clamp(2px,1vw,2vw)]">
+            <ConfirmationModal
+                isOpen={issueMessages.length > 0}
+                onClose={dismissIssueMessages}
+                onConfirm={dismissIssueMessages}
+                title={issueMessages.some((message) => message.type === 'error') ? 'Fel' : 'Varning'}
+                message={(
+                    <ul role="alert" className="space-y-2 whitespace-pre-wrap">
+                        {issueMessages.map((message, index) => (
+                            <li key={`${message.type}-${index}`}>{String(message.text ?? '')}</li>
+                        ))}
+                    </ul>
+                )}
+                confirmText="OK"
+                cancelText=""
+            />
+            <DeliveryModal
+                isOpen={Boolean(selectedDelivery)}
+                deliveryType={selectedDelivery?.deliveryType}
+                deliveryId={selectedDelivery?.deliveryId}
+                onClose={() => setSelectedDelivery(null)}
+                onSaved={handleDeliverySaved}
+            />
+            <TransportOrderOmlastModal
+                isOpen={Boolean(selectedOmlastDelivery)}
+                transportOrderId={id}
+                delivery={selectedOmlastDelivery}
+                onClose={() => setSelectedOmlastDelivery(null)}
+                onSave={(form, address) => setDeliveryOverviewData((previous) =>
+                    applyOmlastDraft(previous, selectedOmlastDelivery.id, form, address))}
+            />
             <ConfirmationModal
                 isOpen={showUnsavedWarning}
                 onClose={handleUnsavedWarningAbort}
@@ -1156,17 +1213,14 @@ const TransportOrder = () => {
 
                             <div className="space-y-4 pr-0 py-4 ml-2">
                                 <h2 className="text-4 text-center text-gray-500 text-sm">Meddelanden</h2>
-                                {messages.length === 0 ? (
+                                {panelMessages.length === 0 ? (
                                     <p className="text-xs text-center font-light mt-4">Inga meddelanden</p>
                                 ) : (
                                     <ul className="mt-2 space-y-2">
-                                        {messages.map((message, index) => (
+                                        {panelMessages.map((message, index) => (
                                             <li
                                                 key={`${message.type ?? 'info'}-${index}`}
-                                                className={`text-center text-xs p-2 rounded border border-gray-200 ${message.type === 'error' ? 'bg-red-100 text-red-700' :
-                                                    message.type === 'warning' ? 'bg-yellow-100 text-yellow-800' :
-                                                        'bg-green-100 text-green-700'
-                                                    }`}
+                                                className="text-center text-xs p-2 rounded border border-gray-200 bg-green-100 text-green-700"
                                             >
                                                 {String(message.text ?? '')}
                                             </li>
@@ -1208,7 +1262,7 @@ const TransportOrder = () => {
                                     label="Spara"
                                     icon={Save}
                                     onClick={() => saveTransportOrder()}
-                                    disabled={isSaving || isStaleConflict || !aggregateVersion}
+                                    disabled={isSaving || isRefreshingDelivery || isStaleConflict || !aggregateVersion}
                                     accent="lime"
                                 />
                                 <div className="ml-20 flex items-center gap-2">
@@ -1267,9 +1321,9 @@ const TransportOrder = () => {
                         ) : null}
 
                         <div className="mt-5">
-                            <div className="grid grid-cols-1 items-start gap-15 xl:grid-cols-[auto_360px_auto_1fr]">
+                            <div className="grid grid-cols-1 items-start gap-15 xl:grid-cols-[auto_380px_auto_1fr]">
                                 {/* xl:min-h-[880px]  */}
-                                <section aria-label="Övre vänster" className="w-90">
+                                <section aria-label="Övre vänster" className="w-80">
                                     <div className="">
                                         <LabeledReactSelect
                                             label="Speditör"
@@ -1490,10 +1544,24 @@ const TransportOrder = () => {
                                                             >
                                                                 Ta bort
                                                             </button>
-                                                            <button type="button" className="text-xs text-gray-800 hover:underline">Visa</button>
-                                                            <button type="button" className="text-xs text-gray-800 hover:underline">{delivery.forcedOmlastCaption}</button>
+                                                            <button
+                                                                type="button"
+                                                                className="text-xs text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800 disabled:text-gray-400 disabled:no-underline"
+                                                                disabled={!getDeliveryReference(delivery) || isSaving || isRefreshingDelivery}
+                                                                onClick={() => setSelectedDelivery(getDeliveryReference(delivery))}
+                                                            >
+                                                                Visa
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="text-xs text-sky-700 decoration-sky-300 underline-offset-2 hover:underline hover:text-sky-800 disabled:text-gray-400 disabled:no-underline"
+                                                                disabled={!getDeliveryReference(delivery) || isSaving || isRefreshingDelivery || isStaleConflict}
+                                                                onClick={() => setSelectedOmlastDelivery(delivery)}
+                                                            >
+                                                                {delivery.forcedOmlastCaption}
+                                                            </button>
                                                             <div className="mt-2 flex items-center gap-2">
-                                                                <span className="text-xs text-gray-700">{delivery.palletsLeftToPlace}</span>
+                                                                <span className="text-xs text-gray-700">{getDeliveryPlacementStatus(delivery, truckPlanPallets).remainingText}</span>
                                                                 <div
                                                                     className={`min-w-[40px] border px-2 pt-[6px] pb-[5px] rounded-xs text-center text-xs font-semibold text-gray-800 cursor-grab active:cursor-grabbing ${draggingSourceDeliveryId === Number(delivery?.id ?? 0) ? 'opacity-0' : ''}`}
                                                                     onPointerDown={(event) => truckLoadingAreaRef.current?.startSourceDrag(event, delivery)}
@@ -1507,6 +1575,11 @@ const TransportOrder = () => {
                                                                     {delivery.palletInfo}
                                                                 </div>
                                                             </div>
+                                                            {getDeliveryPlacementStatus(delivery, truckPlanPallets).warning && (
+                                                                <p role="status" className="mt-1 max-w-36 text-right text-xs text-amber-700">
+                                                                    {getDeliveryPlacementStatus(delivery, truckPlanPallets).warning}
+                                                                </p>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1518,6 +1591,7 @@ const TransportOrder = () => {
                                     <TruckLoadingArea
                                         ref={truckLoadingAreaRef}
                                         pallets={truckPlanPallets}
+                                        deliveries={deliveryOverviewData.transportOrderDeliveryList}
                                         onPalletsChange={setTruckPlanPallets}
                                         onDraggingDeliveryIdChange={setDraggingSourceDeliveryId}
                                     />
@@ -1525,16 +1599,16 @@ const TransportOrder = () => {
 
                                 <section aria-label="Övre fjärde" className="pl-10">
 
-                                    <div className="mb-3 flex items-center justify-between gap-3 text-xs">
-                                        <span role={routeStatus?.status === 'Loading' ? 'status' : 'alert'} className="text-amber-700">{routeStatus?.message}</span>
-                                        <button type="button" className="underline" onClick={retryRouteCalculation} disabled={isRecalculatingRoute || isSaving || routeStatus?.status === 'Loading'}>
-                                            Beräkna transportben
-                                        </button>
-                                    </div>
                                     {rightColumnView === 'ViewCostCalc' ? (
                                         <TransportOrderCostCalcArea ref={costCalcAreaRef} transportOrderId={id} onMessage={handleCostCalcMessage} />
                                     ) : (
                                         <>
+                                            <div className="mb-3 flex items-center justify-between gap-3 text-xs">
+                                                <span role={routeStatus?.status === 'Loading' ? 'status' : 'alert'} className="text-amber-700">{routeStatus?.message}</span>
+                                                <button type="button" className="underline" onClick={retryRouteCalculation} disabled={isRecalculatingRoute || isSaving || routeStatus?.status === 'Loading'}>
+                                                    Beräkna transportben
+                                                </button>
+                                            </div>
                                             <div className="mb-3 h-[550px] w-full overflow-hidden border border-gray-300 bg-slate-50 relative">
                                                 <div ref={mapContainerRef} className="h-full w-full" />
                                                 {mapError ? (

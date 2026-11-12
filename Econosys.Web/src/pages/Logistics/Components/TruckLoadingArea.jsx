@@ -1,4 +1,7 @@
 import React, { forwardRef, useImperativeHandle, useRef, useState } from 'react';
+import ConfirmationModal from '../../../components/ConfirmationModal';
+import { getDeliveryPalletFootprint, getDeliveryPalletLabel, getDeliveryPalletPlaces } from '../../../helpers/deliveryEditing';
+import { getAutoPlacement } from '../../../helpers/truckLoadingLayout';
 
 export const TRUCK_AREA_WIDTH_CM = 240;
 export const TRUCK_AREA_LENGTH_CM = 1350;
@@ -14,15 +17,38 @@ const TRUCK_GRID_ROWS = 34;
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
+const createTruckPallet = (source, xCm, yCm) => ({
+    id: 0,
+    clientId: `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    deliveryId: source.deliveryId,
+    palletInfo: source.palletInfo,
+    background: source.background,
+    borderBrush: source.borderBrush,
+    xCm,
+    yCm,
+    widthCm: source.widthCm,
+    heightCm: source.heightCm,
+    rotation: 0,
+});
+
 // Placement is driven by raw pointer events instead of native HTML5 drag-and-drop, since
 // browser zoom makes dataTransfer/clientX drop coordinates unreliable across browsers.
 const TruckLoadingArea = forwardRef(function TruckLoadingArea(
-    { pallets, onPalletsChange, onDraggingDeliveryIdChange },
+    { pallets, deliveries, onPalletsChange, onDraggingDeliveryIdChange },
     ref,
 ) {
     const [dragGhost, setDragGhost] = useState(null);
+    const [pendingAutoPlace, setPendingAutoPlace] = useState(null);
+    const [autoPlaceMessage, setAutoPlaceMessage] = useState('');
     const truckAreaRef = useRef(null);
     const dragSessionRef = useRef(null);
+    const deliveryById = new Map(deliveries.map((delivery) => [delivery.id, delivery]));
+    const palletCounts = new Map();
+    const palletLabels = pallets.map((pallet) => {
+        const index = palletCounts.get(pallet.deliveryId) ?? 0;
+        palletCounts.set(pallet.deliveryId, index + 1);
+        return getDeliveryPalletLabel(deliveryById.get(pallet.deliveryId), index);
+    });
 
     const getTruckAreaPixelSize = () => {
         const areaElement = truckAreaRef.current;
@@ -100,25 +126,38 @@ const TruckLoadingArea = forwardRef(function TruckLoadingArea(
                 const xCm = clamp(point.xCm - session.widthCm / 2, 0, TRUCK_AREA_WIDTH_CM - session.widthCm);
                 const yCm = clamp(point.yCm - session.heightCm / 2, 0, TRUCK_AREA_LENGTH_CM - session.heightCm);
 
-                const nextPallet = {
-                    id: 0,
-                    clientId: `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                    deliveryId: session.deliveryId,
-                    palletInfo: session.palletInfo,
-                    background: session.background,
-                    borderBrush: session.borderBrush,
-                    xCm,
-                    yCm,
-                    widthCm: session.widthCm,
-                    heightCm: session.heightCm,
-                    rotation: 0,
-                };
+                const nextPallet = createTruckPallet(session, xCm, yCm);
+                const isFirstForDelivery = !pallets.some((pallet) => pallet.deliveryId === session.deliveryId);
 
-                onPalletsChange((prev) => [...prev, nextPallet]);
+                if (isFirstForDelivery && session.palletPlaces > 0) {
+                    setPendingAutoPlace({ session, pallet: nextPallet });
+                } else {
+                    onPalletsChange((prev) => [...prev, nextPallet]);
+                }
             }
         }
 
         endDragSession();
+    };
+
+    const handleAutoPlaceConfirm = () => {
+        const { session } = pendingAutoPlace;
+        setPendingAutoPlace(null);
+        const { positions, ...footprint } = getAutoPlacement(
+            pallets,
+            { widthCm: session.widthCm, heightCm: session.heightCm },
+            session.palletPlaces,
+            { areaWidthCm: TRUCK_AREA_WIDTH_CM, areaLengthCm: TRUCK_AREA_LENGTH_CM },
+        );
+        const newPallets = positions.map(({ xCm, yCm }) => ({ ...createTruckPallet(session, xCm, yCm), ...footprint }));
+        onPalletsChange((prev) => [...prev, ...newPallets]);
+        setAutoPlaceMessage(positions.length < session.palletPlaces ? 'Alla pallar fick ej plats.' : '');
+    };
+
+    const handleAutoPlaceDecline = () => {
+        const { pallet } = pendingAutoPlace;
+        setPendingAutoPlace(null);
+        onPalletsChange((prev) => [...prev, pallet]);
     };
 
     const startDragSession = (session) => {
@@ -139,23 +178,28 @@ const TruckLoadingArea = forwardRef(function TruckLoadingArea(
         const palletInfo = String(delivery?.palletInfo ?? '');
         const background = String(delivery?.background ?? '#2F4E7388');
         const borderBrush = String(delivery?.borderBrush ?? '#2F4E73');
+        const { widthCm, heightCm } = getDeliveryPalletFootprint(delivery);
+        if (widthCm > TRUCK_AREA_WIDTH_CM || heightCm > TRUCK_AREA_LENGTH_CM) return;
 
+        setAutoPlaceMessage('');
         startDragSession({
             kind: 'source',
             deliveryId,
             palletInfo,
             background,
             borderBrush,
-            widthCm: PALLET_WIDTH_CM,
-            heightCm: PALLET_LENGTH_CM,
+            widthCm,
+            heightCm,
+            palletPlaces: getDeliveryPalletPlaces(delivery),
         });
 
         setDragGhost({
             clientX: event.clientX,
             clientY: event.clientY,
-            widthCm: PALLET_WIDTH_CM,
-            heightCm: PALLET_LENGTH_CM,
+            widthCm,
+            heightCm,
             palletInfo,
+            label: getDeliveryPalletLabel(delivery, pallets.filter((pallet) => pallet.deliveryId === deliveryId).length),
             background,
             borderBrush,
             deliveryId,
@@ -231,12 +275,12 @@ const TruckLoadingArea = forwardRef(function TruckLoadingArea(
                         border: '1px solid #94a3b8',
                     }}
                 >
-                    {pallets.map((pallet) => (
+                    {pallets.map((pallet, index) => (
                         <div
                             key={pallet.clientId}
                             onPointerDown={(event) => handlePlacedPalletPointerDown(event, pallet.clientId)}
                             onDoubleClick={() => handleRotateTruckPallet(pallet.clientId)}
-                            className="absolute border text-center text-tiny font-normal text-gray-900 cursor-grab active:cursor-grabbing select-none"
+                            className="absolute border text-center text-tiny font-normal text-gray-900 cursor-grab active:cursor-grabbing select-none transition hover:z-10 hover:brightness-80 hover:shadow-md hover:ring-0 hover:ring-sky-500"
                             style={{
                                 width: `${(pallet.widthCm / TRUCK_AREA_WIDTH_CM) * 100}%`,
                                 height: `${(pallet.heightCm / TRUCK_AREA_LENGTH_CM) * 100}%`,
@@ -253,7 +297,7 @@ const TruckLoadingArea = forwardRef(function TruckLoadingArea(
                         >
                             <button
                                 type="button"
-                                className="absolute right-1 top-1 h-3 w-3 rounded-full bg-red-700 text-[8px] font-bold text-white"
+                                className="absolute right-0 top-0 h-4 w-4 bg-red-700 text-[8px] font-bold text-white"
                                 onClick={(event) => {
                                     event.stopPropagation();
                                     handleRemoveTruckPallet(pallet.clientId);
@@ -263,12 +307,24 @@ const TruckLoadingArea = forwardRef(function TruckLoadingArea(
                                 ✕
                             </button>
                             <span className="pointer-events-none whitespace-pre-line leading-4">
-                                {pallet.palletInfo || 'Pall'}
+                                {palletLabels[index]}
                             </span>
                         </div>
                     ))}
                 </div>
+                {autoPlaceMessage ? (
+                    <p role="status" className="mt-1 text-center text-xs text-amber-700">{autoPlaceMessage}</p>
+                ) : null}
             </div>
+            <ConfirmationModal
+                isOpen={Boolean(pendingAutoPlace)}
+                onClose={handleAutoPlaceDecline}
+                onConfirm={handleAutoPlaceConfirm}
+                title="PLACERA PALLAR"
+                message="Vill du placera ut alla pallar automatiskt?"
+                confirmText="Ja"
+                cancelText="Nej"
+            />
             {dragGhost ? (
                 <div
                     className="fixed z-50 flex items-center justify-center border text-center text-[11px] font-semibold text-gray-900 opacity-85"
@@ -282,7 +338,7 @@ const TruckLoadingArea = forwardRef(function TruckLoadingArea(
                         pointerEvents: 'none',
                     }}
                 >
-                    {dragGhost.palletInfo || 'Pall'}
+                    <span className="whitespace-pre-line leading-4">{dragGhost.label}</span>
                 </div>
             ) : null}
         </>

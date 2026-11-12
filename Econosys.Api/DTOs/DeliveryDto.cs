@@ -50,6 +50,46 @@ namespace Econosys.Api.DTOs
         public int? CallOffNr { get; set; }
     }
 
+    public sealed record DeliveryEditResponse
+    {
+        public required DeliveryDto Delivery { get; init; }
+        public required string Version { get; init; }
+        public int? OrderedQty { get; init; }
+        public bool AutoFreightCalc { get; init; }
+        public string PackagingType { get; init; } = string.Empty;
+        public int? UnitsPerPackage { get; init; }
+        public double? AvailableItems { get; init; }
+        public double? AvailablePallets { get; init; }
+        public DateTime? LatestStockTakingDate { get; init; }
+        public IReadOnlyList<DeliveryInventoryOption> Inventories { get; init; } = [];
+        public IReadOnlyList<int> RelatedDeliveryIds { get; init; } = [];
+    }
+
+    public sealed record DeliveryInventoryOption(int Id, string Name);
+
+    public sealed record UpdateDeliveryRequest
+    {
+        public string Version { get; init; } = string.Empty;
+        public DateTime? DeliveryDate { get; init; }
+        public double? NrOfItems { get; init; }
+        public int? NrOfPallets { get; init; }
+        public int? NrOfBunt { get; init; }
+        public int? NrOfYtterforpackning { get; init; }
+        public string? CallOff { get; init; }
+        public int? InventoryId { get; init; }
+        public int? PalletLength { get; init; }
+        public int? PalletWidth { get; init; }
+        public int? PalletHeight { get; init; }
+        public bool PalletIsStackable { get; init; }
+        public decimal? PalletCalcFactor { get; init; }
+        public bool IsDelivered { get; init; }
+        public string? SpcsRefNr { get; init; }
+        public int? SupplierInvoiceNr { get; init; }
+        public DateTime? ConfirmedStockTakingDate { get; init; }
+    }
+
+    public sealed record DeliveryEditError(string Code, string Message, DateTime? StockTakingDate = null);
+
     public class SearchDeliveriesRequestDto
     {
         public FilterRequest? Filter { get; set; }
