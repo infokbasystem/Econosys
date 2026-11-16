@@ -12,22 +12,26 @@ const ReportOrderInfoModal = ({
     title = 'ÅTERRAPPORTERA',
     orderedEdition = null,
     producedEdition = null,
+    nrOfPallets = null,
     isCompleted = false,
     isLoading = false,
     isSaving = false,
     errorMessage = '',
 }) => {
     const [producedEditionValue, setProducedEditionValue] = useState(producedEdition);
+    const [nrOfPalletsValue, setNrOfPalletsValue] = useState(nrOfPallets);
     useAppUpdateGuard(isOpen || isSaving);
     const [isCompletedValue, setIsCompletedValue] = useState(isCompleted);
-    const [syncedProps, setSyncedProps] = useState({ isOpen, producedEdition, isCompleted });
+    const [syncedProps, setSyncedProps] = useState({ isOpen, producedEdition, nrOfPallets, isCompleted });
 
     // Reset the editable fields whenever the modal opens or fresh values arrive from the server.
     if (syncedProps.isOpen !== isOpen
         || syncedProps.producedEdition !== producedEdition
+        || syncedProps.nrOfPallets !== nrOfPallets
         || syncedProps.isCompleted !== isCompleted) {
-        setSyncedProps({ isOpen, producedEdition, isCompleted });
+        setSyncedProps({ isOpen, producedEdition, nrOfPallets, isCompleted });
         setProducedEditionValue(producedEdition);
+        setNrOfPalletsValue(nrOfPallets);
         setIsCompletedValue(isCompleted);
     }
 
@@ -40,6 +44,9 @@ const ReportOrderInfoModal = ({
             producedEdition: producedEditionValue === '' || producedEditionValue === undefined
                 ? null
                 : producedEditionValue,
+            nrOfPallets: nrOfPalletsValue === '' || nrOfPalletsValue === undefined
+                ? null
+                : nrOfPalletsValue,
             isCompleted: isCompletedValue,
         });
     };
@@ -80,6 +87,17 @@ const ReportOrderInfoModal = ({
                             integerOnly
                             value={producedEditionValue}
                             onChange={setProducedEditionValue}
+                            disabled={isLoading || isSaving}
+                        />
+                        <LabeledInput
+                            label="Antal pall"
+                            labelWidth="w-40"
+                            name="nrOfPallets"
+                            aria-label="Antal pall"
+                            type="number"
+                            integerOnly
+                            value={nrOfPalletsValue}
+                            onChange={setNrOfPalletsValue}
                             disabled={isLoading || isSaving}
                         />
 

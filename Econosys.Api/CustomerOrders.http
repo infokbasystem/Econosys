@@ -2,6 +2,27 @@
 @token = replace-with-access-token
 @customerOrderId = 1
 
+### Search all customer orders: omit person properties when all people are selected
+POST {{baseUrl}}/api/customerorders/search
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "pagination": { "pageNumber": 1, "pageSize": 25 }
+}
+
+### Filter by the customer's responsible salesperson AND the order's creator
+# Multiple IDs within each list are alternatives. An empty list matches no orders.
+POST {{baseUrl}}/api/customerorders/search
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customerResponsibleUserIds": [1, 2],
+  "createdByIds": [3],
+  "pagination": { "pageNumber": 1, "pageSize": 25 }
+}
+
 ### Customer order acknowledgement PDF in the customer's language
 GET {{baseUrl}}/api/pdf/customerorder/{{customerOrderId}}
 Authorization: Bearer {{token}}

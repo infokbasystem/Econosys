@@ -62,6 +62,7 @@ namespace Econosys.Api.DTOs
         public string? Country { get; set; }
         public int? CustomerId { get; set; }
         public string? CustomerName { get; set; }
+        public string? SellerName { get; set; }
         public string? DeliveryAddressName { get; set; }
         public string? DeliveryAddress { get; set; }
         public string? DeliveryPostalNr { get; set; }
@@ -115,6 +116,7 @@ namespace Econosys.Api.DTOs
         public bool EconopackTransportResponsible { get; set; }
         public bool ConfirmedDeliveryDateWeekMode { get; set; }
         public int? ProducedEdition { get; set; }
+        public int? NrOfPallets { get; set; }
         public DateTime? DeliveryDate { get; set; }
         public bool DeliveryDateWeekMode { get; set; }
         public int? CustomerDeliveryAddressId { get; set; }
@@ -146,6 +148,14 @@ namespace Econosys.Api.DTOs
     public class SearchSupplierOrdersRequest
     {
         public string? SearchTerm { get; set; }
+        public string? CustomerOrderNr { get; set; }
+        public string? Product { get; set; }
+        public string? SupplierName { get; set; }
+        public string? CustomerName { get; set; }
+        /// <summary>Customer salespeople to include; null disables filtering, an empty list matches no orders.</summary>
+        public int[]? CustomerResponsibleUserIds { get; set; }
+        /// <summary>Order creators to include; null disables filtering, an empty list matches no orders.</summary>
+        public int[]? CreatedByIds { get; set; }
         public FilterRequest? Filter { get; set; }
         public PaginationRequest? Pagination { get; set; }
         public List<SortRequest>? OrderBy { get; set; }
@@ -153,6 +163,8 @@ namespace Econosys.Api.DTOs
 
     public class CreateSupplierOrderRequest
     {
+        private readonly int? _nrOfPallets;
+
         public string? SupplierOrderNr { get; set; }
         public int? BasedOnSupplierOrderId { get; set; }
         public int? InquiryId { get; set; }
@@ -212,6 +224,18 @@ namespace Econosys.Api.DTOs
         public bool EurPallet { get; set; }
         public bool OneWayPallet { get; set; }
         public int? ProducedEdition { get; set; }
+        public int? NrOfPallets
+        {
+            get => _nrOfPallets;
+            init
+            {
+                _nrOfPallets = value;
+                HasNrOfPallets = true;
+            }
+        }
+
+        // Older clients omit this field and must not clear an existing count.
+        internal bool HasNrOfPallets { get; private init; }
         public decimal? OverrideHandlingTimeDays { get; set; }
         public string? ForceHandlingTimeCountAs { get; set; }
         public List<UpsertSupplierOrderOrderCostRequest> OrderCosts { get; set; } = new();

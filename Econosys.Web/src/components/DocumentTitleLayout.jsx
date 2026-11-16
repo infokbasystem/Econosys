@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import DocumentTitleContext from '../contexts/DocumentTitleContext';
+import ItemTabGuard from './ItemTabGuard';
 
 const routeTitles = {
     '': 'Min sida',
@@ -126,7 +127,7 @@ const DocumentTitleLayout = () => {
 
     return (
         <DocumentTitleContext.Provider value={{ setPageTitle, clearPageTitle }}>
-            <Outlet />
+            <ItemTabGuard />
         </DocumentTitleContext.Provider>
     );
 };

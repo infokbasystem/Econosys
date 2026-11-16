@@ -7,6 +7,7 @@ import apiClient from '../../config/apiClient';
 import ActionButton from '../../components/ActionButton';
 import ImprovementPropositionModal from '../../components/ImprovementPropositionModal';
 import SegmentedFilter from '../../components/SegmentedFilter';
+import useColumnResize from '../../hooks/useColumnResize';
 
 const PAGE_SIZE = 20;
 
@@ -113,6 +114,7 @@ const initialPagination = {
 };
 
 const ImprovementPropositionsOverview = () => {
+    const { tableRef, widths, tableWidth, handle } = useColumnResize();
     const [searchInput, setSearchInput] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -398,21 +400,22 @@ const ImprovementPropositionsOverview = () => {
 
                 <div className="border-t border-gray-300 py-1 mt-4 min-h-0 flex-1 overflow-auto">
                     <table
-                        className="table-fixed w-full border-collapse text-xs"
-                        style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}
+                        ref={tableRef}
+                        className={`table-fixed border-collapse text-xs ${widths ? '' : 'w-full'}`}
+                        style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif", width: tableWidth }}
                     >
                         <colgroup>
-                            {closedColumns.map((col) => (
-                                <col key={col.key} {...(col.width ? { style: { width: col.width } } : {})} />
+                            {closedColumns.map((col, index) => (
+                                <col key={col.key} style={{ width: widths?.[index] ?? col.width }} />
                             ))}
                         </colgroup>
                         <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                             <tr>
-                                {closedColumns.map((col) => (
+                                {closedColumns.map((col, index) => (
                                     <th
                                         key={col.key}
                                         onClick={col.sortable ? () => handleSort(col.key) : undefined}
-                                        className={`px-2 py-2 text-tiny font-medium text-gray-500 text-left ${col.sortable ? 'cursor-pointer' : ''}`}
+                                        className={`relative px-2 py-2 text-tiny font-medium text-gray-500 text-left ${col.sortable ? 'cursor-pointer' : ''}`}
                                     >
                                         <span className="inline-flex items-center gap-1">
                                             {col.label}
@@ -426,6 +429,7 @@ const ImprovementPropositionsOverview = () => {
                                                 )
                                             ) : null}
                                         </span>
+                                        {handle(index, col.label)}
                                     </th>
                                 ))}
                             </tr>

@@ -10,6 +10,29 @@ import LabeledSelect from '../../components/LabeledSelect';
 import ActionButton from '../../components/ActionButton';
 import { Plus, Save, Trash2 } from 'lucide-react';
 
+const MATERIAL_GROUP_WELL = 1;
+const MATERIAL_GROUP_PAPER = 2;
+const MATERIAL_GROUP_PLASTIC = 3;
+
+const layerNumbers = [1, 2, 3, 4, 5];
+// Legacy only exposes the float (thickness) input for layers 2 and 4.
+const layersWithFloat = new Set([2, 4]);
+
+const wellInputClass = 'h-6 text-xs px-2 border border-gray-300 rounded-sm focus:outline-none';
+
+const layerKeys = (n) => ({
+    material: `layer${n}Material`,
+    weight: `layer${n}Weight`,
+    thickness: `layer${n}Thickness`,
+});
+
+const wellStringFields = [
+    'color1',
+    'color2',
+    ...layerNumbers.flatMap((n) => [layerKeys(n).material, layerKeys(n).thickness]),
+];
+const wellIntFields = layerNumbers.map((n) => layerKeys(n).weight);
+
 const defaultForm = {
     id: null,
     name: '',
@@ -17,11 +40,23 @@ const defaultForm = {
     translations: [],
     active: true,
     materialGroup: null,
+    ...Object.fromEntries(wellStringFields.map((f) => [f, ''])),
+    ...Object.fromEntries(wellIntFields.map((f) => [f, null])),
     thicknessMm: null,
     weightGr: null,
     materialText: '',
     packagingFeeCategoryId: null,
 };
+
+const emptyToNull = (value) => {
+    const text = String(value ?? '').trim();
+    return text === '' ? null : text;
+};
+
+const mapWellFields = (source, mapString, mapInt) => ({
+    ...Object.fromEntries(wellStringFields.map((f) => [f, mapString(source?.[f])])),
+    ...Object.fromEntries(wellIntFields.map((f) => [f, mapInt(source?.[f])])),
+});
 
 const mapTranslations = (translations) => {
     if (!Array.isArray(translations)) return [];
@@ -77,6 +112,7 @@ const mapDtoToForm = (dto) => ({
     translations: mapTranslations(dto?.translations),
     active: Boolean(dto?.active),
     materialGroup: parseNullableInt(dto?.materialGroup),
+    ...mapWellFields(dto, (v) => v ?? '', parseNullableInt),
     thicknessMm: parseNullableNumber(dto?.thicknessMm),
     weightGr: parseNullableInt(dto?.weightGr),
     materialText: dto?.materialText ?? '',
@@ -92,6 +128,7 @@ const mapFormToPayload = (form) => ({
     })),
     active: Boolean(form.active),
     materialGroup: parseNullableInt(form.materialGroup),
+    ...mapWellFields(form, emptyToNull, parseNullableInt),
     thicknessMm: parseNullableNumber(form.thicknessMm),
     weightGr: parseNullableInt(form.weightGr),
     materialText: String(form.materialText ?? ''),
@@ -104,6 +141,7 @@ const normalizeFormForCompare = (form) => ({
     translationCode: parseNullableInt(form?.translationCode),
     active: Boolean(form?.active),
     materialGroup: parseNullableInt(form?.materialGroup),
+    ...mapWellFields(form, (v) => String(v ?? ''), parseNullableInt),
     thicknessMm: parseNullableNumber(form?.thicknessMm),
     weightGr: parseNullableInt(form?.weightGr),
     materialText: String(form?.materialText ?? ''),
@@ -551,41 +589,120 @@ const MaterialsSettings = () => {
                                 </div>
                             </div>
 
-                            <LabeledInput
-                                label="Tjocklek"
-                                labelWidth="w-20"
-                                inputWidth="w-20"
-                                margintop="5"
-                                type="number"
-                                value={form.thicknessMm}
-                                onChange={(value) => updateField('thicknessMm', value)}
-                                disabled={isEditDisabled}
-                            />
+                            {form.materialGroup === MATERIAL_GROUP_WELL && (
+                                <div className="mt-5">
+                                    <div className="flex items-center pb-[1px]">
+                                        <span className="w-20 flex-none text-xs text-gray-700">Liner</span>
+                                        <div className="flex gap-0.5">
+                                            {['color1', 'color2'].map((field) => (
+                                                <input
+                                                    key={field}
+                                                    type="text"
+                                                    value={form[field] ?? ''}
+                                                    onChange={(e) => updateField(field, e.target.value)}
+                                                    disabled={isEditDisabled}
+                                                    maxLength={50}
+                                                    className={`${wellInputClass} w-32 ${!isEditDisabled ? 'bg-white' : ''}`}
+                                                />
+                                            ))}
+                                        </div>
+                                    </div>
 
-                            <LabeledInput
-                                label="Vikt"
-                                labelWidth="w-20"
-                                inputWidth="w-20"
-                                type="number"
-                                integerOnly={true}
-                                value={form.weightGr}
-                                onChange={(value) => updateField('weightGr', value)}
-                                disabled={isEditDisabled}
-                            />
+                                    <div className="flex items-center mt-1">
+                                        <span className="w-20 flex-none" />
+                                        <div className="flex gap-0.5 text-xs text-gray-700">
+                                            <span className="w-20 text-center">Material</span>
+                                            <span className="w-16 text-center">Vikt</span>
+                                            <span className="w-16 text-center">Float</span>
+                                        </div>
+                                    </div>
 
-                            <LabeledInput
-                                label="Materialtext"
-                                labelWidth="w-20"
-                                value={form.materialText}
-                                onChange={(value) => updateField('materialText', value ?? '')}
-                                disabled={isEditDisabled}
-                                maxLength={200}
-                                showCharCounter
-                            />
+                                    {layerNumbers.map((n) => {
+                                        const keys = layerKeys(n);
+                                        const inputBg = !isEditDisabled ? 'bg-white' : '';
+                                        return (
+                                            <div key={n} className="flex items-center pb-[1px]">
+                                                <span className="w-20 flex-none text-xs text-gray-700">Lager {n}</span>
+                                                <div className="flex gap-0.5">
+                                                    <input
+                                                        type="text"
+                                                        value={form[keys.material] ?? ''}
+                                                        onChange={(e) => updateField(keys.material, e.target.value.toUpperCase())}
+                                                        disabled={isEditDisabled}
+                                                        maxLength={50}
+                                                        className={`${wellInputClass} w-20 uppercase ${inputBg}`}
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        inputMode="numeric"
+                                                        value={form[keys.weight] ?? ''}
+                                                        onChange={(e) => {
+                                                            const digits = e.target.value.replace(/\D/g, '');
+                                                            updateField(keys.weight, parseNullableInt(digits));
+                                                        }}
+                                                        disabled={isEditDisabled}
+                                                        className={`${wellInputClass} w-16 ${inputBg}`}
+                                                    />
+                                                    {layersWithFloat.has(n) && (
+                                                        <input
+                                                            type="text"
+                                                            value={form[keys.thickness] ?? ''}
+                                                            onChange={(e) => updateField(keys.thickness, e.target.value.toUpperCase())}
+                                                            disabled={isEditDisabled}
+                                                            maxLength={50}
+                                                            className={`${wellInputClass} w-16 uppercase ${inputBg}`}
+                                                        />
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {form.materialGroup === MATERIAL_GROUP_PAPER && (
+                                <LabeledInput
+                                    label="Ytvikt, g"
+                                    labelWidth="w-20"
+                                    inputWidth="w-20"
+                                    margintop="5"
+                                    type="number"
+                                    integerOnly={true}
+                                    value={form.weightGr}
+                                    onChange={(value) => updateField('weightGr', value)}
+                                    disabled={isEditDisabled}
+                                />
+                            )}
+
+                            {form.materialGroup === MATERIAL_GROUP_PLASTIC && (
+                                <LabeledInput
+                                    label="Tjocklek, mm"
+                                    labelWidth="w-20"
+                                    inputWidth="w-20"
+                                    margintop="5"
+                                    type="number"
+                                    value={form.thicknessMm}
+                                    onChange={(value) => updateField('thicknessMm', value)}
+                                    disabled={isEditDisabled}
+                                />
+                            )}
+
+                            {(form.materialGroup === MATERIAL_GROUP_PAPER || form.materialGroup === MATERIAL_GROUP_PLASTIC) && (
+                                <LabeledInput
+                                    label="Material"
+                                    labelWidth="w-20"
+                                    value={form.materialText}
+                                    onChange={(value) => updateField('materialText', value ?? '')}
+                                    disabled={isEditDisabled}
+                                    maxLength={200}
+                                    showCharCounter
+                                />
+                            )}
 
                             <LabeledSelect
                                 label="Förp.avg.kat."
                                 labelWidth="w-20"
+                                margintop="5"
                                 name="packagingFeeCategoryId"
                                 value={form.packagingFeeCategoryId ?? ''}
                                 items={packagingFeeCategories}

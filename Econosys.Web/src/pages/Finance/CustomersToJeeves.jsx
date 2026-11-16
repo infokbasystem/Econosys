@@ -5,6 +5,7 @@ import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import apiClient from '../../config/apiClient';
+import useColumnResize from '../../hooks/useColumnResize';
 import LabeledCheckbox from '../../components/LabeledCheckbox';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 
@@ -49,6 +50,7 @@ function SelectCircleCheckbox({ checked, onChange, ariaLabel }) {
 }
 
 const CustomersToJeeves = () => {
+    const resize = useColumnResize();
     const navigate = useNavigate();
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -237,35 +239,37 @@ const CustomersToJeeves = () => {
             </div>
 
             <div className="mt-3 min-h-0 flex-1 overflow-auto border-t border-gray-300 py-1">
-                <table className="w-full table-fixed border-collapse text-xs" style={TABLE_FONT_STYLE}>
+                <table ref={resize.tableRef} className={`table-fixed border-collapse text-xs ${resize.widths ? '' : 'w-full'}`} style={{ ...TABLE_FONT_STYLE, width: resize.tableWidth }}>
                     <colgroup>
-                        <col style={{ width: '4%' }} />
-                        {columns.map((column) => <col key={column.key} style={{ width: column.width }} />)}
-                        <col style={{ width: '20%' }} />
+                        <col style={{ width: resize.widths?.[0] ?? '4%' }} />
+                        {columns.map((column, index) => <col key={column.key} style={{ width: resize.widths?.[index + 1] ?? column.width }} />)}
+                        <col style={{ width: resize.widths?.[columns.length + 1] ?? '20%' }} />
                     </colgroup>
                     <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                         <tr className="text-tiny text-gray-500">
-                            <th className="w-10 px-2 py-1 text-left text-tiny font-medium tracking-wider text-gray-400">
+                            <th className="relative w-10 px-2 py-1 text-left text-tiny font-medium tracking-wider text-gray-400">
                                 <SelectCircleCheckbox
                                     checked={allSelected}
                                     onChange={() => setRows((currentRows) => currentRows.map((row) => ({ ...row, selected: !allSelected })))}
                                     ariaLabel="Markera alla kunder"
                                 />
+                                {resize.handle(0, 'Markera')}
                             </th>
-                            {columns.map((column) => {
+                            {columns.map((column, index) => {
                                 const isSorted = sortConfig.key === column.sortBy;
                                 return (
-                                    <th key={column.key} onClick={() => handleSort(column)} className={`${column.sortBy ? 'cursor-pointer' : 'cursor-default'} px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500`}>
+                                    <th key={column.key} onClick={() => handleSort(column)} className={`relative ${column.sortBy ? 'cursor-pointer' : 'cursor-default'} px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500`}>
                                         <span className="inline-flex items-center gap-1">
                                             {column.label}
                                             {column.sortBy && (isSorted
                                                 ? (sortConfig.direction === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)
                                                 : <ChevronUp className="h-3 w-3 opacity-0" />)}
                                         </span>
+                                        {resize.handle(index + 1, column.label)}
                                     </th>
                                 );
                             })}
-                            <th className="pl-4 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Status</th>
+                            <th className="relative pl-4 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Status{resize.handle(columns.length + 1, 'Status')}</th>
                         </tr>
                     </thead>
                     <tbody className={!loading && rows.length > 0 ? 'bg-white' : 'bg-transparent'}>

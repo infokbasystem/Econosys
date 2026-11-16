@@ -16,6 +16,8 @@ export default function PdfPanel({ onOpenFileModal = null }) {
         closePdfPreview,
         badges,
         emailInfo,
+        onEmailSent,
+        mailLogItem,
         openEmailModal,
         showEmailModal,
         closeEmailModal,
@@ -182,7 +184,7 @@ export default function PdfPanel({ onOpenFileModal = null }) {
                             label="Maila"
                             icon={Mail}
                             onClick={openEmailModal}
-                            disabled={isStale}
+                            disabled={isStale || !pdfUrl}
                             accent="sky"
                         />
                     </div>
@@ -266,6 +268,9 @@ export default function PdfPanel({ onOpenFileModal = null }) {
                     sourceAttachmentName={getPdfFileName()}
                     inquiryId={emailInfo?.inquiryId ?? null}
                     quotationId={emailInfo?.quotationId ?? null}
+                    callOffId={mailLogItem?.callOffId ?? null}
+                    transportOrderId={mailLogItem?.transportOrderId ?? null}
+                    onSent={onEmailSent}
                     onClose={closeEmailModal}
                 />
             )}

@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from '../contexts/AuthContext';
 import { getApiBaseUrl } from '../config/backend';
 import { formatApiDateToSwedish } from '../helpers/dateUtils';
-import { searchHeader } from '../helpers/globalSearch';
+import { canSearchHeader, searchHeader } from '../helpers/globalSearch';
 
 import './Header.css'
 import bg from '../assets/header.png'
@@ -27,7 +27,7 @@ const Header = () => {
 
     useEffect(() => {
         const term = searchText.trim();
-        if (term.length < 4) return undefined;
+        if (!canSearchHeader(term)) return undefined;
 
         const timer = setTimeout(async () => {
             const requestId = searchRequestIdRef.current;
@@ -52,7 +52,7 @@ const Header = () => {
         setSearchHadErrors(false);
         setActiveResultIndex(-1);
 
-        const canSearch = value.trim().length >= 4;
+        const canSearch = canSearchHeader(value);
         setSearchOpen(canSearch);
         setSearchLoading(canSearch);
     };
@@ -156,14 +156,14 @@ const Header = () => {
                             aria-activedescendant={activeResultIndex >= 0 ? `header-search-option-${activeResultIndex}` : undefined}
                             onChange={(event) => handleSearchTextChange(event.target.value)}
                             onFocus={() => {
-                                if (searchText.trim().length >= 4) setSearchOpen(true);
+                                if (canSearchHeader(searchText)) setSearchOpen(true);
                             }}
                             onKeyDown={handleSearchKeyDown}
                         />
                         <Search aria-hidden="true" className="header-search-icon" />
                     </div>
 
-                    {searchOpen && searchText.trim().length >= 4 && (
+                    {searchOpen && canSearchHeader(searchText) && (
                         <div id="superSearch" className="header-search-results" role="listbox" aria-label="Sökresultat">
                             {searchLoading ? (
                                 <div className="header-search-status text-center" role="option" aria-disabled="true" aria-selected="false">Söker...</div>

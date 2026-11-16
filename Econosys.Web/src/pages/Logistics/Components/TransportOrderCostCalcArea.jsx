@@ -220,8 +220,9 @@ const TransportOrderCostCalcArea = forwardRef(function TransportOrderCostCalcAre
     }, [loadVersions]);
 
     const selectedVersion = useMemo(() => versions.find((v) => v.id === selectedId) ?? null, [versions, selectedId]);
-    useAppUpdateGuard(saving || Boolean(draft && selectedVersion
-        && JSON.stringify(buildUpdatePayload(draft)) !== JSON.stringify(buildUpdatePayload(buildDraftFromVersion(selectedVersion)))));
+    const hasUnsavedChanges = Boolean(draft && selectedVersion
+        && JSON.stringify(buildUpdatePayload(draft)) !== JSON.stringify(buildUpdatePayload(buildDraftFromVersion(selectedVersion))));
+    useAppUpdateGuard(saving || hasUnsavedChanges);
     const statusNames = useMemo(() => buildStatusNames(versions), [versions]);
     // Mirrors legacy: IsEnabled is only ever set on the freshly loaded latest version, so older versions are always read-only.
     const latestVersionId = useMemo(() => {
@@ -406,7 +407,11 @@ const TransportOrderCostCalcArea = forwardRef(function TransportOrderCostCalcAre
         }
     }, [draft, selectedVersion, onMessage]);
 
-    useImperativeHandle(ref, () => ({ save: handleSave, reload: () => loadVersions() }), [handleSave, loadVersions]);
+    useImperativeHandle(ref, () => ({
+        save: handleSave,
+        reload: () => loadVersions(),
+        hasUnsavedChanges: () => hasUnsavedChanges,
+    }), [handleSave, loadVersions, hasUnsavedChanges]);
 
     if (loading && versions.length === 0) {
         return (

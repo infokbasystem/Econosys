@@ -389,7 +389,7 @@ namespace Econosys.Api.Controllers
         }
 
         [HttpGet("order-info/{customerOrderId:int}")]
-        public async Task<ActionResult<TransportOrderOverviewOrderInfoDto>> GetOrderInfo(int customerOrderId)
+        public async Task<ActionResult<TransportOrderOverviewOrderInfoDto>> GetOrderInfo(int customerOrderId, CancellationToken cancellationToken = default)
         {
             var customerOrder = await _dbContext.CustomerOrders
                 .AsNoTracking()
@@ -401,7 +401,7 @@ namespace Econosys.Api.Controllers
                     x.SupplierOrderId,
                     x.Completed,
                 })
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(cancellationToken);
 
             if (customerOrder == null)
             {
@@ -413,8 +413,8 @@ namespace Econosys.Api.Controllers
                 : await _dbContext.SupplierOrders
                     .AsNoTracking()
                     .Where(x => x.Id == customerOrder.SupplierOrderId)
-                    .Select(x => new { x.Id, x.Edition, x.ProducedEdition })
-                    .FirstOrDefaultAsync();
+                    .Select(x => new { x.Id, x.Edition, x.ProducedEdition, x.NrOfPallets })
+                    .FirstOrDefaultAsync(cancellationToken);
 
             return Ok(new TransportOrderOverviewOrderInfoDto
             {
@@ -423,12 +423,13 @@ namespace Econosys.Api.Controllers
                 SupplierOrderId = supplierOrder?.Id,
                 OrderedEdition = supplierOrder?.Edition,
                 ProducedEdition = supplierOrder?.ProducedEdition,
+                NrOfPallets = supplierOrder?.NrOfPallets,
                 IsCompleted = customerOrder.Completed,
             });
         }
 
         [HttpPut("order-info/{customerOrderId:int}")]
-        public async Task<IActionResult> SaveOrderInfo(int customerOrderId, [FromBody] SaveTransportOrderOverviewOrderInfoDto dto)
+        public async Task<IActionResult> SaveOrderInfo(int customerOrderId, [FromBody] SaveTransportOrderOverviewOrderInfoDto dto, CancellationToken cancellationToken = default)
         {
             if (dto == null)
             {
@@ -440,30 +441,43 @@ namespace Econosys.Api.Controllers
                 return BadRequest("Producerad upplaga kan inte vara negativ.");
             }
 
+            if (dto.NrOfPallets is < 0)
+            {
+                return BadRequest("Antal pall kan inte vara negativt.");
+            }
+
             var customerOrder = await _dbContext.CustomerOrders
-                .FirstOrDefaultAsync(x => x.Id == customerOrderId);
+                .FirstOrDefaultAsync(x => x.Id == customerOrderId, cancellationToken);
 
             if (customerOrder == null)
             {
                 return NotFound();
             }
 
+            var supplierOrder = customerOrder.SupplierOrderId == null
+                ? null
+                : await _dbContext.SupplierOrders
+                    .FirstOrDefaultAsync(x => x.Id == customerOrder.SupplierOrderId, cancellationToken);
+
+            if (dto.HasNrOfPallets && supplierOrder == null)
+            {
+                return BadRequest("Leverantörsorder saknas.");
+            }
+
             customerOrder.Completed = dto.IsCompleted;
             customerOrder.Edited = SwedishTime.Now;
 
-            if (customerOrder.SupplierOrderId != null)
+            if (supplierOrder != null)
             {
-                var supplierOrder = await _dbContext.SupplierOrders
-                    .FirstOrDefaultAsync(x => x.Id == customerOrder.SupplierOrderId);
-
-                if (supplierOrder != null)
+                supplierOrder.ProducedEdition = dto.ProducedEdition;
+                if (dto.HasNrOfPallets)
                 {
-                    supplierOrder.ProducedEdition = dto.ProducedEdition;
-                    supplierOrder.Edited = SwedishTime.Now;
+                    supplierOrder.NrOfPallets = dto.NrOfPallets;
                 }
+                supplierOrder.Edited = SwedishTime.Now;
             }
 
-            await _dbContext.SaveChangesAsync();
+            await _dbContext.SaveChangesAsync(cancellationToken);
 
             return NoContent();
         }
@@ -677,6 +691,7 @@ namespace Econosys.Api.Controllers
                             x.SupplierOrder.ConfirmedDeliveryDateWeekMode,
                             x.SupplierOrder.Edition,
                             x.SupplierOrder.ProducedEdition,
+                            x.SupplierOrder.NrOfPallets,
                             x.SupplierOrder.PalletFormatId
                         }
                 })
@@ -810,9 +825,10 @@ namespace Econosys.Api.Controllers
                     var confirmedDelivery = FormatDateInfo(so?.ConfirmedDeliveryDate, so?.ConfirmedDeliveryDateWeekMode ?? false, string.Empty);
 
                     var editionPerPallet = row.SelectedCalculationRow?.ArchivedEditionPerPallet;
-                    var pallets = editionPerPallet.HasValue && editionPerPallet.Value > 0
-                        ? rest / editionPerPallet.Value
-                        : (double?)null;
+                    var pallets = (double?)so?.NrOfPallets
+                        ?? (editionPerPallet.HasValue && editionPerPallet.Value > 0
+                            ? rest / editionPerPallet.Value
+                            : (double?)null);
 
                     var palletFormatId = row.PalletFormatId
                         ?? row.SelectedCalculationRow?.ArchivedPalletFormatIdCustomerOrder

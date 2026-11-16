@@ -426,21 +426,23 @@ const TypeSection = ({ palletTypes, isLoadingList, onRefresh, selectedTypeId, on
                             />
                         </div>
                         <div className="w-30 mr-2">
-                                                <ActionButton
-                                                    label={isSaving ? 'Sparar...' : 'Spara'}
-                                                    icon={Save}
+                            <SwitchSelector
+                                name="palletTypesVisibility"
                                 options={visibilityOptions}
                                 forcedSelectedIndex={showInactive ? 1 : 0}
-                                                    accent="lime"
-                                                />
+                                onChange={(value) => setShowInactive(Boolean(value))}
+                                backgroundColor="#353b48"
+                                fontColor="#374151"
+                            />
                         </div>
-                                                <ActionButton
-                                                    label={isDeleting ? 'Raderar...' : 'Radera'}
-                                                    icon={Trash2}
+                        <ActionButton
+                            label="Ny"
                             icon={Plus}
                             onClick={handleCreateNew}
-                                                    accent="rose"
-                                                />
+                        />
+                    </div>
+
+                    <div className="mt-5 border-t border-gray-200 pt-2 space-y-0.5 max-h-[calc(50vh-230px)] overflow-y-auto">
                         {isLoadingList ? (
                             <p className="text-xs text-gray-500 py-2">Laddar...</p>
                         ) : filteredItems.length === 0 ? (

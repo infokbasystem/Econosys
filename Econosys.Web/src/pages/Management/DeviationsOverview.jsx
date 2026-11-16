@@ -23,6 +23,7 @@ import ActionButton from '../../components/ActionButton';
 import LabeledSwitch from '../../components/LabeledSwitch';
 import { getSwedishTodayDateString } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
+import useColumnResize from '../../hooks/useColumnResize';
 
 const PAGE_SIZE = 20;
 const DEVIATIONS_OVERVIEW_CACHE_KEY = 'deviations-overview-page-state';
@@ -161,6 +162,7 @@ const readCachedOverviewPageState = () => {
 };
 
 const DeviationsOverview = () => {
+    const resize = useColumnResize();
     const cachedState = readCachedOverviewPageState();
     const navigation = useNavigate();
     const currentMonth = new Date().getMonth() + 1;
@@ -745,19 +747,19 @@ const DeviationsOverview = () => {
                 </div>
 
                 <div ref={searchListRef} className="border-t border-gray-300 py-1 mt-4 min-h-0 flex-1 overflow-auto">
-                    <table className="table-fixed w-full border-collapse text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                    <table ref={resize.tableRef} className={`table-fixed border-collapse text-xs ${resize.widths ? '' : 'w-full'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif", width: resize.tableWidth }}>
                         <colgroup>
-                            {searchColumns.map((column) => (
-                                <col key={column.key} {...(column.width ? { style: { width: column.width } } : {})} />
+                            {searchColumns.map((column, index) => (
+                                <col key={column.key} style={{ width: resize.widths?.[index] ?? column.width }} />
                             ))}
                         </colgroup>
                         <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                             <tr>
-                                {searchColumns.map((column) => (
+                                {searchColumns.map((column, index) => (
                                     <th
                                         key={column.key}
                                         onClick={() => handleSort(column.key)}
-                                        className={`cursor-pointer px-2 py-2 text-tiny font-medium text-gray-500 ${column.align === 'right' ? 'text-right' : 'text-left'}`}
+                                        className={`relative cursor-pointer px-2 py-2 text-tiny font-medium text-gray-500 ${column.align === 'right' ? 'text-right' : 'text-left'}`}
                                     >
                                         <span className="inline-flex items-center gap-1">
                                             {column.label}
@@ -767,6 +769,7 @@ const DeviationsOverview = () => {
                                                 <ChevronUp className="h-3 w-3 opacity-0" />
                                             )}
                                         </span>
+                                        {resize.handle(index, column.label)}
                                     </th>
                                 ))}
                             </tr>

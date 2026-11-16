@@ -52,20 +52,37 @@ namespace Econosys.Api.DTOs
         public string LogisticsInfoInternal { get; set; } = string.Empty;
     }
 
-    public class TransportOrderOverviewOrderInfoDto
+    /// <summary>Order details displayed when reporting production back.</summary>
+    public sealed record TransportOrderOverviewOrderInfoDto
     {
-        public int CustomerOrderId { get; set; }
-        public string CustomerOrderNr { get; set; } = string.Empty;
-        public int? SupplierOrderId { get; set; }
-        public int? OrderedEdition { get; set; }
-        public int? ProducedEdition { get; set; }
-        public bool IsCompleted { get; set; }
+        public int CustomerOrderId { get; init; }
+        public string CustomerOrderNr { get; init; } = string.Empty;
+        public int? SupplierOrderId { get; init; }
+        public int? OrderedEdition { get; init; }
+        public int? ProducedEdition { get; init; }
+        public int? NrOfPallets { get; init; }
+        public bool IsCompleted { get; init; }
     }
 
-    public class SaveTransportOrderOverviewOrderInfoDto
+    /// <summary>Production and completion details to report back for an order.</summary>
+    public sealed record SaveTransportOrderOverviewOrderInfoDto
     {
-        public int? ProducedEdition { get; set; }
-        public bool IsCompleted { get; set; }
+        private readonly int? _nrOfPallets;
+
+        public int? ProducedEdition { get; init; }
+        public int? NrOfPallets
+        {
+            get => _nrOfPallets;
+            init
+            {
+                _nrOfPallets = value;
+                HasNrOfPallets = true;
+            }
+        }
+
+        // Older clients omit this field and must not clear an existing count.
+        internal bool HasNrOfPallets { get; private init; }
+        public bool IsCompleted { get; init; }
     }
 
     public class PlanTransportOrderRequestDto

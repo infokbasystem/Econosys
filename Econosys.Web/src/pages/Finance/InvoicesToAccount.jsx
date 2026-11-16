@@ -7,6 +7,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 import DateRangePicker from '../../components/DaterangePicker';
 import LabeledCheckbox from '../../components/LabeledCheckbox';
 import apiClient from '../../config/apiClient';
+import useColumnResize from '../../hooks/useColumnResize';
 import { formatDateShort } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 
@@ -46,6 +47,7 @@ function SelectCircleCheckbox({ checked, onChange, ariaLabel }) {
 }
 
 const InvoicesToAccount = () => {
+    const resize = useColumnResize();
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showSkeleton, setShowSkeleton] = useState(false);
@@ -230,22 +232,24 @@ const InvoicesToAccount = () => {
             {error && <div className="mt-3 rounded border border-red-400 bg-red-100 px-4 py-3 text-xs text-red-700">{error}</div>}
 
             <div className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
-                <table className="min-w-full table-fixed" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                <table ref={resize.tableRef} className={`table-fixed ${resize.widths ? '' : 'min-w-full'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif", width: resize.tableWidth }}>
+                    {resize.widths && <colgroup>{resize.widths.map((width, index) => <col key={index} style={{ width }} />)}</colgroup>}
                     <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                         <tr>
-                            <th className="w-10 px-2 py-1 text-left text-tiny font-medium tracking-wider text-gray-400">
+                            <th className="relative w-10 px-2 py-1 text-left text-tiny font-medium tracking-wider text-gray-400">
                                 <SelectCircleCheckbox
                                     checked={allSelected}
                                     onChange={() => setRows((currentRows) => currentRows.map((row) => ({ ...row, selected: !allSelected })))}
                                     ariaLabel="Markera alla fakturor"
                                 />
+                                {resize.handle(0, 'Markera')}
                             </th>
-                            <th className="w-[100px] px-2 py-1.5 text-left text-tiny font-medium tracking-wider text-gray-400">Fakturanr</th>
-                            <th className="w-[260px] px-2 py-1.5 text-left text-tiny font-medium tracking-wider text-gray-400">Kund</th>
-                            <th className="w-[120px] px-2 py-1.5 text-left text-tiny font-medium tracking-wider text-gray-400">Fakturadatum</th>
-                            <th className="w-[120px] px-2 py-1.5 text-left text-tiny font-medium tracking-wider text-gray-400">Förfallodatum</th>
-                            <th className="w-[140px] px-2 py-1.5 text-right text-tiny font-medium tracking-wider text-gray-400">Belopp ink moms</th>
-                            <th className=" pl-10 py-1.5 text-left text-tiny font-medium tracking-wider text-gray-400">Status</th>
+                            <th className="relative w-[100px] px-2 py-1.5 text-left text-tiny font-medium tracking-wider text-gray-400">Fakturanr{resize.handle(1, 'Fakturanr')}</th>
+                            <th className="relative w-[260px] px-2 py-1.5 text-left text-tiny font-medium tracking-wider text-gray-400">Kund{resize.handle(2, 'Kund')}</th>
+                            <th className="relative w-[120px] px-2 py-1.5 text-left text-tiny font-medium tracking-wider text-gray-400">Fakturadatum{resize.handle(3, 'Fakturadatum')}</th>
+                            <th className="relative w-[120px] px-2 py-1.5 text-left text-tiny font-medium tracking-wider text-gray-400">Förfallodatum{resize.handle(4, 'Förfallodatum')}</th>
+                            <th className="relative w-[140px] px-2 py-1.5 text-right text-tiny font-medium tracking-wider text-gray-400">Belopp ink moms{resize.handle(5, 'Belopp ink moms')}</th>
+                            <th className="relative pl-10 py-1.5 text-left text-tiny font-medium tracking-wider text-gray-400">Status{resize.handle(6, 'Status')}</th>
                         </tr>
                     </thead>
                     <tbody className={!loading && rows.length > 0 ? 'bg-white' : 'bg-transparent'}>

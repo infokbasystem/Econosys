@@ -1,0 +1,16 @@
+@baseUrl = https://localhost:5001
+@token = replace-with-access-token
+@callOffId = 1
+@transportOrderId = 1
+
+### Sent emails for a call-off
+GET {{baseUrl}}/api/email/log/calloff/{{callOffId}}
+Authorization: Bearer {{token}}
+
+### Sent emails for a transport order
+GET {{baseUrl}}/api/email/log/transportorder/{{transportOrderId}}
+Authorization: Bearer {{token}}
+
+### Unsupported item type returns 400
+GET {{baseUrl}}/api/email/log/unknown/1
+Authorization: Bearer {{token}}

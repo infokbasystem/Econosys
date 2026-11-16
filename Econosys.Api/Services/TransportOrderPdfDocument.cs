@@ -35,7 +35,7 @@ public static class TransportOrderPdfDocument
     public sealed record Content(string SupplierFactoryText, IReadOnlyList<DeliveryLine> Deliveries,
         byte[] PalletScheme);
 
-    public static Content BuildContent(string receiverType, int? receiverId,
+    public static Content BuildContent(string receiverType, IReadOnlyCollection<int> receiverIds,
         IReadOnlyList<TransportOrderDelivery> deliveries,
         IReadOnlyDictionary<int, SupplierFactory> supplierFactories,
         IReadOnlyList<TransportOrderDeliveryPallet> palletPlan)
@@ -45,8 +45,8 @@ public static class TransportOrderPdfDocument
             .Where(delivery => normalizedReceiver switch
             {
                 Transporter => true,
-                Supplier => delivery.SupplierOrder?.SupplierFactoryId == receiverId,
-                Receiver => delivery.DeliveryToStock?.InventoryId == receiverId,
+                Supplier => delivery.SupplierOrder?.SupplierFactoryId is int factoryId && receiverIds.Contains(factoryId),
+                Receiver => delivery.DeliveryToStock?.InventoryId is int inventoryId && receiverIds.Contains(inventoryId),
                 _ => false,
             })
             .OrderBy(delivery => delivery.SortOrder ?? int.MaxValue)
@@ -59,7 +59,7 @@ public static class TransportOrderPdfDocument
         var factoryIds = deliveries
             .Where(delivery => delivery.SupplierOrder?.SupplierFactoryId.HasValue == true)
             .Select(delivery => delivery.SupplierOrder!.SupplierFactoryId!.Value)
-            .Where(id => normalizedReceiver != Supplier || id == receiverId)
+            .Where(id => normalizedReceiver != Supplier || receiverIds.Contains(id))
             .Distinct()
             .ToList();
         var factoryText = string.Join(Environment.NewLine, factoryIds
@@ -68,25 +68,30 @@ public static class TransportOrderPdfDocument
             .OrderBy(factory => factory.Name)
             .Select(factory => string.Join(", ", NonEmpty(factory.Name, factory.Address, factory.City))));
 
-        var deliveryLabels = deliveries.ToDictionary(delivery => delivery.Id, delivery =>
+        var schemeDeliveries = normalizedReceiver == Supplier ? matchingDeliveries : deliveries;
+        var deliveryLabels = schemeDeliveries.ToDictionary(delivery => delivery.Id, delivery =>
             delivery.SupplierOrder?.SupplierOrderNr ?? delivery.Id.ToString(CultureInfo.InvariantCulture));
-        var diagram = RenderPalletScheme(palletPlan, deliveryLabels);
+        var schemePallets = normalizedReceiver == Supplier
+            ? palletPlan.Where(pallet => pallet.TransportOrderDeliveryId is int deliveryId
+                && deliveryLabels.ContainsKey(deliveryId)).ToList()
+            : palletPlan;
+        var diagram = RenderPalletScheme(schemePallets, deliveryLabels);
         return new Content(factoryText, lines, diagram);
     }
 
     public static byte[] Generate(TransportOrder order, CompanyInfo? company, DocumentPdfTranslations texts,
-        string receiverType, int? receiverId, IReadOnlyList<TransportOrderDelivery> deliveries,
+        string receiverType, IReadOnlyCollection<int> receiverIds, IReadOnlyList<TransportOrderDelivery> deliveries,
         IReadOnlyDictionary<int, SupplierFactory> supplierFactories,
         IReadOnlyList<TransportOrderDeliveryPallet> palletPlan) =>
-        CreateDocument(order, company, texts, receiverType, receiverId, deliveries, supplierFactories, palletPlan)
+        CreateDocument(order, company, texts, receiverType, receiverIds, deliveries, supplierFactories, palletPlan)
             .GeneratePdf();
 
     public static IDocument CreateDocument(TransportOrder order, CompanyInfo? company, DocumentPdfTranslations texts,
-        string receiverType, int? receiverId, IReadOnlyList<TransportOrderDelivery> deliveries,
+        string receiverType, IReadOnlyCollection<int> receiverIds, IReadOnlyList<TransportOrderDelivery> deliveries,
         IReadOnlyDictionary<int, SupplierFactory> supplierFactories,
         IReadOnlyList<TransportOrderDeliveryPallet> palletPlan)
     {
-        var content = BuildContent(receiverType, receiverId, deliveries, supplierFactories, palletPlan);
+        var content = BuildContent(receiverType, receiverIds, deliveries, supplierFactories, palletPlan);
         var normalizedReceiver = receiverType.Trim().ToUpperInvariant();
 
         return Document.Create(document => document.Page(page =>

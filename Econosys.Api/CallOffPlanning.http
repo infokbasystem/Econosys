@@ -3,7 +3,7 @@
 @customerOrderId = 123
 @callOffId = 456
 
-### Find the available stock groups for a customer order
+### Find the available stock groups and delivery address options for a customer order
 GET {{baseUrl}}/api/calloff/delivery-candidates?customerOrderId={{customerOrderId}}
 Authorization: Bearer {{token}}
 

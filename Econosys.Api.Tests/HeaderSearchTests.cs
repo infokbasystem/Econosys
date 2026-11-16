@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Econosys.Api.Controllers;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
@@ -10,6 +11,42 @@ namespace Econosys.Api.Tests;
 
 public class HeaderSearchTests
 {
+    [Fact]
+    public async Task CalculationSearchMatchesOnlyTheExactId()
+    {
+        await using var context = CreateContext();
+        context.Products.Add(new Product { Id = 10, Name = "Product 12" });
+        context.Calculations.AddRange(
+            new Calculation { Id = 123, ProductId = 10 },
+            new Calculation { Id = 1234, ProductId = 10 });
+        await context.SaveChangesAsync();
+
+        var controller = new CalculationsController(context, null!, null!);
+        async Task<PagedResultDto<CalculationSearchResultDto>> SearchById(int id)
+        {
+            var response = await controller.Search(new SearchCalculationsRequest
+            {
+                Filter = new FilterRequest
+                {
+                    Conditions = [new FilterConditionDto
+                    {
+                        Field = "id", Operator = "eq", Value = JsonSerializer.SerializeToElement(id),
+                    }],
+                },
+                Pagination = new PaginationRequest { PageNumber = 1, PageSize = 5 },
+            }, default);
+            return Assert.IsType<PagedResultDto<CalculationSearchResultDto>>(
+                Assert.IsType<OkObjectResult>(response.Result).Value);
+        }
+
+        var result = await SearchById(123);
+        Assert.Equal(1, result.TotalCount);
+        var calculation = Assert.Single(result.Items);
+        Assert.Equal(123, calculation.Id);
+        Assert.Equal("Product 12", calculation.ProductName);
+        Assert.Empty((await SearchById(12)).Items);
+    }
+
     [Fact]
     public async Task TransportSearchMatchesNumbersAndTextAndLimitsResults()
     {

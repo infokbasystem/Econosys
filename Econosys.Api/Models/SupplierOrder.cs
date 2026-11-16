@@ -217,6 +217,8 @@ namespace Econosys.Api.Models
 
         public int? ProducedEdition { get; set; }
 
+        public int? NrOfPallets { get; set; }
+
         public DateTime? DeliveryDate { get; set; }
 
         public bool DeliveryDateWeekMode { get; set; }

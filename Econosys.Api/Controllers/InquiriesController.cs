@@ -351,6 +351,26 @@ namespace Econosys.Api.Controllers
             var query = BuildSearchQuery();
             query = ApplySearchFilter(query, request?.SearchTerm);
 
+            if (!string.IsNullOrWhiteSpace(request?.Product))
+            {
+                var product = request.Product.Trim().ToLower();
+                query = query.Where(x => x.Inquiry.Product != null && x.Inquiry.Product.ToLower().Contains(product));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request?.SupplierName))
+            {
+                var supplierName = request.SupplierName.Trim().ToLower();
+                query = query.Where(x => x.SelectedSupplier != null && x.SelectedSupplier.Name != null
+                    && x.SelectedSupplier.Name.ToLower().Contains(supplierName));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request?.CustomerName))
+            {
+                var customerName = request.CustomerName.Trim().ToLower();
+                query = query.Where(x => (x.Inquiry.Customer != null ? x.Inquiry.Customer.Name : x.Inquiry.CustomerName) != null
+                    && (x.Inquiry.Customer != null ? x.Inquiry.Customer.Name : x.Inquiry.CustomerName)!.ToLower().Contains(customerName));
+            }
+
             var totalCount = await query.CountAsync();
             var totalPages = totalCount == 0
                 ? 0

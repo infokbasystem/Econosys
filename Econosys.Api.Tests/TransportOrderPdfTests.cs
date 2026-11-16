@@ -31,9 +31,9 @@ public class TransportOrderPdfTests
             [20] = new() { Id = 20, Name = "Factory B", Address = "Street 2", City = "Lund" },
         };
 
-        var transporter = TransportOrderPdfDocument.BuildContent("TRANSPORTER", null, deliveries, factories, []);
-        var supplier = TransportOrderPdfDocument.BuildContent("SUPPLIER", 10, deliveries, factories, []);
-        var receiver = TransportOrderPdfDocument.BuildContent("RECEIVER", 200, deliveries, factories, []);
+        var transporter = TransportOrderPdfDocument.BuildContent("TRANSPORTER", [], deliveries, factories, []);
+        var supplier = TransportOrderPdfDocument.BuildContent("SUPPLIER", [10], deliveries, factories, []);
+        var receiver = TransportOrderPdfDocument.BuildContent("RECEIVER", [200], deliveries, factories, []);
 
         Assert.Equal(2, transporter.Deliveries.Count);
         Assert.Contains("Factory A, Street 1, Malmo", transporter.SupplierFactoryText);
@@ -46,6 +46,81 @@ public class TransportOrderPdfTests
         Assert.Equal("120x80x130", transporter.Deliveries[0].PalletSizeInfo);
         Assert.Equal(string.Empty, Assert.Single(receiver.Deliveries).PalletSizeInfo);
         Assert.Equal("4/2 pallets, 2p i height", transporter.Deliveries[0].PalletInfo);
+    }
+
+    [Fact]
+    public void MultipleSuppliersIncludeTheirUnionWithoutDuplicatesAndExcludeOtherDeliveries()
+    {
+        var deliveries = new[]
+        {
+            Delivery(3, 10, 100), Delivery(2, 20, 200), Delivery(1, 10, 100),
+            Delivery(4, 30, 300), new TransportOrderDelivery { Id = 5 },
+        };
+        var factories = new Dictionary<int, SupplierFactory>
+        {
+            [10] = new() { Id = 10, Name = "Factory A" },
+            [20] = new() { Id = 20, Name = "Factory B" },
+            [30] = new() { Id = 30, Name = "Factory C" },
+        };
+
+        TransportOrderDeliveryPallet Pallet(int deliveryId, int y) => new()
+        {
+            TransportOrderDeliveryId = deliveryId, PosCmX = 0, PosCmY = y, Width = 120, Height = 80,
+        };
+        var selectedPallets = new[] { Pallet(1, 0), Pallet(2, 100) };
+        var pallets = selectedPallets.Concat([Pallet(4, 200)]).ToList();
+
+        var content = TransportOrderPdfDocument.BuildContent("SUPPLIER", [20, 10, 20],
+            deliveries, factories, pallets);
+
+        Assert.Equal(new[] { 1, 2, 3 }, content.Deliveries.Select(delivery => delivery.Id));
+        Assert.Equal($"Factory A{Environment.NewLine}Factory B", content.SupplierFactoryText);
+        Assert.All(content.Deliveries, delivery => Assert.Equal(string.Empty, delivery.PalletSizeInfo));
+        var expectedScheme = TransportOrderPdfDocument.RenderPalletScheme(selectedPallets,
+            new Dictionary<int, string> { [1] = "SO-1", [2] = "SO-2", [3] = "SO-3" });
+        Assert.Equal(expectedScheme, content.PalletScheme);
+        Assert.NotEqual(TransportOrderPdfDocument.RenderPalletScheme(pallets,
+            new Dictionary<int, string> { [1] = "SO-1", [2] = "SO-2", [4] = "SO-4" }), content.PalletScheme);
+    }
+
+    [Fact]
+    public async Task EndpointAcceptsMultipleSuppliersAndRejectsAnyInvalidSelection()
+    {
+        await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        db.TransportOrders.Add(new TransportOrder { Id = 1, TransportOrderNr = 100 });
+        foreach (var factoryId in new[] { 10, 20, 30 })
+        {
+            db.SupplierFactories.Add(new SupplierFactory { Id = factoryId, Name = $"Factory {factoryId}" });
+            db.TransportOrderDeliveries.Add(new TransportOrderDelivery
+            {
+                Id = factoryId,
+                TransportOrderId = factoryId == 30 ? 2 : 1,
+                SupplierOrder = new SupplierOrder
+                {
+                    Id = factoryId,
+                    CompanyId = 1,
+                    SupplierFactoryId = factoryId,
+                    SupplierOrderNr = $"SO-{factoryId}",
+                },
+            });
+        }
+        await db.SaveChangesAsync();
+        var controller = new PdfController(db);
+
+        var file = Assert.IsType<FileContentResult>(
+            await controller.GetTransportOrderPdfById(1, "SUPPLIER", null, [10, 20, 10]));
+        Assert.Equal("Transportorder_100_10-20.pdf", file.FileDownloadName);
+        Assert.Equal("%PDF-", Encoding.ASCII.GetString(file.FileContents, 0, 5));
+        Assert.IsType<FileContentResult>(await controller.GetTransportOrderPdfById(1, "SUPPLIER", 10));
+        Assert.IsType<BadRequestObjectResult>(
+            await controller.GetTransportOrderPdfById(1, "SUPPLIER", null, [10, 30]));
+        Assert.IsType<BadRequestObjectResult>(
+            await controller.GetTransportOrderPdfById(1, "SUPPLIER", null, [10, 0]));
+        Assert.IsType<BadRequestObjectResult>(
+            await controller.GetTransportOrderPdfById(1, "SUPPLIER", null, []));
+        Assert.IsType<BadRequestObjectResult>(
+            await controller.GetTransportOrderPdfById(1, "RECEIVER", 10, [10, 20]));
     }
 
     [Fact]
@@ -80,7 +155,7 @@ public class TransportOrderPdfTests
             },
         };
         var document = TransportOrderPdfDocument.CreateDocument(order, Company(), new DocumentPdfTranslations("EN"),
-            "TRANSPORTER", null, deliveries, factories, pallets);
+            "TRANSPORTER", [], deliveries, factories, pallets);
 
         var pdf = document.GeneratePdf();
         var pages = document.GenerateImages().ToList();

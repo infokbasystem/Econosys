@@ -52,6 +52,7 @@ namespace Econosys.Api.DTOs
         public int? QuotationId { get; set; }
         public int? SupplierOrderId { get; set; }
         public string? SupplierOrderNr { get; set; }
+        public string? SupplierName { get; set; }
         public int? SupplierOrderProducedEdition { get; set; }
         public short? SupplierOrderUnitMultiplicator { get; set; }
         public double? SupplierOrderPurchasePrice { get; set; }
@@ -61,6 +62,7 @@ namespace Econosys.Api.DTOs
         public string? CustomerOrderNr { get; set; }
         public int? CustomerId { get; set; }
         public string? CustomerName { get; set; }
+        public string? SellerName { get; set; }
         public string? Address { get; set; }
         public string? PostalNr { get; set; }
         public string? PostalAddress { get; set; }
@@ -152,6 +154,14 @@ namespace Econosys.Api.DTOs
     public class SearchCustomerOrdersRequest
     {
         public string? SearchTerm { get; set; }
+        public string? YourOrderNr { get; set; }
+        public string? Product { get; set; }
+        public string? SupplierName { get; set; }
+        public string? CustomerName { get; set; }
+        /// <summary>Customer salespeople to include; null disables filtering, an empty list matches no orders.</summary>
+        public int[]? CustomerResponsibleUserIds { get; set; }
+        /// <summary>Order creators to include; null disables filtering, an empty list matches no orders.</summary>
+        public int[]? CreatedByIds { get; set; }
         public FilterRequest? Filter { get; set; }
         public PaginationRequest? Pagination { get; set; }
         public List<SortRequest>? OrderBy { get; set; }

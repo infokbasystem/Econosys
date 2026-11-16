@@ -32,7 +32,7 @@ const topColumns = [
     { key: 'editionOrdered', label: 'Best.', width: '4%', align: 'right' },
     { key: 'editionProduced', label: 'Prod.', width: '4%', align: 'right' },
     { key: 'rest', label: 'Rest', width: '4%', align: 'right' },
-    { key: 'pallets', label: 'PALL', width: '4%', align: 'right' },
+    { key: 'pallets', label: 'Pall', width: '4%', align: 'right' },
     { key: 'palletFormat', label: 'Pallformat', width: '10%', align: 'left' },
     { key: 'rapp', label: 'Rapp.', width: '4%', align: 'left', sortable: false },
     { key: 'planera', label: 'Planera', width: '4%', align: 'left', sortable: false },
@@ -663,7 +663,7 @@ const TransportOrderOverview = () => {
     const openReportOrderInfo = async (customerOrderId) => {
         setReportOrderInfoError('');
         setReportOrderInfoLoading(true);
-        setReportOrderInfo({ customerOrderId, orderedEdition: null, producedEdition: null, isCompleted: false });
+        setReportOrderInfo({ customerOrderId, orderedEdition: null, producedEdition: null, nrOfPallets: null, isCompleted: false, isLoaded: false });
 
         try {
             const response = await apiClient.get(`/logistics/transportorderoverview/order-info/${customerOrderId}`);
@@ -671,7 +671,9 @@ const TransportOrderOverview = () => {
                 customerOrderId,
                 orderedEdition: response?.data?.orderedEdition ?? null,
                 producedEdition: response?.data?.producedEdition ?? null,
+                nrOfPallets: response?.data?.nrOfPallets ?? null,
                 isCompleted: Boolean(response?.data?.isCompleted),
+                isLoaded: true,
             });
         } catch (error) {
             console.error('Failed to load order info:', error);
@@ -728,7 +730,7 @@ const TransportOrderOverview = () => {
         }
     };
 
-    const handleSaveReportOrderInfo = async ({ producedEdition, isCompleted }) => {
+    const handleSaveReportOrderInfo = async ({ producedEdition, nrOfPallets, isCompleted }) => {
         if (!reportOrderInfo) return;
 
         setReportOrderInfoSaving(true);
@@ -737,6 +739,7 @@ const TransportOrderOverview = () => {
         try {
             await apiClient.put(`/logistics/transportorderoverview/order-info/${reportOrderInfo.customerOrderId}`, {
                 producedEdition,
+                nrOfPallets,
                 isCompleted,
             });
 
@@ -1237,8 +1240,9 @@ const TransportOrderOverview = () => {
                 onSave={handleSaveReportOrderInfo}
                 orderedEdition={reportOrderInfo?.orderedEdition ?? null}
                 producedEdition={reportOrderInfo?.producedEdition ?? null}
+                nrOfPallets={reportOrderInfo?.nrOfPallets ?? null}
                 isCompleted={reportOrderInfo?.isCompleted ?? false}
-                isLoading={reportOrderInfoLoading}
+                isLoading={reportOrderInfoLoading || !reportOrderInfo?.isLoaded}
                 isSaving={reportOrderInfoSaving}
                 errorMessage={reportOrderInfoError}
             />

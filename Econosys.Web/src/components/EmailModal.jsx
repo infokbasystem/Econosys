@@ -109,6 +109,8 @@ export default function EmailModal({
     sourceAttachmentName = '',
     inquiryId = null,
     quotationId = null,
+    callOffId = null,
+    transportOrderId = null,
     onSent,
 }) {
     const [subject, setSubject] = useState(initialSubject);
@@ -119,6 +121,7 @@ export default function EmailModal({
     const [extraFiles, setExtraFiles] = useState([]);
     const [isDragOverAttachments, setIsDragOverAttachments] = useState(false);
     const [isSending, setIsSending] = useState(false);
+    const [emailSent, setEmailSent] = useState(false);
     const [sendError, setSendError] = useState('');
     const fileInputRef = useRef(null);
 
@@ -220,7 +223,7 @@ export default function EmailModal({
 
     const filteredReceivers = receivers.filter((item) => item.email.trim() !== '');
     const filteredCcRecipients = ccRecipients.filter((item) => item.email.trim() !== '');
-    const hasNoRecipients = filteredReceivers.length === 0 && filteredCcRecipients.length === 0;
+    const hasNoRecipients = !filteredReceivers.some((item) => item.doSend);
 
     const handleSubjectChange = (event) => {
         setSubject(event.target.value);
@@ -239,20 +242,22 @@ export default function EmailModal({
     const handleSendClick = async () => {
         setIsSending(true);
         setSendError('');
+        let wasSent = false;
+        const payload = {
+            subject,
+            body,
+            receivers: filteredReceivers,
+            ccRecipients: filteredCcRecipients,
+            sourceAttachmentUrl,
+            sourceAttachmentName: attachmentName,
+            inquiryId,
+            quotationId,
+            callOffId,
+            transportOrderId,
+            extraFiles,
+        };
 
         try {
-            const payload = {
-                subject,
-                body,
-                receivers: filteredReceivers,
-                ccRecipients: filteredCcRecipients,
-                sourceAttachmentUrl,
-                sourceAttachmentName: attachmentName,
-                inquiryId,
-                quotationId,
-                extraFiles,
-            };
-
             const formData = new FormData();
             formData.append('subject', payload.subject || '');
             formData.append('body', payload.body || '');
@@ -263,6 +268,12 @@ export default function EmailModal({
             }
             if (Number.isInteger(payload.quotationId)) {
                 formData.append('quotationId', String(payload.quotationId));
+            }
+            if (Number.isInteger(payload.callOffId)) {
+                formData.append('callOffId', String(payload.callOffId));
+            }
+            if (Number.isInteger(payload.transportOrderId)) {
+                formData.append('transportOrderId', String(payload.transportOrderId));
             }
 
             if (payload.sourceAttachmentUrl) {
@@ -285,11 +296,30 @@ export default function EmailModal({
                 headers: { 'Content-Type': 'multipart/form-data' },
             });
 
-            onSent?.(payload);
+            wasSent = true;
+            await onSent?.(payload);
             onClose?.();
         } catch (error) {
-            console.error('Error sending email:', error);
-            setSendError(error.response?.data?.message || (typeof error.response?.data === 'string' ? error.response.data : '') || error.message || 'Kunde inte skicka e-post');
+            if (!wasSent && error.response?.data?.emailSent === true) {
+                console.error('Email was sent but its log could not be saved:', error);
+                let message = error.response.data.message
+                    || 'E-postmeddelandet skickades, men kunde inte sparas i mail-loggen. Skicka inte om meddelandet.';
+                try {
+                    await onSent?.(payload);
+                } catch (updateError) {
+                    console.error('Error updating after sending email:', updateError);
+                    message += ' Statusuppdateringen misslyckades också.';
+                }
+                setEmailSent(true);
+                setSendError(message);
+            } else if (wasSent) {
+                console.error('Error updating after sending email:', error);
+                setEmailSent(true);
+                setSendError('E-postmeddelandet skickades, men uppdateringen misslyckades. Stäng och kontrollera uppgifterna.');
+            } else {
+                console.error('Error sending email:', error);
+                setSendError(error.response?.data?.message || (typeof error.response?.data === 'string' ? error.response.data : '') || error.message || 'Kunde inte skicka e-post');
+            }
         } finally {
             setIsSending(false);
         }
@@ -404,7 +434,7 @@ export default function EmailModal({
                     <div className="flex gap-4 mt-6 mb-3 pt-4 mx-10 justify-end">
                         {hasNoRecipients && (
                             <div className="text-xs text-amber-700 bg-amber-50 border border-gray-300 rounded px-10 py-1">
-                                Lägg till minst en mottagare eller kopiemottagare.
+                                Välj minst en mottagare.
                             </div>
                         )}
                         {sendError && (
@@ -418,12 +448,12 @@ export default function EmailModal({
                             onClick={onClose}
                             className="shadow-md/30 text-xs text-white bg-orange-400 hover:bg-orange-600 px-10 p-[5px] hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            Avbryt
+                            {emailSent ? 'Stäng' : 'Avbryt'}
                         </button>
                         <button
                             type="button"
                             onClick={handleSendClick}
-                            disabled={isSending || hasNoRecipients}
+                            disabled={isSending || emailSent || hasNoRecipients}
                             className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-10 p-[5px] disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isSending ? 'Skickar...' : 'Skicka'}

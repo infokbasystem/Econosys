@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Security.Claims;
+using System.Text.Json;
 using Econosys.Api.Controllers;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
@@ -426,6 +427,114 @@ public class OrderCreationTests
 
         Assert.IsType<BadRequestObjectResult>(result.Result);
         Assert.Empty(await context.SupplierOrders.ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(8)]
+    [InlineData(0)]
+    [InlineData(null)]
+    public async Task SupplierOrderCreateSavesAndReturnsPalletCount(int? nrOfPallets)
+    {
+        using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)).Options);
+        context.Customers.Add(new Customer { Id = 1 });
+        await context.SaveChangesAsync();
+        var controller = new SupplierOrdersController(context,
+            NullLogger<SupplierOrdersController>.Instance,
+            new UserResolution(new LegacyUser { Id = 42, CompanyId = 7 }),
+            new PalletFormatOptionsService(context));
+
+        var result = await controller.Create(new CreateSupplierOrderRequest
+        {
+            CustomerId = 1,
+            NrOfPallets = nrOfPallets,
+        });
+
+        var created = Assert.IsType<SupplierOrderDto>(Assert.IsType<CreatedAtActionResult>(result.Result).Value);
+        Assert.Equal(nrOfPallets, created.NrOfPallets);
+        context.ChangeTracker.Clear();
+        var loaded = await controller.GetById(created.Id);
+        var response = Assert.IsType<SupplierOrderDto>(Assert.IsType<OkObjectResult>(loaded.Result).Value);
+        Assert.Equal(nrOfPallets, response.NrOfPallets);
+        Assert.Equal(nrOfPallets, (await context.SupplierOrders.SingleAsync()).NrOfPallets);
+    }
+
+    [Theory]
+    [InlineData(8)]
+    [InlineData(0)]
+    [InlineData(null)]
+    public async Task SupplierOrderUpdateSavesAndReturnsPalletCount(int? nrOfPallets)
+    {
+        using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        context.SupplierOrders.Add(new SupplierOrder
+        {
+            Id = 50, SupplierOrderNr = "TEST-50", ProducedEdition = 2700, NrOfPallets = 4,
+        });
+        await context.SaveChangesAsync();
+        var controller = new SupplierOrdersController(context,
+            NullLogger<SupplierOrdersController>.Instance,
+            new UserResolution(new LegacyUser { Id = 42, CompanyId = 7 }),
+            new PalletFormatOptionsService(context));
+        var json = JsonSerializer.Serialize(new { id = 50, producedEdition = 2700, nrOfPallets });
+        var request = JsonSerializer.Deserialize<UpdateSupplierOrderRequest>(
+            json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.NotNull(request);
+
+        var result = await controller.Update(50, request);
+
+        var updated = Assert.IsType<SupplierOrderDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(nrOfPallets, updated.NrOfPallets);
+        Assert.Equal(2700, updated.ProducedEdition);
+        context.ChangeTracker.Clear();
+        var loaded = await controller.GetById(50);
+        var response = Assert.IsType<SupplierOrderDto>(Assert.IsType<OkObjectResult>(loaded.Result).Value);
+        Assert.Equal(nrOfPallets, response.NrOfPallets);
+        Assert.Equal(nrOfPallets, (await context.SupplierOrders.SingleAsync()).NrOfPallets);
+    }
+
+    [Fact]
+    public async Task SupplierOrderUpdatePreservesPalletCountWhenOlderClientOmitsIt()
+    {
+        using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        context.SupplierOrders.Add(new SupplierOrder { Id = 50, SupplierOrderNr = "TEST-50", NrOfPallets = 4 });
+        await context.SaveChangesAsync();
+        var controller = new SupplierOrdersController(context,
+            NullLogger<SupplierOrdersController>.Instance,
+            new UserResolution(new LegacyUser { Id = 42, CompanyId = 7 }),
+            new PalletFormatOptionsService(context));
+
+        var result = await controller.Update(50, new UpdateSupplierOrderRequest { Id = 50 });
+
+        var updated = Assert.IsType<SupplierOrderDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(4, updated.NrOfPallets);
+        context.ChangeTracker.Clear();
+        Assert.Equal(4, (await context.SupplierOrders.SingleAsync()).NrOfPallets);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SupplierOrderRejectsNegativePalletCountWithoutSaving(bool create)
+    {
+        using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        context.SupplierOrders.Add(new SupplierOrder { Id = 50, SupplierOrderNr = "TEST-50", NrOfPallets = 4 });
+        await context.SaveChangesAsync();
+        var controller = new SupplierOrdersController(context,
+            NullLogger<SupplierOrdersController>.Instance,
+            new UserResolution(new LegacyUser { Id = 42, CompanyId = 7 }),
+            new PalletFormatOptionsService(context));
+
+        var result = create
+            ? await controller.Create(new CreateSupplierOrderRequest { NrOfPallets = -1 })
+            : await controller.Update(50, new UpdateSupplierOrderRequest { Id = 50, NrOfPallets = -1 });
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+        context.ChangeTracker.Clear();
+        Assert.Equal(4, (await context.SupplierOrders.SingleAsync()).NrOfPallets);
     }
 
     private static ApplicationDbContext CreateContext(params IInterceptor[] interceptors) =>

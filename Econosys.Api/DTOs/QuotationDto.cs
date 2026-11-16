@@ -228,6 +228,9 @@ namespace Econosys.Api.DTOs
     public class SearchQuotationsRequest
     {
         public string? SearchTerm { get; set; }
+        public string? Product { get; set; }
+        public string? SupplierName { get; set; }
+        public string? CustomerName { get; set; }
         public PaginationRequest? Pagination { get; set; }
         public List<SortRequest>? OrderBy { get; set; }
     }

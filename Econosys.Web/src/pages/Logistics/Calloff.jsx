@@ -8,6 +8,7 @@ import { usePdf } from '../../contexts/PdfContext';
 import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledCheckbox from '../../components/LabeledCheckbox';
+import MailLog from '../../components/MailLog';
 import SelectNewDeliveryInfo from '../../modals/SelectNewDeliveryInfo';
 import DeliveryFromStock from '../../modals/DeliveryFromStock';
 import LabeledDatePicker from '../../components/LabeledDatePicker';
@@ -18,6 +19,7 @@ import apiClient from '../../config/apiClient';
 import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import { toSwedishDateInputValue } from '../../helpers/dateUtils';
+import { buildCallOffSavePayload, saveSentFreightOrder } from './calloffSave';
 
 const defaultCallOffForm = {
     id: null,
@@ -118,8 +120,8 @@ const mapAggregateResponse = (dto) => ({
 });
 
 const deliveryStatusOptions = [
-    { value: 0, label: 'Ej lastad' },
-    { value: 1, label: 'Lastad' },
+    { value: 0, label: 'Ej planerad' },
+    { value: 1, label: 'Planerad' },
     { value: 2, label: 'Lossad' },
 ];
 
@@ -262,6 +264,7 @@ const Calloff = () => {
     const [isDeleting, setIsDeleting] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showAddDeliveryModal, setShowAddDeliveryModal] = useState(false);
+    const [mailLogRevision, setMailLogRevision] = useState(0);
     const [pendingDeliverySelection, setPendingDeliverySelection] = useState(null);
     const [isAddingDelivery, setIsAddingDelivery] = useState(false);
     const [addDeliveryError, setAddDeliveryError] = useState('');
@@ -281,7 +284,12 @@ const Calloff = () => {
     const infoPanelAutoCloseRef = useRef(null);
     const routePreviewRequestRef = useRef(0);
     const routeInputRef = useRef({ deliveries: [], customerDeliveryAddressId: '' });
+    const savedCallOffStateRef = useRef({ snapshot: null, version: '', isStaleConflict: false });
     routeInputRef.current = { deliveries: callOffDeliveryList, customerDeliveryAddressId: callOffForm.customerDeliveryAddressId };
+
+    useEffect(() => {
+        savedCallOffStateRef.current = { snapshot: originalCallOffState, version: aggregateVersion, isStaleConflict };
+    }, [aggregateVersion, isStaleConflict, originalCallOffState]);
 
     const routeKey = useMemo(
         () => buildRouteKey(callOffDeliveryList, callOffForm.customerDeliveryAddressId),
@@ -388,7 +396,7 @@ const Calloff = () => {
                         rowKey: 'planned-draft',
                         newDelivery: planned.details,
                     }] : []);
-                    setDeliveryAddressOptions([]);
+                    setDeliveryAddressOptions(planned?.candidate.deliveryAddressOptions ?? []);
                     setDeliveryLegData(EMPTY_DELIVERY_LEG_DATA);
                     setSavedDeliveryLegData(EMPTY_DELIVERY_LEG_DATA);
                     setRouteStatus(null);
@@ -807,6 +815,63 @@ const Calloff = () => {
         }
     };
 
+    const handleFreightOrderSent = async (callOffId) => {
+        const savedState = savedCallOffStateRef.current;
+        let saveStarted = false;
+
+        try {
+            if (isSavingRef.current || savedState.isStaleConflict || !savedState.version
+                || Number(savedState.snapshot?.callOffForm?.id) !== callOffId) {
+                throw new Error('The saved call-off is not available for a status update.');
+            }
+
+            isSavingRef.current = true;
+            saveStarted = true;
+            setIsSaving(true);
+
+            const updatedVersion = await saveSentFreightOrder(apiClient, callOffId, savedState.snapshot, savedState.version);
+
+            const currentSavedState = savedCallOffStateRef.current;
+            if (Number(currentSavedState.snapshot?.callOffForm?.id) !== callOffId) {
+                return;
+            }
+            if (currentSavedState.version !== savedState.version) {
+                setIsStaleConflict(true);
+                setMessages((prev) => [...prev, { type: 'warning', text: 'Fraktbeställningen skickades och statusen sparades, men avropet har ändrats under tiden. Läs in den senaste versionen.' }]);
+                flashInfoPanel(true);
+                return;
+            }
+
+            const sentFields = { deliveryStatus: 1, isSentToShipper: true };
+            setAggregateVersion(updatedVersion);
+            setCallOffForm((prev) => (Number(prev.id) === callOffId ? { ...prev, ...sentFields } : prev));
+            setOriginalCallOffState((prev) => (prev && Number(prev.callOffForm.id) === callOffId ? {
+                ...prev,
+                callOffForm: { ...prev.callOffForm, ...sentFields },
+            } : prev));
+            setMessages((prev) => [...prev, { type: 'info', text: 'Fraktbeställningen skickades och avropet markerades som planerat.' }]);
+            flashInfoPanel(false);
+        } catch (error) {
+            console.error('Failed to save sent freight order status:', error);
+            const isConflict = error.response?.status === 409 || savedState.isStaleConflict;
+            if (isConflict) {
+                setIsStaleConflict(true);
+            }
+            setMessages((prev) => [...prev, {
+                type: 'error',
+                text: isConflict
+                    ? 'E-postmeddelandet skickades, men avropet har ändrats. Läs in senaste versionen och markera det som skickat och planerat.'
+                    : 'E-postmeddelandet skickades, men avropets status kunde inte sparas. Kontrollera avropet och spara statusen manuellt.',
+            }]);
+            flashInfoPanel(true);
+        } finally {
+            if (saveStarted) {
+                setIsSaving(false);
+                isSavingRef.current = false;
+            }
+        }
+    };
+
     const requestCallOffPdf = async (pdfType, callOffId) => {
         const numericCallOffId = Number(callOffId);
         if (!(numericCallOffId > 0) || isPdfLoading) {
@@ -829,7 +894,13 @@ const Calloff = () => {
             const url = URL.createObjectURL(response.data);
             pdfObjectUrlRef.current = url;
             const prefix = pdfType === 'confirmation' ? 'calloffconfirmation' : 'calloff';
-            openPdfPreview?.(url, `${prefix}_${numericCallOffId}.pdf`);
+            const onSent = async () => {
+                setMailLogRevision((value) => value + 1);
+                if (pdfType === 'freight-order') {
+                    await handleFreightOrderSent(numericCallOffId);
+                }
+            };
+            openPdfPreview?.(url, `${prefix}_${numericCallOffId}.pdf`, onSent, { callOffId: numericCallOffId });
         } catch (error) {
             if (requestId !== pdfRequestRef.current) return;
             console.error('Failed to load call-off PDF:', error);
@@ -939,6 +1010,9 @@ const Calloff = () => {
             const response = await apiClient.post('/calloff/deliveries', details);
             const newDelivery = mapDeliveryRowDto(response?.data);
             setCallOffDeliveryList((prev) => [...prev, newDelivery]);
+            if (callOffDeliveryList.length === 0) {
+                setDeliveryAddressOptions(pendingDeliverySelection.candidate.deliveryAddressOptions ?? []);
+            }
             setPendingDeliverySelection(null);
             setMessages((prev) => [...prev, { type: 'info', text: 'Leverans tillagd. Spara avropet för att spara ändringen.' }]);
         } catch (error) {
@@ -956,24 +1030,7 @@ const Calloff = () => {
         }
         isSavingRef.current = true;
 
-        const payload = {
-            shipperId: callOffForm.shipperId === '' ? null : Number(callOffForm.shipperId),
-            reference: callOffForm.reference || null,
-            note: callOffForm.note || null,
-            deliveryDate: callOffForm.deliveryDate || null,
-            deliveryStatus: Number(callOffForm.deliveryStatus),
-            isSentToShipper: Boolean(callOffForm.isSentToShipper),
-            doDebitFreight: Boolean(callOffForm.doDebitFreight),
-            freightCostToDebit: callOffForm.freightCostToDebit === '' ? null : Number(callOffForm.freightCostToDebit),
-            customerDeliveryAddressId: callOffForm.customerDeliveryAddressId === '' ? null : Number(callOffForm.customerDeliveryAddressId),
-            callOffDeliveryList: callOffDeliveryList.map((delivery) => ({
-                id: Number(delivery.id),
-                note: delivery.note || null,
-                nrOfPalletPlaces: delivery.nrOfPalletPlaces === '' ? null : Number(delivery.nrOfPalletPlaces),
-                deliveryFromStockId: delivery.id === 0 ? delivery.deliveryFromStockId : null,
-                newDelivery: delivery.newDelivery ?? null,
-            })),
-        };
+        const payload = buildCallOffSavePayload({ callOffForm, callOffDeliveryList });
 
         setIsSaving(true);
         setMessages([]);
@@ -986,6 +1043,7 @@ const Calloff = () => {
                 if (!(savedId > 0)) {
                     return null;
                 }
+                applyAggregateResponse(response?.data);
                 navigate(`/logistics/calloff/${savedId}`, { replace: true });
                 return savedId;
             } else {
@@ -1203,6 +1261,9 @@ const Calloff = () => {
                                         accent="sky"
                                     />
                                 </div>
+                                {!isNewCallOff && (
+                                    <MailLog key={id} itemType="calloff" itemId={Number(id)} refreshKey={mailLogRevision} />
+                                )}
                                 <div className="ml-20 flex items-center gap-2">
                                     <ActionButton
                                         label="Radera"
@@ -1286,16 +1347,6 @@ const Calloff = () => {
                                             </div>
 
                                             <div className="pt-3">
-                                                <div className="w-40">
-                                                    <LabeledCheckbox
-                                                        label="Skickad till transportör"
-                                                        labelPosition="left"
-                                                        name="isSentToShipper"
-                                                        checked={callOffForm.isSentToShipper}
-                                                        onChange={(value) => updateFormField('isSentToShipper', value)}
-                                                        className="flex w-full items-center justify-between gap-3 text-xs text-gray-700"
-                                                    />
-                                                </div>
                                                 <div className='flex flex-row items-center'>
                                                     <div className="w-40">
                                                         <LabeledCheckbox
@@ -1324,6 +1375,16 @@ const Calloff = () => {
                                                 </div>
                                             </div>
 
+                                                <div className="mt-3 w-40">
+                                                    <LabeledCheckbox
+                                                        label="Skickad till transportör"
+                                                        labelPosition="left"
+                                                        name="isSentToShipper"
+                                                        checked={callOffForm.isSentToShipper}
+                                                        onChange={(value) => updateFormField('isSentToShipper', value)}
+                                                        className="flex w-full items-center justify-between gap-3 text-xs text-gray-700"
+                                                    />
+                                                </div>
                                             <fieldset className="mt-3 w-40" aria-label="Leveransstatus">
                                                 {deliveryStatusOptions.map((status) => (
                                                     <LabeledCheckbox
@@ -1397,7 +1458,6 @@ const Calloff = () => {
                                                         <th className="px-2 py-1 text-left font-medium">Palltyp</th>
                                                         <th className="px-2 py-1 text-left font-medium">Lager</th>
                                                         <th className="px-2 py-1 text-right font-medium">Ppl.lev.</th>
-                                                        <th className="px-2 py-1 text-right font-medium">Ppl.egen</th>
                                                         <th className="px-2 py-1 text-right font-medium">Visa</th>
                                                         <th className="px-2 py-1 text-right font-medium">Ta bort</th>
                                                     </tr>
@@ -1405,7 +1465,7 @@ const Calloff = () => {
                                                 <tbody>
                                                     {callOffDeliveryList.length === 0 ? (
                                                         <tr>
-                                                            <td colSpan={9} className="px-2 py-3 text-center text-gray-400">Inga leveranser tillagda.</td>
+                                                            <td colSpan={8} className="px-2 py-3 text-center text-gray-400">Inga leveranser tillagda.</td>
                                                         </tr>
                                                     ) : callOffDeliveryList.map((delivery) => (
                                                         <tr key={`calloff-delivery-row-${delivery.rowKey}`} className="border-b border-gray-200">
@@ -1428,14 +1488,6 @@ const Calloff = () => {
                                                             </td>
                                                             <td className="px-2 pt-1.5 pb-1">{delivery.inventoryName}</td>
                                                             <td className="px-2 pt-1.5 pb-1 text-right">{delivery.nrOfPallets}</td>
-                                                            <td className="px-2 py-1 text-right">
-                                                                <input
-                                                                    type="text"
-                                                                    value={delivery.nrOfPalletPlaces ?? ''}
-                                                                    onChange={(event) => updateDeliveryField(delivery.rowKey, 'nrOfPalletPlaces', event.target.value)}
-                                                                    className="w-16 border border-gray-300 bg-white px-2 py-0.5 text-right text-xs text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                                                />
-                                                            </td>
                                                             <td className="px-2 pt-1.5 pb-1 text-right">
                                                                 {/* View mode: shows the details of an already created delivery from stock, read-only. */}
                                                                 <button

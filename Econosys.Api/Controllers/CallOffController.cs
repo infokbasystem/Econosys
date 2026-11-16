@@ -561,6 +561,7 @@ namespace Econosys.Api.Controllers
                 CustomerName = customerOrder.CustomerName ?? string.Empty,
                 ProductName = customerOrder.Product ?? string.Empty,
                 OrderedQty = customerOrder.Edition,
+                DeliveryAddressOptions = await LoadDeliveryAddressOptionsAsync(customerOrder.CustomerId),
                 Groups = groups,
             });
         }
@@ -979,21 +980,7 @@ namespace Econosys.Api.Controllers
 
             // Legacy parity: LoadDeliveryAddressList loads delivery addresses for the customer of the linked deliveries.
             var deliveryCustomerId = customerOrderById.Values.Select(x => x.CustomerId).FirstOrDefault(x => x.HasValue);
-            var deliveryAddressOptions = deliveryCustomerId.HasValue
-                ? await _dbContext.CustomerDeliveryAddresses
-                    .AsNoTracking()
-                    .Where(x => x.CustomerId == deliveryCustomerId.Value)
-                    .OrderBy(x => x.Name)
-                    .Select(x => new CallOffDeliveryAddressOptionDto
-                    {
-                        Id = x.Id,
-                        Name = x.Name ?? string.Empty,
-                        Street = x.Address ?? string.Empty,
-                        PostalNr = x.PostalNr ?? string.Empty,
-                        City = x.PostalAddress ?? string.Empty,
-                    })
-                    .ToListAsync()
-                : new List<CallOffDeliveryAddressOptionDto>();
+            var deliveryAddressOptions = await LoadDeliveryAddressOptionsAsync(deliveryCustomerId);
 
             var existingDeliveryEntities = await _dbContext.CallOffDeliveries
                 .AsNoTracking()
@@ -1015,6 +1002,28 @@ namespace Econosys.Api.Controllers
                     && deliveryLegs.DeliveryLegGroupedList.Count == 0
                     && deliveryLegs.DistributionDeliveryLegGroupedList.Count == 0,
             };
+        }
+
+        private async Task<List<CallOffDeliveryAddressOptionDto>> LoadDeliveryAddressOptionsAsync(int? customerId)
+        {
+            if (!customerId.HasValue)
+            {
+                return new List<CallOffDeliveryAddressOptionDto>();
+            }
+
+            return await _dbContext.CustomerDeliveryAddresses
+                .AsNoTracking()
+                .Where(x => x.CustomerId == customerId.Value)
+                .OrderBy(x => x.Name)
+                .Select(x => new CallOffDeliveryAddressOptionDto
+                {
+                    Id = x.Id,
+                    Name = x.Name ?? string.Empty,
+                    Street = x.Address ?? string.Empty,
+                    PostalNr = x.PostalNr ?? string.Empty,
+                    City = x.PostalAddress ?? string.Empty,
+                })
+                .ToListAsync();
         }
 
         private async Task<TransportOrderDeliveryLegsResponseDto> BuildDeliveryLegsAsync(int callOffId)

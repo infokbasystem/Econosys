@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import apiClient from '../../config/apiClient';
+import OrderSearchInputs from '../../components/OrderSearchInputs';
+import { buildOrderTextFilters } from '../../helpers/orderSearchFilters';
 import { formatDateShort } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
+import useColumnResize from '../../hooks/useColumnResize';
 
 const PAGE_SIZE = 25;
 const TABLE_FONT_STYLE = { fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" };
@@ -35,20 +38,21 @@ const initialPagination = {
 };
 
 const QuotationSearch = () => {
+    const resize = useColumnResize();
     const navigate = useNavigate();
 
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchLoaded, setSearchLoaded] = useState(false);
-    const [searchInput, setSearchInput] = useState('');
-    const [searchTerm, setSearchTerm] = useState('');
+    const [searchInput, setSearchInput] = useState({ searchTerm: '', product: '', supplierName: '', customerName: '' });
+    const [searchFilters, setSearchFilters] = useState(() => buildOrderTextFilters(searchInput));
     const [pagination, setPagination] = useState(initialPagination);
     const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
     const [selectedRowId, setSelectedRowId] = useState(null);
 
     useEffect(() => {
         const timer = setTimeout(() => {
-            setSearchTerm(searchInput);
+            setSearchFilters(buildOrderTextFilters(searchInput));
             setPagination((prev) => ({ ...prev, pageNumber: 1 }));
         }, 350);
 
@@ -63,7 +67,7 @@ const QuotationSearch = () => {
 
             try {
                 const requestBody = {
-                    searchTerm: searchTerm.trim() || null,
+                    ...searchFilters,
                     pagination: {
                         pageNumber: pagination.pageNumber,
                         pageSize: pagination.pageSize,
@@ -112,7 +116,7 @@ const QuotationSearch = () => {
         return () => {
             isActive = false;
         };
-    }, [searchTerm, pagination.pageNumber, pagination.pageSize, sortConfig]);
+    }, [searchFilters, pagination.pageNumber, pagination.pageSize, sortConfig]);
 
     const showSkeleton = loading && !searchLoaded;
 
@@ -156,16 +160,7 @@ const QuotationSearch = () => {
                     Skapa nytt affarsforslag
                 </button>
  */}
-                <div className="relative ml-16 w-56">
-                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-                    <input
-                        type="text"
-                        value={searchInput}
-                        onChange={(event) => setSearchInput(event.target.value)}
-                        placeholder="Sok"
-                        className="h-6 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
-                    />
-                </div>
+                <OrderSearchInputs values={searchInput} onChange={setSearchInput} />
 
                 <div className="ml-auto flex items-center gap-4 text-xs text-gray-600" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                     <span>Rader <strong>{pagination.totalCount}</strong></span>
@@ -192,19 +187,19 @@ const QuotationSearch = () => {
             </div>
 
             <div className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
-                <table className="table-fixed w-full border-collapse text-xs" style={TABLE_FONT_STYLE}>
+                <table ref={resize.tableRef} className={`table-fixed border-collapse text-xs ${resize.widths ? '' : 'w-full'}`} style={{ ...TABLE_FONT_STYLE, width: resize.tableWidth }}>
                     <colgroup>
-                        {columns.map((column) => (
-                            <col key={column.key} {...(column.width ? { style: { width: column.width } } : {})} />
+                        {columns.map((column, index) => (
+                            <col key={column.key} style={{ width: resize.widths?.[index] ?? column.width }} />
                         ))}
                     </colgroup>
                     <thead>
                         <tr className="text-tiny text-gray-500">
-                            {columns.map((column) => (
+                            {columns.map((column, index) => (
                                 <th
                                     key={column.key}
                                     onClick={() => handleSort(column.key)}
-                                    className={`cursor-pointer px-2 pt-1 pb-2 text-tiny font-medium text-gray-500 ${column.align === 'right' ? 'text-right' : 'text-left'}`}
+                                    className={`relative cursor-pointer px-2 pt-1 pb-2 text-tiny font-medium text-gray-500 ${column.align === 'right' ? 'text-right' : 'text-left'}`}
                                 >
                                     <span className="inline-flex items-center gap-1">
                                         {column.label}
@@ -214,6 +209,7 @@ const QuotationSearch = () => {
                                             <ChevronUp className="h-3 w-3 opacity-0" />
                                         )}
                                     </span>
+                                    {resize.handle(index, column.label)}
                                 </th>
                             ))}
                         </tr>

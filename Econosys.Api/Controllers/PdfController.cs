@@ -258,7 +258,8 @@ namespace Econosys.Api.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetTransportOrderPdfById(int id, [FromQuery] string? receiverType,
-            [FromQuery] int? receiverId, CancellationToken cancellationToken = default)
+            [FromQuery] int? receiverId, [FromQuery] int[]? receiverIds = null,
+            CancellationToken cancellationToken = default)
         {
             var normalizedReceiver = receiverType?.Trim().ToUpperInvariant();
             if (normalizedReceiver is not (TransportOrderPdfDocument.Transporter
@@ -267,7 +268,17 @@ namespace Econosys.Api.Controllers
                 return BadRequest("A valid transport-order PDF receiver type is required.");
             }
 
-            if (normalizedReceiver != TransportOrderPdfDocument.Transporter && receiverId is not > 0)
+            if (normalizedReceiver != TransportOrderPdfDocument.Supplier && receiverIds is { Length: > 0 })
+            {
+                return BadRequest("Multiple recipients are only supported for supplier PDFs.");
+            }
+
+            var selectedReceiverIds = (receiverIds ?? [])
+                .Concat(receiverId.HasValue ? [receiverId.Value] : Array.Empty<int>())
+                .Distinct()
+                .ToArray();
+            if (normalizedReceiver != TransportOrderPdfDocument.Transporter
+                && (selectedReceiverIds.Length == 0 || selectedReceiverIds.Any(value => value <= 0)))
             {
                 return BadRequest("A recipient must be selected for supplier and warehouse PDFs.");
             }
@@ -302,7 +313,8 @@ namespace Econosys.Api.Controllers
                 .ToListAsync(cancellationToken);
 
             if (normalizedReceiver == TransportOrderPdfDocument.Supplier
-                && !deliveries.Any(item => item.SupplierOrder?.SupplierFactoryId == receiverId))
+                && selectedReceiverIds.Any(selectedId =>
+                    !deliveries.Any(item => item.SupplierOrder?.SupplierFactoryId == selectedId)))
             {
                 return BadRequest("The selected supplier factory has no deliveries on this transport order.");
             }
@@ -331,11 +343,13 @@ namespace Econosys.Api.Controllers
                 .Where(item => translationCodes.Contains(item.TranslationCode))
                 .ToListAsync(cancellationToken);
             var texts = new DocumentPdfTranslations(null, translations);
-            var fileReceiverId = receiverId ?? order.ShipperId ?? 0;
+            var fileReceiverId = selectedReceiverIds.Length > 0
+                ? string.Join("-", selectedReceiverIds)
+                : (order.ShipperId ?? 0).ToString();
             var fileName = $"Transportorder_{order.TransportOrderNr}_{fileReceiverId}.pdf";
 
             return File(TransportOrderPdfDocument.Generate(order, company, texts, normalizedReceiver,
-                    receiverId, deliveries, supplierFactories, palletPlan),
+                    selectedReceiverIds, deliveries, supplierFactories, palletPlan),
                 "application/pdf", fileName, enableRangeProcessing: true);
         }
 

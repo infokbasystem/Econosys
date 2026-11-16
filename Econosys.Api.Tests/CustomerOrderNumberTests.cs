@@ -125,6 +125,35 @@ public class CustomerOrderNumberTests
     }
 
     [Theory]
+    [InlineData("asc", null, "Alpha")]
+    [InlineData("desc", "Zulu", "Alpha")]
+    public async Task SearchReturnsAndSortsByLinkedSupplierNameBeforePagination(
+        string direction, string? firstSupplier, string secondSupplier)
+    {
+        using var db = CreateContext();
+        db.SupplierOrders.AddRange(
+            new SupplierOrder { Id = 50, SupplierName = "Zulu" },
+            new SupplierOrder { Id = 51, SupplierName = "Alpha" });
+        db.CustomerOrders.AddRange(
+            new CustomerOrder { Id = 1, SupplierOrderId = 50 },
+            new CustomerOrder { Id = 2, SupplierOrderId = 51 },
+            new CustomerOrder { Id = 3 });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var result = await CreateController(db).Search(new SearchCustomerOrdersRequest
+        {
+            Pagination = new PaginationRequest { PageSize = 2 },
+            OrderBy = new List<SortRequest> { new() { Field = "supplierName", Direction = direction } },
+        });
+
+        var page = Assert.IsType<PagedResultDto<CustomerOrderDto>>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(3, page.TotalCount);
+        Assert.Equal(new[] { firstSupplier, secondSupplier }, page.Items.Select(x => x.SupplierName));
+    }
+
+    [Theory]
     [InlineData(false, null)]
     [InlineData(true, null)]
     [InlineData(true, "")]

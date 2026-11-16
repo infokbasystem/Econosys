@@ -137,6 +137,7 @@ const createNewSupplierOrderModel = () => ({
     packagingType: '',
     palletFormatId: null,
     eurPallet: false,
+    nrOfPallets: null,
     orderCosts: [],
     created: null,
     edited: null,
@@ -377,6 +378,7 @@ const SupplierOrder = () => {
         eurPallet: Boolean(source?.eurPallet),
         oneWayPallet: Boolean(source?.oneWayPallet),
         producedEdition: parseNullableInt(source?.producedEdition),
+        nrOfPallets: parseNullableInt(source?.nrOfPallets),
         orderCosts: toArray(source?.orderCosts)
             .filter((row) => row.costId != null)
             .map(buildOrderCostPayload),
@@ -1494,6 +1496,18 @@ const SupplierOrder = () => {
                                         inputWidth="w-30"
                                         margintop="5"
                                         numberOnly
+                                    />
+                                    <LabeledInput
+                                        label="Antal pall"
+                                        name="nrOfPallets"
+                                        aria-label="Antal pall"
+                                        type="number"
+                                        integerOnly
+                                        value={supplierOrder?.nrOfPallets ?? null}
+                                        onChange={(value) => updateSupplierOrder({ nrOfPallets: parseNullableInt(value) })}
+                                        labelWidth="w-35"
+                                        inputWidth="w-30"
+                                        margintop="0"
                                     />
 
                                 </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, Plus, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
@@ -7,7 +7,9 @@ import 'react-loading-skeleton/dist/skeleton.css';
 import apiClient from '../../config/apiClient';
 import ActionButton from '../../components/ActionButton';
 import LabeledSwitch from '../../components/LabeledSwitch';
+import MultiSelectCheckboxFilter from '../../components/MultiSelectCheckboxFilter';
 import { getSharedRequest } from '../../helpers/sharedRequest';
+import useColumnResize from '../../hooks/useColumnResize';
 
 const PAGE_SIZE = 25;
 const TABLE_FONT_STYLE = { fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" };
@@ -22,89 +24,6 @@ const columns = [
     { key: 'lastActivity', label: 'Senaste aktivitet', align: 'left', width: '14%', sortBy: 'lastactivity' },
 ];
 
-const SmallStyledCheckbox = ({ checked }) => {
-    const indicatorStyle = checked
-        ? { backgroundColor: '#14b8a6', borderColor: '#14b8a6', color: '#ffffff' }
-        : { backgroundColor: '#ffffff', borderColor: '#aaaaaa', color: '#4b5563' };
-
-    return (
-        <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-[#e5e7eb] bg-white p-[1px]">
-            <span className="inline-flex h-full w-full items-center justify-center rounded-full border transition-all" style={indicatorStyle}>
-                <svg viewBox="0 0 16 16" aria-hidden="true" className={`h-2.5 w-2.5 transition-opacity ${checked ? 'opacity-100' : 'opacity-0'}`}>
-                    <path d="M3 8.5 6.3 11.6 13 4.9" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-            </span>
-        </span>
-    );
-};
-
-const MultiSelectCheckboxFilter = ({ options, selectedValues, onChange }) => {
-    const [open, setOpen] = useState(false);
-    const rootRef = useRef(null);
-    const allSelected = options.length > 0 && selectedValues.length === options.length;
-    const label = allSelected
-        ? 'Välj alla'
-        : selectedValues.length > 0
-            ? `${selectedValues.length} valda`
-            : '';
-
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (rootRef.current && !rootRef.current.contains(event.target)) {
-                setOpen(false);
-            }
-        };
-
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
-
-    const toggleOption = (value) => {
-        onChange(
-            selectedValues.includes(value)
-                ? selectedValues.filter((selectedValue) => selectedValue !== value)
-                : [...selectedValues, value],
-        );
-    };
-
-    return (
-        <div className="relative mt-1" ref={rootRef}>
-            <button
-                type="button"
-                onClick={() => setOpen((previous) => !previous)}
-                className="flex h-5 w-full items-center justify-between rounded-sm border border-gray-300 bg-white px-1.5 text-left text-tiny font-normal text-gray-700 focus:border-slate-400 focus:outline-none"
-                title={label || 'Välj'}
-            >
-                <span className={`truncate ${label ? 'text-gray-700' : 'text-gray-400'}`}>{label || 'Välj'}</span>
-                <span className="text-tiny text-gray-500">▾</span>
-            </button>
-
-            {open ? (
-                <div className="absolute left-0 top-[26px] z-50 max-h-72 w-[420px] overflow-y-auto rounded-sm border border-gray-300 bg-white p-1.5 shadow-lg">
-                    <label
-                        className="mb-0.5 flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-tiny font-normal text-gray-700 hover:bg-gray-50"
-                        onClick={() => onChange(allSelected ? [] : options.map((option) => option.value))}
-                    >
-                        <SmallStyledCheckbox checked={allSelected} />
-                        <span>Välj alla</span>
-                    </label>
-
-                    {options.map((option) => (
-                        <label
-                            key={String(option.value)}
-                            className="mb-0.5 flex cursor-pointer items-center gap-2 rounded-sm px-2 py-0.5 text-tiny font-normal text-gray-700 hover:bg-gray-50"
-                            onClick={() => toggleOption(option.value)}
-                        >
-                            <SmallStyledCheckbox checked={selectedValues.includes(option.value)} />
-                            <span className="truncate">{option.label}</span>
-                        </label>
-                    ))}
-                </div>
-            ) : null}
-        </div>
-    );
-};
-
 const initialPagination = {
     pageNumber: 1,
     pageSize: PAGE_SIZE,
@@ -115,6 +34,7 @@ const initialPagination = {
 };
 
 const CustomerSearch = () => {
+    const resize = useColumnResize();
     const navigate = useNavigate();
 
     const [rows, setRows] = useState([]);
@@ -434,22 +354,22 @@ const CustomerSearch = () => {
             {exportError && <p role="alert" className="mt-1 text-xs text-red-600">{exportError}</p>}
 
             <div className="mt-3 min-h-0 flex-1 overflow-auto border-t border-gray-300 py-1">
-                <table className="table-fixed w-full border-collapse text-xs" style={TABLE_FONT_STYLE}>
+                <table ref={resize.tableRef} className={`table-fixed border-collapse text-xs ${resize.widths ? '' : 'w-full'}`} style={{ ...TABLE_FONT_STYLE, width: resize.tableWidth }}>
                     <colgroup>
-                        {columns.map((column) => (
-                            <col key={column.key} {...(column.width ? { style: { width: column.width } } : {})} />
+                        {columns.map((column, index) => (
+                            <col key={column.key} style={{ width: resize.widths?.[index] ?? column.width }} />
                         ))}
                     </colgroup>
                     <thead>
                         <tr className="text-tiny text-gray-500">
-                            {columns.map((column) => {
+                            {columns.map((column, index) => {
                                 const isSorted = sortConfig.key === column.sortBy;
 
                                 return (
                                     <th
                                         key={column.key}
                                         onClick={() => handleSort(column)}
-                                        className={`${column.sortBy ? 'cursor-pointer' : 'cursor-default'} px-2 pt-1 pb-2 text-tiny font-medium text-gray-500 ${column.align === 'right' ? 'text-right' : 'text-left'}`}
+                                        className={`relative ${column.sortBy ? 'cursor-pointer' : 'cursor-default'} px-2 pt-1 pb-2 text-tiny font-medium text-gray-500 ${column.align === 'right' ? 'text-right' : 'text-left'}`}
                                     >
                                         <span className="inline-flex items-center gap-1">
                                             {column.label}
@@ -488,6 +408,7 @@ const CustomerSearch = () => {
                                                 )}
                                             />
                                         ) : null}
+                                        {resize.handle(index, column.label)}
                                     </th>
                                 );
                             })}

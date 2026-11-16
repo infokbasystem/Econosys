@@ -60,6 +60,11 @@ namespace Econosys.Api.Controllers
                 return BadRequest(ModelState);
             }
 
+            if (request.NrOfPallets is < 0)
+            {
+                return BadRequest(new { message = "Antal pall kan inte vara negativt." });
+            }
+
             var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
             if (legacyUser is null)
             {
@@ -265,6 +270,11 @@ namespace Econosys.Api.Controllers
                 return BadRequest(ModelState);
             }
 
+            if (request.NrOfPallets is < 0)
+            {
+                return BadRequest(new { message = "Antal pall kan inte vara negativt." });
+            }
+
             var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
             if (legacyUser is null)
             {
@@ -399,6 +409,42 @@ namespace Econosys.Api.Controllers
                 .Include(x => x.Customer);
             var pagination = request?.Pagination ?? new PaginationRequest();
 
+            if (request?.CustomerResponsibleUserIds is { } sellerIds)
+            {
+                query = query.Where(x => x.Customer != null && x.Customer.ResponsibleUserId.HasValue
+                    && sellerIds.Contains(x.Customer.ResponsibleUserId.Value));
+            }
+
+            if (request?.CreatedByIds is { } creatorIds)
+            {
+                query = query.Where(x => x.CreatedBy.HasValue && creatorIds.Contains(x.CreatedBy.Value));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request?.CustomerOrderNr))
+            {
+                var customerOrderNr = request.CustomerOrderNr.Trim().ToLower();
+                query = query.Where(x => x.CustomerOrderNr != null && x.CustomerOrderNr.ToLower().Contains(customerOrderNr));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request?.Product))
+            {
+                var product = request.Product.Trim().ToLower();
+                query = query.Where(x => x.Product != null && x.Product.ToLower().Contains(product));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request?.SupplierName))
+            {
+                var supplierName = request.SupplierName.Trim().ToLower();
+                query = query.Where(x => x.SupplierName != null && x.SupplierName.ToLower().Contains(supplierName));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request?.CustomerName))
+            {
+                var customerName = request.CustomerName.Trim().ToLower();
+                query = query.Where(x => x.Customer != null && x.Customer.Name != null
+                    && x.Customer.Name.ToLower().Contains(customerName));
+            }
+
             var searchTerm = request?.SearchTerm?.Trim();
             if (!string.IsNullOrWhiteSpace(searchTerm))
             {
@@ -448,8 +494,24 @@ namespace Econosys.Api.Controllers
             var items = (await orderedQuery
                 .Skip((pagination.PageNumber - 1) * pagination.PageSize)
                 .Take(pagination.PageSize)
+                .Select(x => new
+                {
+                    Order = x,
+                    SellerName = x.Customer != null && x.Customer.ResponsibleUser != null
+                        ? x.Customer.ResponsibleUser.Name : null,
+                    CreatedByUserName = _dbContext.LegacyUsers
+                        .Where(user => user.Id == x.CreatedBy)
+                        .Select(user => user.Name)
+                        .FirstOrDefault(),
+                })
                 .ToListAsync())
-                .Select(MapToDto)
+                .Select(x =>
+                {
+                    var dto = MapToDto(x.Order);
+                    dto.SellerName = x.SellerName;
+                    dto.CreatedByUserName = x.CreatedByUserName;
+                    return dto;
+                })
                 .ToList();
 
             return Ok(new PagedResultDto<SupplierOrderDto>
@@ -1007,6 +1069,7 @@ namespace Econosys.Api.Controllers
                 EconopackTransportResponsible = source.EconopackTransportResponsible,
                 ConfirmedDeliveryDateWeekMode = source.ConfirmedDeliveryDateWeekMode,
                 ProducedEdition = source.ProducedEdition,
+                NrOfPallets = source.NrOfPallets,
                 DeliveryDate = source.DeliveryDate,
                 DeliveryDateWeekMode = source.DeliveryDateWeekMode,
                 CustomerDeliveryAddressId = source.CustomerDeliveryAddressId,
@@ -1196,6 +1259,7 @@ namespace Econosys.Api.Controllers
             entity.PalletFormatId = request.PalletFormatId;
             entity.EurPallet = request.EurPallet;
             entity.OneWayPallet = request.OneWayPallet;
+            entity.NrOfPallets = request.NrOfPallets;
             entity.OverrideHandlingTimeDays = request.OverrideHandlingTimeDays;
             entity.ForceHandlingTimeCountAs = request.ForceHandlingTimeCountAs;
         }
@@ -1265,6 +1329,10 @@ namespace Econosys.Api.Controllers
             entity.PalletFormatId = request.PalletFormatId;
             entity.EurPallet = request.EurPallet;
             entity.ProducedEdition = request.ProducedEdition;
+            if (request.HasNrOfPallets)
+            {
+                entity.NrOfPallets = request.NrOfPallets;
+            }
             entity.OverrideHandlingTimeDays = request.OverrideHandlingTimeDays;
             entity.ForceHandlingTimeCountAs = request.ForceHandlingTimeCountAs;
         }

@@ -10,6 +10,8 @@ const ConfirmationModal = ({
   confirmText = 'Bekräfta',
   cancelText = 'Avbryt',
   isDestructive = false,
+  secondaryText = '',
+  onSecondary,
 }) => {
   
   if (!isOpen) return null;
@@ -44,6 +46,14 @@ const ConfirmationModal = ({
                   className="shadow-md/30 text-xs text-white bg-orange-400 hover:bg-orange-600 px-10 p-[5px]"
                 >
                   {cancelText}
+                </button>
+              )}
+              {secondaryText && onSecondary && (
+                <button
+                  onClick={onSecondary}
+                  className="shadow-md/30 text-xs text-white bg-gray-500 hover:bg-gray-700 px-10 p-[5px]"
+                >
+                  {secondaryText}
                 </button>
               )}
               {confirmText && (

@@ -2,6 +2,17 @@ import apiClient from '../config/apiClient.js';
 
 const PAGE_SIZE = 5;
 
+const getCalculationId = (term) => {
+    if (!/^\d+$/.test(term)) return null;
+    const id = Number(term);
+    return id >= 1 && id <= 2147483647 ? id : null;
+};
+
+export const canSearchHeader = (searchText) => {
+    const term = searchText.trim();
+    return term.length >= 4 || getCalculationId(term) !== null;
+};
+
 const getItems = (data) => {
     if (Array.isArray(data)) return data;
     return Array.isArray(data?.items) ? data.items : [];
@@ -31,9 +42,31 @@ const pageRequest = { pagination: { pageNumber: 1, pageSize: PAGE_SIZE } };
 export const searchHeader = async (searchText) => {
     const term = searchText.trim();
     const isNumeric = /^\d+$/.test(term);
+    const calculationId = getCalculationId(term);
+    const searchOtherGroups = term.length >= 4;
     const searches = [];
 
-    if (!isNumeric) {
+    if (calculationId !== null) {
+        searches.push(createGroup({
+            key: 'calculations',
+            label: 'KALKYLER',
+            endpoint: '/calculations/search',
+            request: {
+                ...pageRequest,
+                filter: { conditions: [{ field: 'id', operator: 'eq', value: calculationId }] },
+            },
+            mapResult: (row) => result(
+                row,
+                row.id,
+                row.productName,
+                [row.customerName, row.supplierName].filter(Boolean).join(' · '),
+                row.createdAt,
+                (id) => `/order/calculations/${encodeURIComponent(id)}`,
+            ),
+        }));
+    }
+
+    if (searchOtherGroups && !isNumeric) {
         searches.push(createGroup({
             key: 'products',
             label: 'PRODUKTER',
@@ -70,7 +103,7 @@ export const searchHeader = async (searchText) => {
         }));
     }
 
-    if (isNumeric || term.length >= 5) {
+    if (searchOtherGroups && (isNumeric || term.length >= 5)) {
         searches.push(createGroup({
             key: 'customerOrders',
             label: 'KUNDORDER',
@@ -91,37 +124,39 @@ export const searchHeader = async (searchText) => {
         }));
     }
 
-    searches.push(createGroup({
-        key: 'transportOrders',
-        label: 'TRANSPORTORDER',
-        endpoint: '/transportorder/search',
-        request: { searchTerm: term },
-        mapResult: (row) => result(
-            row,
-            row.number,
-            row.name,
-            row.details,
-            row.date,
-            (id) => `/logistics/transportorder/${encodeURIComponent(id)}`,
-        ),
-    }));
+    if (searchOtherGroups) {
+        searches.push(createGroup({
+            key: 'transportOrders',
+            label: 'TRANSPORTORDER',
+            endpoint: '/transportorder/search',
+            request: { searchTerm: term },
+            mapResult: (row) => result(
+                row,
+                row.number,
+                row.name,
+                row.details,
+                row.date,
+                (id) => `/logistics/transportorder/${encodeURIComponent(id)}`,
+            ),
+        }));
 
-    searches.push(createGroup({
-        key: 'callOffs',
-        label: 'AVROP',
-        endpoint: '/calloff/search',
-        request: { searchTerm: term },
-        mapResult: (row) => result(
-            row,
-            row.number,
-            row.name,
-            row.details,
-            row.date,
-            (id) => `/logistics/calloff/${encodeURIComponent(id)}`,
-        ),
-    }));
+        searches.push(createGroup({
+            key: 'callOffs',
+            label: 'AVROP',
+            endpoint: '/calloff/search',
+            request: { searchTerm: term },
+            mapResult: (row) => result(
+                row,
+                row.number,
+                row.name,
+                row.details,
+                row.date,
+                (id) => `/logistics/calloff/${encodeURIComponent(id)}`,
+            ),
+        }));
+    }
 
-    if (!isNumeric) {
+    if (searchOtherGroups && !isNumeric) {
         searches.push(createGroup({
             key: 'suppliers',
             label: 'LEVERANTÖRER',
@@ -153,7 +188,7 @@ export const searchHeader = async (searchText) => {
         }));
     }
 
-    if (isNumeric) {
+    if (searchOtherGroups && isNumeric) {
         searches.push(createGroup({
             key: 'invoices',
             label: 'FAKTUROR',

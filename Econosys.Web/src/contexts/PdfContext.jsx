@@ -22,17 +22,24 @@ export const PdfProvider = ({ children, initialBadges = [] }) => {
     const [showEmailModal, setShowEmailModal] = useState(false);
     const [isStale, setIsStale] = useState(false);
     const [emailInfo, setEmailInfoState] = useState(() => createDefaultEmailInfo());
+    const [onEmailSent, setOnEmailSent] = useState(null);
+    const [mailLogItem, setMailLogItem] = useState(null);
 
-    const openPdfPreview = useCallback((url, fileName = '') => {
+    const openPdfPreview = useCallback((url, fileName = '', onSent = null, logItem = null) => {
         setPdfUrl(url);
         setPdfFileName(fileName || '');
+        setOnEmailSent(() => onSent);
+        setMailLogItem(logItem);
         setShowPdfPanel(true);
         setIsStale(false);
     }, []);
 
-    const closePdfPreview = useCallback(() =>
-        setShowPdfPanel(false), []
-    );
+    const closePdfPreview = useCallback(() => {
+        setShowPdfPanel(false);
+        setShowEmailModal(false);
+        setOnEmailSent(null);
+        setMailLogItem(null);
+    }, []);
 
     const markStale = useCallback(() => {
         setIsStale(true);
@@ -83,6 +90,8 @@ export const PdfProvider = ({ children, initialBadges = [] }) => {
         showEmailModal,
         isStale,
         emailInfo,
+        onEmailSent,
+        mailLogItem,
         openPdfPreview,
         closePdfPreview,
         printPdf,

@@ -7,6 +7,9 @@ import { formatDateShort } from '../helpers/dateUtils';
 import { formatNumber } from '../helpers/numberUtils';
 import { formatHistoryQuantity, getHistoryDetailUrl, getHistoryTransportLink } from '../helpers/orderHistory';
 import { getSharedRequest } from '../helpers/sharedRequest';
+import DeliveryModal from '../modals/DeliveryModal';
+
+const DELIVERY_TYPES = ['DeliveryToStock', 'DeliveryToCustomer', 'DeliveryFromStock'];
 
 const linkClass = 'text-sky-800 hover:underline focus-visible:underline focus-visible:outline-sky-600';
 const showNumber = (value) => value == null ? '—' : formatNumber(value);
@@ -121,11 +124,19 @@ const HistoryList = ({ entityType, entityId, refreshKey }) => {
     const [error, setError] = useState('');
     const [refresh, setRefresh] = useState(0);
     const [selectedRow, setSelectedRow] = useState(null);
+    const [selectedDelivery, setSelectedDelivery] = useState(null);
     const detailTriggerRef = useRef(null);
     const closeDetails = useCallback(() => {
         setSelectedRow(null);
         detailTriggerRef.current?.focus();
     }, []);
+    const reloadHistory = () => {
+        setLoading(true);
+        setError('');
+        setHistory(null);
+        setSelectedRow(null);
+        setRefresh((value) => value + 1);
+    };
     const resource = entityType === 'supplierOrder' ? 'supplierorders' : 'customerorders';
 
     useEffect(() => {
@@ -157,13 +168,7 @@ const HistoryList = ({ entityType, entityId, refreshKey }) => {
         <section className="mt-6 mb-6 w-full" aria-label="Orderhistorik">
             <div className="mb-3 flex items-center justify-between gap-4">
                 {/* <h3 className="text-sm font-semibold text-gray-600">Historik</h3> */}
-                <button type="button" onClick={() => {
-                    setLoading(true);
-                    setError('');
-                    setHistory(null);
-                    setSelectedRow(null);
-                    setRefresh((value) => value + 1);
-                }} disabled={loading || !(entityId > 0)}
+                <button type="button" onClick={reloadHistory} disabled={loading || !(entityId > 0)}
                     className="inline-flex items-center gap-1 text-xs text-gray-600 hover:underline disabled:opacity-50">
                     <RefreshCw size={13} className={loading ? 'animate-spin' : ''} /> Uppdatera historik
                 </button>
@@ -204,7 +209,8 @@ const HistoryList = ({ entityType, entityId, refreshKey }) => {
                                             <td className="px-2 py-1.5 text-right">
                                                 {detailUrl && <button type="button" onClick={(event) => {
                                                     detailTriggerRef.current = event.currentTarget;
-                                                    setSelectedRow(row);
+                                                    if (DELIVERY_TYPES.includes(row.type)) setSelectedDelivery(row);
+                                                    else setSelectedRow(row);
                                                 }} className={linkClass} aria-label={`Visa ${row.typeName.toLowerCase()} ${row.id}`}>Visa</button>}
                                                 {row.type === 'Invoice' && <Link to={`/finance/invoice/${row.id}`} className={linkClass}>Visa</Link>}
                                             </td>
@@ -215,6 +221,13 @@ const HistoryList = ({ entityType, entityId, refreshKey }) => {
                 </table>
             </div>
             {selectedRow && <HistoryDetails row={selectedRow} onClose={closeDetails} />}
+            <DeliveryModal
+                isOpen={Boolean(selectedDelivery)}
+                deliveryType={selectedDelivery?.type}
+                deliveryId={selectedDelivery?.id}
+                onClose={() => setSelectedDelivery(null)}
+                onSaved={reloadHistory}
+            />
         </section>
     );
 };

@@ -8,6 +8,7 @@ import apiClient from '../../config/apiClient';
 import ActionButton from '../../components/ActionButton';
 import { formatDateShort } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
+import useColumnResize from '../../hooks/useColumnResize';
 
 const PAGE_SIZE = 25;
 const TABLE_FONT_STYLE = { fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" };
@@ -46,6 +47,7 @@ const getCellValue = (row, column) => {
 };
 
 const CalculationSearch = () => {
+    const resize = useColumnResize();
     const [filters, setFilters] = useState(EMPTY_FILTERS);
     const [appliedFilters, setAppliedFilters] = useState(EMPTY_FILTERS);
     const [pageNumber, setPageNumber] = useState(1);
@@ -278,18 +280,18 @@ const CalculationSearch = () => {
             {exportError && <p role="alert" className="mt-2 text-xs text-red-600">{exportError}</p>}
 
             <div className="mt-3 min-h-0 min-w-0 flex-1 overflow-auto border-t border-gray-300 py-1" aria-busy={loading}>
-                <table className="w-full min-w-[1200px] table-fixed border-collapse text-xs" style={TABLE_FONT_STYLE}>
+                <table ref={resize.tableRef} className={`table-fixed border-collapse text-xs ${resize.widths ? '' : 'w-full min-w-[1200px]'}`} style={{ ...TABLE_FONT_STYLE, width: resize.tableWidth }}>
                     <colgroup>
-                        {COLUMNS.map((column) => <col key={column.key} style={{ width: column.width }} />)}
+                        {COLUMNS.map((column, index) => <col key={column.key} style={{ width: resize.widths?.[index] ?? column.width }} />)}
                     </colgroup>
                     <thead>
                         <tr className="text-tiny text-gray-500">
-                            {COLUMNS.map((column) => (
+                            {COLUMNS.map((column, index) => (
                                 <th
                                     key={column.key}
                                     scope="col"
                                     aria-sort={sortConfig.key === column.key ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
-                                    className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500"
+                                    className="relative px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500"
                                 >
                                     <button type="button" onClick={() => handleSort(column.key)} className="inline-flex items-center gap-1">
                                         {column.label}
@@ -297,6 +299,7 @@ const CalculationSearch = () => {
                                             sortConfig.direction === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
                                         ) : <ChevronUp className="h-3 w-3 opacity-0" />}
                                     </button>
+                                    {resize.handle(index, column.label)}
                                 </th>
                             ))}
                         </tr>

@@ -6329,6 +6329,9 @@ namespace Econosys.Api.Migrations
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("strMessage");
 
+                    b.Property<int?>("NrOfPallets")
+                        .HasColumnType("int");
+
                     b.Property<int?>("OldDbId")
                         .HasColumnType("int");
 

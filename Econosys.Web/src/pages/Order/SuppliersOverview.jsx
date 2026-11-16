@@ -19,6 +19,7 @@ import ActionButton from '../../components/ActionButton';
 import LabeledSwitch from '../../components/LabeledSwitch';
 import { getSwedishTodayDateString } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
+import useColumnResize from '../../hooks/useColumnResize';
 import bg from "../../assets/content.png";
 
 const PAGE_SIZE = 25;
@@ -169,6 +170,7 @@ const initialPagination = {
 };
 
 const SuppliersOverview = () => {
+    const resize = useColumnResize();
     const navigate = useNavigate();
     const chartPopupRef = useRef(null);
     const [statisticsRows, setStatisticsRows] = useState([]);
@@ -774,17 +776,18 @@ const SuppliersOverview = () => {
                 </div>
 
                 <div className="border-t border-gray-300 py-1 mt-2 min-h-0 flex-1 overflow-auto">
-                    <table className="table-fixed w-full border-collapse text-xs" style={TABLE_FONT_STYLE}>
+                    <table ref={resize.tableRef} className={`table-fixed border-collapse text-xs ${resize.widths ? '' : 'w-full'}`} style={{ ...TABLE_FONT_STYLE, width: resize.tableWidth }}>
                         <colgroup>
-                            {listColumns.map((column) => (
-                                <col key={column.key} {...(column.width ? { style: { width: column.width } } : {})} />
+                            {listColumns.map((column, index) => (
+                                <col key={column.key} style={{ width: resize.widths?.[index] ?? column.width }} />
                             ))}
                         </colgroup>
                         <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                             <tr className="text-tiny text-gray-500">
-                                {listColumns.map((column) => (
-                                    <th key={column.key} className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">
+                                {listColumns.map((column, index) => (
+                                    <th key={column.key} className="relative px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">
                                         {column.label}
+                                        {resize.handle(index, column.label)}
                                     </th>
                                 ))}
                             </tr>

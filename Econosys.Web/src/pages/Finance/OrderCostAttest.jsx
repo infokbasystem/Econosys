@@ -8,6 +8,7 @@ import SegmentedFilter from '../../components/SegmentedFilter';
 import DateRangePicker from '../../components/DaterangePicker';
 import apiClient from '../../config/apiClient';
 import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
+import useColumnResize from '../../hooks/useColumnResize';
 import { useAuth } from '../../contexts/AuthContext';
 import { toSwedishDateBoundaryIso } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
@@ -63,6 +64,7 @@ const parseNullableDecimal = (value) => {
 };
 
 const OrderCostAttest = () => {
+    const resize = useColumnResize();
     const navigate = useNavigate();
     const { user } = useAuth();
 
@@ -327,35 +329,26 @@ const OrderCostAttest = () => {
             </div>
 
             <div className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
-                <table className="table-fixed w-full border-collapse text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                <table ref={resize.tableRef} className={`table-fixed border-collapse text-xs ${resize.widths ? '' : 'w-full'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif", width: resize.tableWidth }}>
                     <colgroup>
-                        <col style={{ width: '7%' }} />
-                        <col style={{ width: '6%' }} />
-                        <col style={{ width: '6%' }} />
-                        <col style={{ width: '12%' }} />
-                        <col style={{ width: '12%' }} />
-                        <col style={{ width: '10%' }} />
-                        <col style={{ width: '7%' }} />
-                        <col style={{ width: '7%' }} />
-                        <col style={{ width: '5%' }} />
-                        <col style={{ width: '5%' }} />
-                        <col style={{ width: '6%' }} />
-                        <col style={{ width: 'auto' }} />
+                        {['7%', '6%', '6%', '12%', '12%', '10%', '7%', '7%', '5%', '5%', '6%', 'auto'].map((width, index) => (
+                            <col key={index} style={{ width: resize.widths?.[index] ?? width }} />
+                        ))}
                     </colgroup>
                     <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                         <tr className="text-tiny text-gray-500">
-                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Skapad av</th>
-                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Datum</th>
-                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Ordernr</th>
-                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Leverantor</th>
-                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Kund</th>
-                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Kostnad</th>
-                            <th className="px-2 pt-1 pb-2 text-right pr-9 text-tiny font-medium text-gray-500">Inpris</th>
-                            <th className="px-2 pt-1 pb-2 text-right pr-9 text-tiny font-medium text-gray-500">Utpris</th>
-                            <th className="px-2 pt-1 pb-2 text-right pr-3 text-tiny font-medium text-gray-500">Attestpris</th>
-                            <th className="pl-4 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Att. av</th>
-                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Faktura</th>
-                            <th className="px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Intern not</th>
+                            <th className="relative px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Skapad av{resize.handle(0, 'Skapad av')}</th>
+                            <th className="relative px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Datum{resize.handle(1, 'Datum')}</th>
+                            <th className="relative px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Ordernr{resize.handle(2, 'Ordernr')}</th>
+                            <th className="relative px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Leverantor{resize.handle(3, 'Leverantor')}</th>
+                            <th className="relative px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Kund{resize.handle(4, 'Kund')}</th>
+                            <th className="relative px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Kostnad{resize.handle(5, 'Kostnad')}</th>
+                            <th className="relative px-2 pt-1 pb-2 text-right pr-9 text-tiny font-medium text-gray-500">Inpris{resize.handle(6, 'Inpris')}</th>
+                            <th className="relative px-2 pt-1 pb-2 text-right pr-9 text-tiny font-medium text-gray-500">Utpris{resize.handle(7, 'Utpris')}</th>
+                            <th className="relative px-2 pt-1 pb-2 text-right pr-3 text-tiny font-medium text-gray-500">Attestpris{resize.handle(8, 'Attestpris')}</th>
+                            <th className="relative pl-4 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Att. av{resize.handle(9, 'Att. av')}</th>
+                            <th className="relative px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Faktura{resize.handle(10, 'Faktura')}</th>
+                            <th className="relative px-2 pt-1 pb-2 text-left text-tiny font-medium text-gray-500">Intern not{resize.handle(11, 'Intern not')}</th>
                         </tr>
                     </thead>
                     <tbody className={`${!loading && rows.length > 0 ? 'bg-white' : 'bg-transparent'}`}>

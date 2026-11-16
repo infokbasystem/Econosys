@@ -1,24 +1,33 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { ArrowLeftCircle, ArrowRightCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import apiClient from '../../config/apiClient';
+import MultiSelectCheckboxFilter from '../../components/MultiSelectCheckboxFilter';
+import OrderSearchInputs from '../../components/OrderSearchInputs';
+import { buildOrderTextFilters } from '../../helpers/orderSearchFilters';
 import { formatDateShort } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
+import useOrderSearchPeople from '../../hooks/useOrderSearchPeople';
+import useColumnResize from '../../hooks/useColumnResize';
 
 const PAGE_SIZE = 25;
 const TABLE_FONT_STYLE = { fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" };
+const extraSearchFields = [{ key: 'yourOrderNr', label: 'Kunds onr' }];
 
 const columns = [
     { key: 'customerOrderNr', label: 'Nr', align: 'left', width: '80px' },
     { key: 'yourOrderNr', label: 'Kunds onr', align: 'left', width: '80px' },
     { key: 'product', label: 'Produkt', align: 'left', width: '14%' },
     { key: 'customerName', label: 'Kund', align: 'left', width: '14%' },
+    { key: 'supplierName', label: 'Leverantör', align: 'left', width: '10%' },
     { key: 'construction', label: 'Konstruktion', align: 'left', width: '12%' },
     { key: 'material', label: 'Material', align: 'left', width: '12%' },
     { key: 'format', label: 'Format', align: 'left', width: '10%' },
+    { key: 'sellerName', label: 'Säljare', align: 'left', width: '12%', filter: 'seller' },
+    { key: 'createdByUserName', label: 'Skapad av', align: 'left', width: '12%', filter: 'creator' },
     { key: 'created', label: 'Skapad', align: 'left', width: '100px' },
     { key: 'edited', label: 'Ändrad', align: 'left', width: '100px' },
 ];
@@ -41,20 +50,23 @@ const initialPagination = {
 };
 
 const CustomerOrderSearch = () => {
+    const resize = useColumnResize();
     const navigate = useNavigate();
+    const people = useOrderSearchPeople();
+    const { personFilters } = people;
 
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchLoaded, setSearchLoaded] = useState(false);
-    const [searchInput, setSearchInput] = useState('');
-    const [searchTerm, setSearchTerm] = useState('');
+    const [searchInput, setSearchInput] = useState({ searchTerm: '', product: '', supplierName: '', customerName: '', yourOrderNr: '' });
+    const [searchFilters, setSearchFilters] = useState(() => buildOrderTextFilters(searchInput));
     const [pagination, setPagination] = useState(initialPagination);
     const [sortConfig, setSortConfig] = useState({ key: 'created', direction: 'desc' });
     const [selectedRowId, setSelectedRowId] = useState(null);
 
     useEffect(() => {
         const timer = setTimeout(() => {
-            setSearchTerm(searchInput);
+            setSearchFilters(buildOrderTextFilters(searchInput));
             setPagination((prev) => ({ ...prev, pageNumber: 1 }));
         }, 350);
 
@@ -68,10 +80,9 @@ const CustomerOrderSearch = () => {
             setLoading(true);
 
             try {
-                const trimmedSearchTerm = searchTerm.trim();
-
                 const requestBody = {
-                    searchTerm: trimmedSearchTerm || null,
+                    ...searchFilters,
+                    ...personFilters,
                     pagination: {
                         pageNumber: pagination.pageNumber,
                         pageSize: pagination.pageSize,
@@ -120,7 +131,7 @@ const CustomerOrderSearch = () => {
         return () => {
             isActive = false;
         };
-    }, [searchTerm, pagination.pageNumber, pagination.pageSize, sortConfig]);
+    }, [searchFilters, pagination.pageNumber, pagination.pageSize, sortConfig, personFilters]);
 
     const showSkeleton = loading && !searchLoaded;
 
@@ -136,6 +147,11 @@ const CustomerOrderSearch = () => {
         if (nextPage < 1) return;
         if (pagination.totalPages > 0 && nextPage > pagination.totalPages) return;
         setPagination((prev) => ({ ...prev, pageNumber: nextPage }));
+    };
+
+    const handlePersonFilterChange = (setFilter, values) => {
+        setFilter(values);
+        setPagination((prev) => ({ ...prev, pageNumber: 1 }));
     };
 
     const getRowClass = (rowId) => {
@@ -156,16 +172,7 @@ const CustomerOrderSearch = () => {
     return (
         <div className="flex h-full flex-col pt-3 pb-4 ps-10 pe-0">
             <div className="mt-2 flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-2">
-                <div className="relative ml-16 w-56">
-                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-                    <input
-                        type="text"
-                        value={searchInput}
-                        onChange={(event) => setSearchInput(event.target.value)}
-                        placeholder="Sok"
-                        className="h-6 w-full rounded-full border border-lime-600 bg-white pl-8 pr-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
-                    />
-                </div>
+                <OrderSearchInputs values={searchInput} onChange={setSearchInput} extraFields={extraSearchFields} />
 
                 <div className="ml-auto flex items-center gap-4 text-xs text-gray-600" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                     <span>Rader <strong>{pagination.totalCount}</strong></span>
@@ -191,24 +198,44 @@ const CustomerOrderSearch = () => {
                 </div>
             </div>
 
+            {people.error && <p role="alert" className="mt-1 text-xs text-red-600">{people.error}</p>}
+
             <div className="mt-3 min-h-0 flex-1 overflow-auto border-t border-gray-300 py-1">
-                <table className="grid w-full text-xs" style={tableStyle}>
+                <table
+                    ref={resize.tableRef}
+                    className={`grid text-xs ${resize.widths ? '' : 'w-full min-w-[1400px]'}`}
+                    style={{ ...tableStyle, width: resize.tableWidth, gridTemplateColumns: resize.widths ? resize.widths.map((width) => `${width}px`).join(' ') : tableStyle.gridTemplateColumns }}
+                >
                     <thead className="contents">
                         <tr className="col-span-full grid grid-cols-subgrid text-tiny text-gray-500">
-                            {columns.map((column) => (
+                            {columns.map((column, index) => (
                                 <th
                                     key={column.key}
-                                    onClick={() => handleSort(column.key)}
-                                    className={`overflow-hidden cursor-pointer px-2 pt-1 pb-2 text-tiny font-medium text-gray-500 ${column.align === 'right' ? 'text-right' : 'text-left'}`}
+                                    onClick={column.filter ? undefined : () => handleSort(column.key)}
+                                    className={`relative ${column.filter ? 'cursor-default' : 'overflow-hidden cursor-pointer'} px-2 pt-1 pb-2 text-tiny font-medium text-gray-500 ${column.align === 'right' ? 'text-right' : 'text-left'}`}
                                 >
                                     <span className="inline-flex items-center gap-1">
                                         {column.label}
-                                        {sortConfig.key === column.key ? (
+                                        {column.filter ? null : sortConfig.key === column.key ? (
                                             sortConfig.direction === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
                                         ) : (
                                             <ChevronUp className="h-3 w-3 opacity-0" />
                                         )}
                                     </span>
+                                    {column.filter && (
+                                        <MultiSelectCheckboxFilter
+                                            label={`Filtrera ${column.label.toLowerCase()}`}
+                                            options={people.options}
+                                            selectedValues={column.filter === 'seller' ? people.sellerIds : people.creatorIds}
+                                            disabled={people.options.length === 0}
+                                            menuAlign="right"
+                                            onChange={(values) => handlePersonFilterChange(
+                                                column.filter === 'seller' ? people.setSellerIds : people.setCreatorIds,
+                                                values,
+                                            )}
+                                        />
+                                    )}
+                                    {resize.handle(index, column.label)}
                                 </th>
                             ))}
                         </tr>
@@ -243,9 +270,12 @@ const CustomerOrderSearch = () => {
                                     <td className="truncate px-2 py-1 text-gray-800">{row.yourOrderNr}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.product}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.customerName}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{row.supplierName}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.construction}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.material}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.format}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{row.sellerName}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{row.createdByUserName}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{formatDateShort(row.created)}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{formatDateShort(row.edited)}</td>
                                 </tr>

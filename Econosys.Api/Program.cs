@@ -157,6 +157,9 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<ILegacyUserResolutionService, LegacyUserResolutionService>();
+builder.Services.AddScoped<EmailService>();
+builder.Services.AddScoped<IEmailTransport, SmtpEmailTransport>();
+builder.Services.AddScoped<IMailLogService, MailLogService>();
 builder.Services.AddScoped<CalculationFreightPriceService>();
 builder.Services.AddScoped<DeliveryEditingService>();
 builder.Services.AddScoped<IPalletFormatOptionsService, PalletFormatOptionsService>();

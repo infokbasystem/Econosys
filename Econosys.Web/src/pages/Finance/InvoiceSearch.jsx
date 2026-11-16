@@ -9,6 +9,7 @@ import DateRangePicker from '../../components/DaterangePicker';
 import LabeledInput from '../../components/LabeledInput';
 import apiClient from '../../config/apiClient';
 import { getSharedRequest } from '../../helpers/sharedRequest';
+import useColumnResize from '../../hooks/useColumnResize';
 
 const PAGE_SIZE = 100;
 const INVOICE_SEARCH_CACHE_KEY = 'invoice-search-page-state';
@@ -42,6 +43,7 @@ const readCachedInvoiceSearchState = () => {
 };
 
 const InvoiceSearch = () => {
+    const resize = useColumnResize();
     const navigate = useNavigate();
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -440,19 +442,19 @@ const InvoiceSearch = () => {
             </div>
 
             <div ref={listRef} className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
-                <table className="table-fixed w-full border-collapse text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                <table ref={resize.tableRef} className={`table-fixed border-collapse text-xs ${resize.widths ? '' : 'w-full'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif", width: resize.tableWidth }}>
                     <colgroup>
-                        {columns.map((column) => (
-                            <col key={column.key} {...(column.width ? { style: { width: column.width } } : {})} />
+                        {columns.map((column, index) => (
+                            <col key={column.key} style={{ width: resize.widths?.[index] ?? column.width }} />
                         ))}
                     </colgroup>
                     <thead className="">
                         <tr className="text-tiny text-gray-500">
-                            {columns.map((col) => (
+                            {columns.map((col, index) => (
                                 <th
                                     key={col.key}
                                     onClick={() => (col.sortable ? handleSort(col.key) : undefined)}
-                                    className={`${col.sortable ? 'cursor-pointer' : ''} px-2 pt-1 pb-2 text-tiny font-medium text-gray-500 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
+                                    className={`relative ${col.sortable ? 'cursor-pointer' : ''} px-2 pt-1 pb-2 text-tiny font-medium text-gray-500 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
                                 >
                                     <span className="inline-flex items-center gap-1">
                                         {col.label}
@@ -464,6 +466,7 @@ const InvoiceSearch = () => {
                                             )
                                         )}
                                     </span>
+                                    {resize.handle(index, col.label)}
                                 </th>
                             ))}
                         </tr>

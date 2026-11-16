@@ -2,6 +2,14 @@
 @transportOrderId = 1
 @deliveryId = 1
 @omlastInventoryId = 1
+@supplierFactoryId = 1
+@secondSupplierFactoryId = 2
+
+### Supplier PDF: union of deliveries for the selected factories (repeat receiverIds for each selection)
+GET {{baseUrl}}/api/pdf/transportorder/{{transportOrderId}}?receiverType=SUPPLIER&receiverIds={{supplierFactoryId}}&receiverIds={{secondSupplierFactoryId}}
+
+### Single-supplier PDF (legacy receiverId is still supported)
+GET {{baseUrl}}/api/pdf/transportorder/{{transportOrderId}}?receiverType=SUPPLIER&receiverId={{supplierFactoryId}}
 
 ### Load read-only legacy Omlast/direkt modal context; Save in the modal only changes the client draft
 GET {{baseUrl}}/api/transportorder/{{transportOrderId}}/deliveries/{{deliveryId}}/omlast-info

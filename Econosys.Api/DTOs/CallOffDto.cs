@@ -145,6 +145,7 @@ namespace Econosys.Api.DTOs
         public string CustomerName { get; set; } = string.Empty;
         public string ProductName { get; set; } = string.Empty;
         public int? OrderedQty { get; set; }
+        public List<CallOffDeliveryAddressOptionDto> DeliveryAddressOptions { get; set; } = new();
         public List<CallOffDeliveryCandidateGroupDto> Groups { get; set; } = new();
     }
 

@@ -10,12 +10,8 @@ import LabeledCheckbox from '../components/LabeledCheckbox';
 
 const buildFormFromCandidate = (candidate, group, details) => ({
     deliveryDate: details?.deliveryDate != null ? String(details.deliveryDate).slice(0, 10) : '',
-    nrOfItems: details?.nrOfItems != null
-        ? details.nrOfItems
-        : group?.nrOf != null ? group.nrOf : null,
-    nrOfPallets: details?.nrOfPallets != null
-        ? details.nrOfPallets
-        : group?.nrOfPallets != null ? group.nrOfPallets : null,
+    nrOfItems: details?.nrOfItems ?? null,
+    nrOfPallets: details?.nrOfPallets ?? null,
     callOff: details?.callOff != null ? String(details.callOff) : '',
     inventoryId: (details?.inventoryId ?? group?.inventoryId) == null ? '' : String(details?.inventoryId ?? group?.inventoryId),
     palletLength: (details?.palletLength ?? group?.palletLength) != null ? details?.palletLength ?? group?.palletLength : null,
@@ -324,7 +320,7 @@ const DeliveryFromStock = ({
                                 label="Upplaga per pall"
                                 labelWidth="w-25"
                                 inputWidth="w-40"
-                                value={group?.editionPerPallet ?? ''}
+                                value={editionPerPallet ?? ''}
                                 disabled
                             />
 

@@ -8,6 +8,7 @@ import { usePdf } from '../../contexts/PdfContext';
 import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledCheckbox from '../../components/LabeledCheckbox';
+import MailLog from '../../components/MailLog';
 import LabeledDatePicker from '../../components/LabeledDatePicker';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
@@ -347,9 +348,11 @@ const TransportOrder = () => {
     const [loading, setLoading] = useState(true);
     const [messages, setMessages] = useState([]);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
+    const [pendingDeliveryStatus, setPendingDeliveryStatus] = useState(null);
     const [showPdfRecipientPicker, setShowPdfRecipientPicker] = useState(false);
+    const [mailLogRevision, setMailLogRevision] = useState(0);
     const [pdfRecipientType, setPdfRecipientType] = useState('');
-    const [pdfRecipientId, setPdfRecipientId] = useState('');
+    const [pdfRecipientIds, setPdfRecipientIds] = useState([]);
     const [pdfRecipientOptions, setPdfRecipientOptions] = useState([]);
     const [isPdfRecipientLoading, setIsPdfRecipientLoading] = useState(false);
     const [isPdfLoading, setIsPdfLoading] = useState(false);
@@ -835,7 +838,7 @@ const TransportOrder = () => {
         }
     };
 
-    const downloadTransportOrderPdf = async (receiverType, receiverId = null) => {
+    const downloadTransportOrderPdf = async (receiverType, receiverIds = []) => {
         if (!id || isSaving || isStaleConflict || isPdfLoading) {
             return;
         }
@@ -849,8 +852,10 @@ const TransportOrder = () => {
 
         const requestId = ++pdfRequestRef.current;
         const query = new URLSearchParams({ receiverType });
-        if (receiverId != null) {
-            query.set('receiverId', String(receiverId));
+        if (receiverType === 'SUPPLIER') {
+            receiverIds.forEach((receiverId) => query.append('receiverIds', String(receiverId)));
+        } else if (receiverIds.length > 0) {
+            query.set('receiverId', String(receiverIds[0]));
         }
 
         setIsPdfLoading(true);
@@ -867,9 +872,14 @@ const TransportOrder = () => {
             }
             const url = URL.createObjectURL(response.data);
             pdfObjectUrlRef.current = url;
-            const fallbackId = receiverId ?? transportOrderForm.shipperId ?? '0';
+            const fallbackId = receiverIds.length > 0 ? receiverIds.join('-') : transportOrderForm.shipperId ?? '0';
             const fileName = `Transportorder_${transportOrderForm.transportOrderNr || id}_${fallbackId}.pdf`;
-            openPdfPreview?.(url, fileName);
+            openPdfPreview?.(
+                url,
+                fileName,
+                () => setMailLogRevision((value) => value + 1),
+                { transportOrderId: Number(id) },
+            );
         } catch (error) {
             if (requestId !== pdfRequestRef.current) return;
             console.error('Failed to load transport order PDF:', error);
@@ -929,7 +939,7 @@ const TransportOrder = () => {
 
             setPdfRecipientType(receiverType);
             setPdfRecipientOptions(options);
-            setPdfRecipientId(String(options[0].id));
+            setPdfRecipientIds([options[0].id]);
             setShowPdfRecipientPicker(true);
         } catch (error) {
             console.error('Failed to load transport order PDF recipients:', error);
@@ -943,13 +953,13 @@ const TransportOrder = () => {
     };
 
     const handleConfirmPdfRecipient = async () => {
-        if (!pdfRecipientId) {
+        if (pdfRecipientIds.length === 0) {
             return;
         }
         const recipientType = pdfRecipientType;
-        const recipientId = Number(pdfRecipientId);
+        const recipientIds = pdfRecipientIds.map(Number);
         setShowPdfRecipientPicker(false);
-        await downloadTransportOrderPdf(recipientType, recipientId);
+        await downloadTransportOrderPdf(recipientType, recipientIds);
     };
 
     // deliveryStatusOverride lets the delivery-status radio trigger an immediate save without waiting for the async form-field update to land in state.
@@ -1038,6 +1048,29 @@ const TransportOrder = () => {
         if (Number(value) === Number(transportOrderForm.deliveryStatus)) {
             return;
         }
+        // The server rebases the cost calc on a status change, so unsaved cost calc edits would otherwise be lost.
+        if (costCalcAreaRef.current?.hasUnsavedChanges()) {
+            setPendingDeliveryStatus(value);
+            return;
+        }
+        updateFormField('deliveryStatus', value);
+        saveTransportOrder(value);
+    };
+
+    const handlePendingDeliveryStatusSaveFirst = async () => {
+        const value = pendingDeliveryStatus;
+        setPendingDeliveryStatus(null);
+        const saved = await costCalcAreaRef.current?.save();
+        if (saved === false) {
+            return;
+        }
+        updateFormField('deliveryStatus', value);
+        saveTransportOrder(value);
+    };
+
+    const handlePendingDeliveryStatusDiscard = () => {
+        const value = pendingDeliveryStatus;
+        setPendingDeliveryStatus(null);
         updateFormField('deliveryStatus', value);
         saveTransportOrder(value);
     };
@@ -1132,6 +1165,18 @@ const TransportOrder = () => {
                 cancelText="Avbryt"
                 isDestructive={false}
             />
+            <ConfirmationModal
+                isOpen={pendingDeliveryStatus !== null}
+                onClose={() => setPendingDeliveryStatus(null)}
+                onConfirm={handlePendingDeliveryStatusSaveFirst}
+                onSecondary={handlePendingDeliveryStatusDiscard}
+                title="Osparade ändringar i kostnadskalkylen"
+                message="Det finns osparade ändringar i kostnadskalkylen. Vill du spara dem innan leveransstatus ändras?"
+                confirmText="Spara först"
+                secondaryText="Fortsätt utan att spara"
+                cancelText="Avbryt"
+                isDestructive={false}
+            />
 
             {showPdfRecipientPicker ? (
                 <div
@@ -1153,9 +1198,12 @@ const TransportOrder = () => {
                             labelWidth="w-24"
                             inputWidth="flex-1"
                             name="pdfRecipient"
-                            value={pdfRecipientId}
+                            isMulti={pdfRecipientType === 'SUPPLIER'}
+                            value={pdfRecipientType === 'SUPPLIER' ? pdfRecipientIds : pdfRecipientIds[0] ?? ''}
                             items={pdfRecipientOptions}
-                            onChange={setPdfRecipientId}
+                            onChange={(value) => setPdfRecipientIds(
+                                pdfRecipientType === 'SUPPLIER' ? value : value ? [value] : [],
+                            )}
                         />
                         <div className="mt-8 flex justify-end gap-3">
                             <ActionButton
@@ -1167,7 +1215,7 @@ const TransportOrder = () => {
                                 label="Visa PDF"
                                 icon={Printer}
                                 onClick={handleConfirmPdfRecipient}
-                                disabled={!pdfRecipientId || isPdfLoading}
+                                disabled={pdfRecipientIds.length === 0 || isPdfLoading}
                                 accent="sky"
                             />
                         </div>
@@ -1288,6 +1336,7 @@ const TransportOrder = () => {
                                         accent="sky"
                                     />
                                 </div>
+                                <MailLog key={id} itemType="transportorder" itemId={Number(id)} refreshKey={mailLogRevision} />
                                 <div className="ml-20 flex items-center gap-2">
                                     <ActionButton
                                         label="Delete"

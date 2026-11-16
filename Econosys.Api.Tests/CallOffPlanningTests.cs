@@ -118,6 +118,56 @@ public class CallOffPlanningTests
     }
 
     [Fact]
+    public async Task CandidateIncludesCustomerAddressesBeforeCallOffIsSaved()
+    {
+        await using var db = CreateDb();
+        db.CustomerOrders.Add(new CustomerOrder { Id = 10, CustomerId = 5, CustomerOrderNr = "1234" });
+        db.CustomerDeliveryAddresses.AddRange(
+            new CustomerDeliveryAddress { Id = 7, CustomerId = 5, Name = "Warehouse B" },
+            new CustomerDeliveryAddress { Id = 8, CustomerId = 5, Name = "Warehouse A", Address = "Testgatan 1", PostalNr = "12345", PostalAddress = "Teststad" },
+            new CustomerDeliveryAddress { Id = 9, CustomerId = 6, Name = "Other customer" });
+        await db.SaveChangesAsync();
+        var controller = CreateController(db);
+
+        var result = await controller.GetDeliveryCandidates("1234");
+
+        var candidate = Assert.IsType<CallOffDeliveryCandidateResponseDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(new[] { 8, 7 }, candidate.DeliveryAddressOptions.Select(x => x.Id));
+        var address = candidate.DeliveryAddressOptions[0];
+        Assert.Equal("Warehouse A", address.Name);
+        Assert.Equal("Testgatan 1", address.Street);
+        Assert.Equal("12345", address.PostalNr);
+        Assert.Equal("Teststad", address.City);
+        Assert.Empty(await db.CallOffs.ToListAsync());
+        Assert.Empty(await db.DeliveryFromStocks.ToListAsync());
+
+        var savedResult = await controller.CreateCallOff(new SaveCallOffAggregateRequest
+        {
+            CustomerDeliveryAddressId = address.Id,
+            CallOffDeliveryList = new() { new SaveCallOffDeliveryDto { NewDelivery = Delivery() } },
+        });
+        var saved = Assert.IsType<CallOffAggregateDto>(Assert.IsType<OkObjectResult>(savedResult.Result).Value);
+        Assert.Equal(address.Id, saved.CallOff.CustomerDeliveryAddressId);
+        Assert.Equal(candidate.DeliveryAddressOptions.Select(x => x.Id), saved.DeliveryAddressOptions.Select(x => x.Id));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(5)]
+    public async Task CandidateWithoutCustomerAddressesReturnsEmptyOptions(int? customerId)
+    {
+        await using var db = CreateDb();
+        db.CustomerOrders.Add(new CustomerOrder { Id = 10, CustomerId = customerId });
+        db.CustomerDeliveryAddresses.Add(new CustomerDeliveryAddress { Id = 7, CustomerId = 6, Name = "Other customer" });
+        await db.SaveChangesAsync();
+
+        var result = await CreateController(db).GetDeliveryCandidates(null, 10);
+
+        var candidate = Assert.IsType<CallOffDeliveryCandidateResponseDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Empty(candidate.DeliveryAddressOptions);
+    }
+
+    [Fact]
     public async Task NewCallOffStillLinksPreviouslyCreatedStockDelivery()
     {
         await using var db = CreateDb();

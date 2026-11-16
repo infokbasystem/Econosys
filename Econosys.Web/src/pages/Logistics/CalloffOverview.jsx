@@ -357,7 +357,7 @@ const CalloffOverview = () => {
   const openReportOrderInfo = async (customerOrderId) => {
     setReportOrderInfoError('')
     setReportOrderInfoLoading(true)
-    setReportOrderInfo({ customerOrderId, orderedEdition: null, producedEdition: null, isCompleted: false })
+    setReportOrderInfo({ customerOrderId, orderedEdition: null, producedEdition: null, nrOfPallets: null, isCompleted: false, isLoaded: false })
 
     try {
       const response = await apiClient.get(`/logistics/transportorderoverview/order-info/${customerOrderId}`)
@@ -365,7 +365,9 @@ const CalloffOverview = () => {
         customerOrderId,
         orderedEdition: response?.data?.orderedEdition ?? null,
         producedEdition: response?.data?.producedEdition ?? null,
+        nrOfPallets: response?.data?.nrOfPallets ?? null,
         isCompleted: Boolean(response?.data?.isCompleted),
+        isLoaded: true,
       })
     } catch (error) {
       console.error('Failed to load order info:', error)
@@ -375,7 +377,7 @@ const CalloffOverview = () => {
     }
   }
 
-  const handleSaveReportOrderInfo = async ({ producedEdition, isCompleted }) => {
+  const handleSaveReportOrderInfo = async ({ producedEdition, nrOfPallets, isCompleted }) => {
     if (!reportOrderInfo) return
 
     setReportOrderInfoSaving(true)
@@ -384,6 +386,7 @@ const CalloffOverview = () => {
     try {
       await apiClient.put(`/logistics/transportorderoverview/order-info/${reportOrderInfo.customerOrderId}`, {
         producedEdition,
+        nrOfPallets,
         isCompleted,
       })
       setReportOrderInfo(null)
@@ -693,8 +696,9 @@ const CalloffOverview = () => {
         onSave={handleSaveReportOrderInfo}
         orderedEdition={reportOrderInfo?.orderedEdition ?? null}
         producedEdition={reportOrderInfo?.producedEdition ?? null}
+        nrOfPallets={reportOrderInfo?.nrOfPallets ?? null}
         isCompleted={reportOrderInfo?.isCompleted ?? false}
-        isLoading={reportOrderInfoLoading}
+        isLoading={reportOrderInfoLoading || !reportOrderInfo?.isLoaded}
         isSaving={reportOrderInfoSaving}
         errorMessage={reportOrderInfoError}
       />

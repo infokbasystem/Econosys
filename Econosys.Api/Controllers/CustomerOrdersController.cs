@@ -147,8 +147,46 @@ namespace Econosys.Api.Controllers
         {
             IQueryable<CustomerOrder> query = _dbContext.CustomerOrders
                 .AsNoTracking()
+                .Include(x => x.Customer)
                 .Include(x => x.SupplierOrder);
             var pagination = request?.Pagination ?? new PaginationRequest();
+
+            if (request?.CustomerResponsibleUserIds is { } sellerIds)
+            {
+                query = query.Where(x => x.Customer != null && x.Customer.ResponsibleUserId.HasValue
+                    && sellerIds.Contains(x.Customer.ResponsibleUserId.Value));
+            }
+
+            if (request?.CreatedByIds is { } creatorIds)
+            {
+                query = query.Where(x => x.CreatedBy.HasValue && creatorIds.Contains(x.CreatedBy.Value));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request?.YourOrderNr))
+            {
+                var yourOrderNr = request.YourOrderNr.Trim().ToLower();
+                query = query.Where(x => x.YourOrderNr != null && x.YourOrderNr.ToLower().Contains(yourOrderNr));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request?.Product))
+            {
+                var product = request.Product.Trim().ToLower();
+                query = query.Where(x => x.Product != null && x.Product.ToLower().Contains(product));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request?.SupplierName))
+            {
+                var supplierName = request.SupplierName.Trim().ToLower();
+                query = query.Where(x => x.SupplierOrder != null && x.SupplierOrder.SupplierName != null
+                    && x.SupplierOrder.SupplierName.ToLower().Contains(supplierName));
+            }
+
+            if (!string.IsNullOrWhiteSpace(request?.CustomerName))
+            {
+                var customerName = request.CustomerName.Trim().ToLower();
+                query = query.Where(x => (x.CustomerName ?? (x.Customer != null ? x.Customer.Name : null)) != null
+                    && (x.CustomerName ?? (x.Customer != null ? x.Customer.Name : null))!.ToLower().Contains(customerName));
+            }
 
             var searchTerm = request?.SearchTerm?.Trim();
             if (!string.IsNullOrWhiteSpace(searchTerm))
@@ -199,8 +237,24 @@ namespace Econosys.Api.Controllers
             var items = (await orderedQuery
                 .Skip((pagination.PageNumber - 1) * pagination.PageSize)
                 .Take(pagination.PageSize)
+                .Select(x => new
+                {
+                    Order = x,
+                    SellerName = x.Customer != null && x.Customer.ResponsibleUser != null
+                        ? x.Customer.ResponsibleUser.Name : null,
+                    CreatedByUserName = _dbContext.LegacyUsers
+                        .Where(user => user.Id == x.CreatedBy)
+                        .Select(user => user.Name)
+                        .FirstOrDefault(),
+                })
                 .ToListAsync())
-                .Select(MapToDto)
+                .Select(x =>
+                {
+                    var dto = MapToDto(x.Order);
+                    dto.SellerName = x.SellerName;
+                    dto.CreatedByUserName = x.CreatedByUserName;
+                    return dto;
+                })
                 .ToList();
 
             return Ok(new PagedResultDto<CustomerOrderDto>
@@ -273,6 +327,12 @@ namespace Econosys.Api.Controllers
                 if (string.Equals(sort.Field, "supplierordernr", StringComparison.OrdinalIgnoreCase))
                 {
                     ordered = ApplySort(ordered, query, x => x.SupplierOrder != null ? x.SupplierOrder.SupplierOrderNr : null, isDescending);
+                    continue;
+                }
+
+                if (string.Equals(sort.Field, "suppliername", StringComparison.OrdinalIgnoreCase))
+                {
+                    ordered = ApplySort(ordered, query, x => x.SupplierOrder != null ? x.SupplierOrder.SupplierName : null, isDescending);
                     continue;
                 }
 
@@ -921,6 +981,7 @@ namespace Econosys.Api.Controllers
                 QuotationId = source.QuotationId,
                 SupplierOrderId = source.SupplierOrderId,
                 SupplierOrderNr = source.SupplierOrder?.SupplierOrderNr,
+                SupplierName = source.SupplierOrder?.SupplierName,
                 SupplierOrderProducedEdition = source.SupplierOrder?.ProducedEdition,
                 SupplierOrderUnitMultiplicator = source.SupplierOrder?.Unit?.Multiplicator,
                 SupplierOrderPurchasePrice = source.SupplierOrder?.PurchasePrice,
