@@ -1,9 +1,8 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Telerik.Reporting;
-using Telerik.Reporting.Processing;
-using Telerik.Reporting.XmlSerialization;
 using Econosys.Api.Data;
+using Econosys.Api.DTOs;
 using Econosys.Api.Models;
 using Econosys.Api.Services;
 
@@ -21,53 +20,85 @@ namespace Econosys.Api.Controllers
             _context = context;
         }
 
-        [HttpGet("deviation/{id:int}")]
-        public async Task<IActionResult> GetDeviationPdfById(int id)
+        /// <summary>
+        /// Gets the legacy PDF file name for a language-dependent document, for clients that cannot read
+        /// the Content-Disposition header of the PDF response.
+        /// </summary>
+        [HttpGet("filename/{documentType}/{id:int:min(1)}")]
+        [ProducesResponseType(typeof(PdfFileNameResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<PdfFileNameResponse>> GetPdfFileName(string documentType, int id,
+            CancellationToken cancellationToken = default)
         {
-            var reportPath = Path.Combine(Directory.GetCurrentDirectory(), "", "Reports", "Deviation.trdx");
-
-
-            if (!System.IO.File.Exists(reportPath))
+            string? fileName;
+            switch (documentType.ToLowerInvariant())
             {
-                return NotFound("Report file not found.");
+                case "supplierorder":
+                    fileName = await _context.SupplierOrders.AsNoTracking().Where(item => item.Id == id)
+                        .Select(item => new { item.Id, LanguageId = item.Supplier == null ? null : item.Supplier.LanguageId })
+                        .Select(item => PdfFileNames.SupplierOrder(item.Id, item.LanguageId))
+                        .FirstOrDefaultAsync(cancellationToken);
+                    break;
+                case "inquiry":
+                    fileName = await _context.Inquiries.AsNoTracking().Where(item => item.Id == id)
+                        .Select(item => new
+                        {
+                            item.Id,
+                            LanguageId = item.SelectedInquiryRecipient == null || item.SelectedInquiryRecipient.Supplier == null
+                                ? null : item.SelectedInquiryRecipient.Supplier.LanguageId,
+                        })
+                        .Select(item => PdfFileNames.Inquiry(item.Id, item.LanguageId))
+                        .FirstOrDefaultAsync(cancellationToken);
+                    break;
+                case "quotation":
+                    fileName = await _context.Quotations.AsNoTracking().Where(item => item.Id == id)
+                        .Select(item => new { item.Id, LanguageId = item.Customer == null ? null : item.Customer.LanguageId })
+                        .Select(item => PdfFileNames.Quotation(item.Id, item.LanguageId))
+                        .FirstOrDefaultAsync(cancellationToken);
+                    break;
+                case "customerorder":
+                    fileName = await _context.CustomerOrders.AsNoTracking().Where(item => item.Id == id)
+                        .Select(item => new
+                        {
+                            item.Id,
+                            item.CustomerOrderNr,
+                            LanguageId = item.Customer == null ? null : item.Customer.LanguageId,
+                        })
+                        .Select(item => PdfFileNames.CustomerOrder(item.Id, item.CustomerOrderNr, item.LanguageId))
+                        .FirstOrDefaultAsync(cancellationToken);
+                    break;
+                default:
+                    return BadRequest(new ProblemDetails { Detail = "Okänd dokumenttyp." });
             }
 
-
-            // Load the .trdx report
-            Telerik.Reporting.Report report;
-            using (var fs = System.IO.File.OpenRead(reportPath))
-            {
-                var serializer = new ReportXmlSerializer();
-                report = (Telerik.Reporting.Report)serializer.Deserialize(fs);
-            }
-
-
-            var deviation = new Econosys.Api.PrintModels.Deviation()
-            {
-                Id = id
-            };
-
-
-
-            report.DataSource = deviation;
-
-            // Render PDF
-            var processor = new ReportProcessor();
-            var reportSource = new Telerik.Reporting.InstanceReportSource { ReportDocument = report };
-            var result = processor.RenderReport("PDF", reportSource, null);
-
-            if (result.HasErrors)
-                return Problem(string.Join("\n", result.Errors.Select(e => e.Message)));
-
-            string fileName = "filename.pdf"; // trans.Where(t => t.TranslationCode == -25 && t.LanguageId == LanguageId).Select(t => t.Text).FirstOrDefault() ?? "Quotation"
-                                              //+ "_" + q.Id + ".pdf";
-                                              // Return PDF to browser            
-            return File(result.DocumentBytes, "application/pdf", fileName, enableRangeProcessing: true);
-
+            return fileName is null
+                ? NotFound(new ProblemDetails { Detail = "Dokumentet finns inte." })
+                : Ok(new PdfFileNameResponse(fileName));
         }
 
+        [HttpGet("deviation/{id:int}")]
+        public async Task<IActionResult> GetDeviationPdfById(int id, CancellationToken cancellationToken = default)
+        {
+            var deviation = await _context.Deviations.AsNoTracking()
+                .Where(item => item.Id == id)
+                .Select(item => new
+                {
+                    item.DeviationNr,
+                    LanguageId = item.Customer == null ? null : item.Customer.LanguageId,
+                })
+                .FirstOrDefaultAsync(cancellationToken);
+            var fileName = PdfFileNames.Deviation(deviation?.DeviationNr ?? id.ToString(), deviation?.LanguageId);
+            return File(DeviationPdfDocument.Generate(id), "application/pdf", fileName, enableRangeProcessing: true);
+        }
+
+        /// <summary>Returns the quotation PDF with the current company customer message and the selected cost version (unlinked by default).</summary>
         [HttpGet("quotation/{id:int}")]
-        public async Task<IActionResult> GetQuotationPdfById(int id, CancellationToken cancellationToken = default)
+        [ProducesResponseType(typeof(FileContentResult), StatusCodes.Status200OK, "application/pdf")]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetQuotationPdfById(int id,
+            [FromQuery, Range(1, int.MaxValue)] int? supplierOrderId = null, CancellationToken cancellationToken = default)
         {
             var quotation = await _context.Quotations
                 .AsNoTracking()
@@ -96,13 +127,15 @@ namespace Econosys.Api.Controllers
                 return NotFound("Quotation not found.");
             }
 
-            var rowIds = quotation.QuotationRows.Select(row => row.Id).ToList();
             var costs = await _context.OrderCosts.AsNoTracking()
                 .Include(cost => cost.Cost)
-                .Where(cost => (cost.QuotationId == id
-                    || (cost.QuotationRowId.HasValue && rowIds.Contains(cost.QuotationRowId.Value)))
-                    && cost.DoDebit && cost.DoPrintOnQuotation && cost.SupplierOrderId == null)
+                .Where(cost => cost.QuotationId == id && cost.SupplierOrderId == supplierOrderId)
                 .ToListAsync(cancellationToken);
+            if (supplierOrderId.HasValue && costs.Count == 0)
+            {
+                return NotFound(new ProblemDetails { Detail = "Kostnadsversionen finns inte för affärsförslaget." });
+            }
+
             var calculations = quotation.QuotationRows.Select(row => row.CalculationRow?.Calculation)
                 .Append(quotation.Calculation).Where(calculation => calculation != null).ToList();
             var codes = DocumentPdfTranslations.Definitions.Select(item => (int?)item.Code)
@@ -110,8 +143,7 @@ namespace Econosys.Api.Controllers
                     quotation.PalletFormat?.TranslationCode })
                 .Concat(calculations.SelectMany(calculation => new[]
                     { calculation!.SalesCurrency?.TranslationCode, calculation.Unit?.TranslationCode }))
-                .Concat(costs.Select(cost => (int?)(cost.OutPrice.HasValue
-                    ? cost.Cost?.TranslationCodeQuotationKnown : cost.Cost?.TranslationCodeQuotationUnknown)))
+                .Concat(costs.Where(cost => cost.DoDebit).Select(QuotationPdfDocument.CostTranslationCode))
                 .Where(code => code.HasValue && code != 0).Distinct().ToList();
             var translations = await _context.TranslationItems.AsNoTracking()
                 .Where(item => codes.Contains(item.TranslationCode))
@@ -119,9 +151,14 @@ namespace Econosys.Api.Controllers
             var texts = new DocumentPdfTranslations(quotation.Customer?.Language?.LanguageCode, translations);
             var company = await _context.CompanyInfos.AsNoTracking()
                 .FirstOrDefaultAsync(item => item.CompanyId == 1, cancellationToken);
+            var customerMessage = await _context.Settings.AsNoTracking()
+                .Where(item => item.CompanyId == quotation.CompanyId)
+                .OrderBy(item => item.Id)
+                .Select(item => item.DefaultCustomerMessage)
+                .FirstOrDefaultAsync(cancellationToken);
 
-            var fileName = $"quotation_{quotation.Id}.pdf";
-            return File(QuotationPdfDocument.Generate(quotation, company, texts, costs),
+            var fileName = PdfFileNames.Quotation(quotation.Id, quotation.Customer?.LanguageId);
+            return File(QuotationPdfDocument.Generate(quotation, company, texts, customerMessage, costs, supplierOrderId),
                 "application/pdf", fileName, enableRangeProcessing: true);
         }
 
@@ -154,24 +191,26 @@ namespace Econosys.Api.Controllers
                     .Include(item => item.SalesCurrency).Include(item => item.Unit)
                     .FirstOrDefaultAsync(item => item.Id == order.CalculationId, cancellationToken);
             }
-            var pallet = order.PalletFormatId.HasValue
+            var quotationIncludesPallet = order.EurPallet && order.QuotationId is int quotationId
+                && await _context.Quotations.AsNoTracking()
+                    .AnyAsync(item => item.Id == quotationId && item.EurPallet, cancellationToken);
+            var pallet = quotationIncludesPallet && order.PalletFormatId.HasValue
                 ? await _context.PalletFormats.AsNoTracking()
                     .FirstOrDefaultAsync(item => item.Id == order.PalletFormatId, cancellationToken)
                 : null;
             var codes = DocumentPdfTranslations.Definitions.Select(item => (int?)item.Code)
                 .Concat(new[] { order.SalesCurrency?.TranslationCode, order.Unit?.TranslationCode,
                     calculation?.SalesCurrency?.TranslationCode, calculation?.Unit?.TranslationCode, pallet?.TranslationCode })
-                .Concat(order.OrderCosts.Where(cost => cost.DoDebit && cost.DoPrintOnCustomerOrder)
-                    .Select(cost => (int?)(cost.OutPrice.HasValue ? cost.Cost?.TranslationCodeCustomerOrderKnown : cost.Cost?.TranslationCodeCustomerOrderUnknown)))
+                .Concat(CustomerOrderPdfDocument.PrintableCosts(order).Select(CustomerOrderPdfDocument.CostTranslationCode))
                 .Where(code => code.HasValue && code != 0).Distinct().ToList();
             var translations = await _context.TranslationItems.AsNoTracking()
                 .Where(item => codes.Contains(item.TranslationCode)).ToListAsync(cancellationToken);
             var texts = new DocumentPdfTranslations(order.Customer?.Language?.LanguageCode, translations);
             var company = await _context.CompanyInfos.AsNoTracking()
                 .FirstOrDefaultAsync(item => item.CompanyId == 1, cancellationToken);
-            var number = order.CustomerOrderNr ?? order.Id.ToString();
-            return File(CustomerOrderPdfDocument.Generate(order, company, texts, pallet, calculation),
-                "application/pdf", $"customerorder_{number}.pdf", enableRangeProcessing: true);
+            return File(CustomerOrderPdfDocument.Generate(order, company, texts, pallet, calculation, quotationIncludesPallet),
+                "application/pdf", PdfFileNames.CustomerOrder(order.Id, order.CustomerOrderNr, order.Customer?.LanguageId),
+                enableRangeProcessing: true);
         }
 
         [HttpGet("invoice/{id:int}")]
@@ -179,6 +218,7 @@ namespace Econosys.Api.Controllers
         {
             var invoice = await _context.Invoices
                 .AsNoTracking()
+                .Include(x => x.Customer)
                 .Include(x => x.SalesCurrency)
                 .Include(x => x.InvoiceRows)
                     .ThenInclude(x => x.Unit)
@@ -193,10 +233,16 @@ namespace Econosys.Api.Controllers
             var company = await _context.CompanyInfos
                 .AsNoTracking()
                 .FirstOrDefaultAsync(x => x.CompanyId == 1);
+            var vatInfo = await _context.Settings
+                .AsNoTracking()
+                .Where(x => x.CompanyId == 1)
+                .OrderBy(x => x.Id)
+                .Select(x => x.VATInfo)
+                .FirstOrDefaultAsync();
 
-            var invoiceNumber = invoice.InvoiceNumber?.ToString() ?? invoice.Id.ToString();
-            var fileName = $"invoice_{invoiceNumber}.pdf";
-            return File(InvoicePdfDocument.Generate(invoice, company), "application/pdf", fileName, enableRangeProcessing: true);
+            var invoiceNumber = invoice.InvoiceNumber ?? invoice.Id;
+            var fileName = PdfFileNames.Invoice(invoiceNumber, invoice.LanguageId);
+            return File(InvoicePdfDocument.Generate(invoice, company, vatInfo), "application/pdf", fileName, enableRangeProcessing: true);
         }
 
         [HttpGet("inquiry/{id:int}")]
@@ -249,7 +295,7 @@ namespace Econosys.Api.Controllers
             var company = await _context.CompanyInfos.AsNoTracking()
                 .FirstOrDefaultAsync(item => item.CompanyId == 1, cancellationToken);
 
-            var fileName = $"inquiry_{inquiry.Id}.pdf";
+            var fileName = PdfFileNames.Inquiry(inquiry.Id, inquiry.SelectedInquiryRecipient?.Supplier?.LanguageId);
             return File(InquiryPdfDocument.Generate(inquiry, company, texts), "application/pdf", fileName, enableRangeProcessing: true);
         }
 
@@ -346,7 +392,7 @@ namespace Econosys.Api.Controllers
             var fileReceiverId = selectedReceiverIds.Length > 0
                 ? string.Join("-", selectedReceiverIds)
                 : (order.ShipperId ?? 0).ToString();
-            var fileName = $"Transportorder_{order.TransportOrderNr}_{fileReceiverId}.pdf";
+            var fileName = PdfFileNames.Create("Transportorder", $"{order.TransportOrderNr} {fileReceiverId}");
 
             return File(TransportOrderPdfDocument.Generate(order, company, texts, normalizedReceiver,
                     selectedReceiverIds, deliveries, supplierFactories, palletPlan),
@@ -366,7 +412,8 @@ namespace Econosys.Api.Controllers
 
             return File(CallOffPdfDocument.GenerateFreightOrder(data.CallOff, data.Company, data.Texts,
                     data.Deliveries, data.PalletFormatNames),
-                "application/pdf", $"calloff_{id}.pdf", enableRangeProcessing: true);
+                "application/pdf", PdfFileNames.CallOff(false,
+                    data.CallOff.CustomerDeliveryAddress?.Customer?.LanguageId, id), enableRangeProcessing: true);
         }
 
         [HttpGet("calloff-confirmation/{id:int}")]
@@ -382,7 +429,8 @@ namespace Econosys.Api.Controllers
 
             return File(CallOffPdfDocument.GenerateConfirmation(data.CallOff, data.Company, data.Texts,
                     data.Deliveries, data.PalletFormatNames),
-                "application/pdf", $"calloffconfirmation_{id}.pdf", enableRangeProcessing: true);
+                "application/pdf", PdfFileNames.CallOff(true,
+                    data.CallOff.CustomerDeliveryAddress?.Customer?.LanguageId, id), enableRangeProcessing: true);
         }
 
         private sealed record CallOffPdfData(CallOff CallOff, List<CallOffDelivery> Deliveries,
@@ -500,7 +548,7 @@ namespace Econosys.Api.Controllers
             var company = await _context.CompanyInfos.AsNoTracking()
                 .FirstOrDefaultAsync(item => item.CompanyId == 1, cancellationToken);
 
-            var fileName = $"supplierorder_{supplierOrder.SupplierOrderNr}.pdf";
+            var fileName = PdfFileNames.SupplierOrder(supplierOrder.Id, supplierOrder.Supplier?.LanguageId);
             return File(SupplierOrderPdfDocument.Generate(supplierOrder, company, texts, palletFormat, previousNumber),
                 "application/pdf", fileName, enableRangeProcessing: true);
         }

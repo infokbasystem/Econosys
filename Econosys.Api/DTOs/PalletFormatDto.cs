@@ -8,6 +8,7 @@ namespace Econosys.Api.DTOs
         public string? Name { get; set; }
         public double? M2 { get; set; }
         public decimal? SupplierPrice { get; set; }
+        public string? SupplierCurrencyName { get; set; }
         public decimal? CustomerPrice { get; set; }
         public bool Active { get; set; }
         public int? OldDbId { get; set; }

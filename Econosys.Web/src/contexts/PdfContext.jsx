@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 const PdfContext = createContext(null);
 
 const DEFAULT_EMAIL_RECIPIENTS = [{ email: '', doSend: true }];
-const DEFAULT_EMAIL_CC_RECIPIENTS = [{ email: '', doSend: false }];
+const DEFAULT_EMAIL_CC_RECIPIENTS = [{ email: '', doSend: true }];
 
 const createDefaultEmailInfo = () => ({
     recipients: DEFAULT_EMAIL_RECIPIENTS.map((item) => ({ ...item })),
@@ -24,12 +24,22 @@ export const PdfProvider = ({ children, initialBadges = [] }) => {
     const [emailInfo, setEmailInfoState] = useState(() => createDefaultEmailInfo());
     const [onEmailSent, setOnEmailSent] = useState(null);
     const [mailLogItem, setMailLogItem] = useState(null);
+    const [emailRecipientSource, setEmailRecipientSource] = useState(null);
 
-    const openPdfPreview = useCallback((url, fileName = '', onSent = null, logItem = null) => {
+    const openPdfPreview = useCallback((url, fileName = '', onSent = null, logItem = null, recipientSource = null) => {
         setPdfUrl(url);
         setPdfFileName(fileName || '');
         setOnEmailSent(() => onSent);
         setMailLogItem(logItem);
+        setShowEmailModal(false);
+        setEmailRecipientSource(recipientSource);
+        if (url) {
+            setEmailInfoState((current) => {
+                const isSameInquiry = recipientSource?.itemType === 'INQUIRY' && current.inquiryId === recipientSource.itemId;
+                const isSameQuotation = recipientSource?.itemType === 'QUOTATION' && current.quotationId === recipientSource.itemId;
+                return isSameInquiry || isSameQuotation ? current : createDefaultEmailInfo();
+            });
+        }
         setShowPdfPanel(true);
         setIsStale(false);
     }, []);
@@ -39,6 +49,7 @@ export const PdfProvider = ({ children, initialBadges = [] }) => {
         setShowEmailModal(false);
         setOnEmailSent(null);
         setMailLogItem(null);
+        setEmailRecipientSource(null);
     }, []);
 
     const markStale = useCallback(() => {
@@ -55,12 +66,14 @@ export const PdfProvider = ({ children, initialBadges = [] }) => {
                 ? nextEmailInfo.recipients.map((item) => ({
                     email: item?.email || '',
                     doSend: Boolean(item?.doSend),
+                    title: item?.title || '',
                 }))
                 : createDefaultEmailInfo().recipients,
             ccRecipients: Array.isArray(nextEmailInfo.ccRecipients)
                 ? nextEmailInfo.ccRecipients.map((item) => ({
                     email: item?.email || '',
                     doSend: Boolean(item?.doSend),
+                    title: item?.title || '',
                 }))
                 : createDefaultEmailInfo().ccRecipients,
             subject: nextEmailInfo.subject || '',
@@ -92,6 +105,7 @@ export const PdfProvider = ({ children, initialBadges = [] }) => {
         emailInfo,
         onEmailSent,
         mailLogItem,
+        emailRecipientSource,
         openPdfPreview,
         closePdfPreview,
         printPdf,

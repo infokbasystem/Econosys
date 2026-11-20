@@ -18,6 +18,7 @@ namespace Econosys.Api.DTOs
         public string? PostalAddress { get; set; }
         public string? Country { get; set; }
         public string? VatNr { get; set; }
+        public double VatRate { get; set; } = 0.25;
         public DateTime? InvoiceDate { get; set; }
         public string? YourReference { get; set; }
         public string? OurReference { get; set; }
@@ -210,9 +211,13 @@ namespace Econosys.Api.DTOs
     public class CreateInvoiceDraftFromSelectionRequest
     {
         public int CustomerId { get; set; }
+        public string InvoiceMode { get; set; } = "selection";
         public List<InvoiceDraftDeliverySelectionRequest>? Deliveries { get; set; }
         public List<int>? OrderCostIds { get; set; }
     }
+
+    /// <summary>Source rows for recalculating the inventory entries shown in the invoice editor.</summary>
+    public sealed record InvoiceAccountingPreviewRequest(int? CustomerId, List<InvoiceRowMutationRequest> InvoiceRows);
 
     public class InvoiceDraftDeliverySelectionRequest
     {

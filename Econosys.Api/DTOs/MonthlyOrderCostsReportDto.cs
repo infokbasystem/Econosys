@@ -4,6 +4,8 @@ namespace Econosys.Api.DTOs
     {
         public int Year { get; set; }
         public int Month { get; set; }
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
         public List<int>? CostIds { get; set; }
         public bool FilterByCostIds { get; set; }
     }

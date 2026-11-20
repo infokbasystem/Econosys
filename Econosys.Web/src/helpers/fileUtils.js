@@ -1,5 +1,5 @@
 export const getFileNameFromContentDisposition = (contentDisposition) => {
-    if (!contentDisposition) return 'deviation.pdf';
+    if (!contentDisposition) return null;
 
     const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
     if (utf8Match?.[1]) {
@@ -11,5 +11,5 @@ export const getFileNameFromContentDisposition = (contentDisposition) => {
         return basicMatch[1];
     }
 
-    return 'deviation.pdf';
+    return null;
 };

@@ -92,19 +92,20 @@ public static class SupplierOrderPdfDocument
             });
             page.Content().Column(column =>
             {
-                if (!order.HideCustomerInfoOnPrint)
+                column.Item().PaddingBottom(3).Row(row =>
                 {
-                    column.Item().Row(row =>
-                    {
-                        row.RelativeItem().Element(container => Address(container, texts.Text(-90),
-                            order.HideCustomerNameOnPrint ? null : order.Customer?.Name,
-                            order.Customer?.Address, order.Customer?.Address2,
-                            Join(order.Customer?.PostalNr, order.Customer?.PostalAddress), order.Customer?.Country));
-                        row.RelativeItem().Element(container => Address(container, texts.Text(-49),
-                            order.HideCustomerNameOnPrint ? null : order.DeliveryAddressName, order.DeliveryAddress,
-                            Join(order.DeliveryPostalNr, order.DeliveryPostalAddress), order.DeliveryCountry));
-                    });
-                }
+                    row.RelativeItem();
+                    row.RelativeItem().Text(texts.Text(-49)).Bold();
+                });
+                column.Item().Row(row =>
+                {
+                    row.RelativeItem().Element(container => Address(container, null,
+                        order.SupplierName, order.Address, order.Address2,
+                        Join(order.PostalNr, order.PostalAddress), order.Country));
+                    row.RelativeItem().Element(container => Address(container, null,
+                        order.DeliveryAddressName, order.DeliveryAddress,
+                        Join(order.DeliveryPostalNr, order.DeliveryPostalAddress), order.DeliveryCountry));
+                });
 
                 column.Item().PaddingTop(30).BorderBottom(0.5f).BorderColor("#dbe4e2").PaddingBottom(8).Row(row =>
                 {
@@ -174,8 +175,8 @@ public static class SupplierOrderPdfDocument
                             });
                             table.Header(header =>
                             {
-                                header.Cell().Element(HeaderCell).Text(texts.Text(-41));
-                                header.Cell().Element(HeaderCell).Text(content.PriceHeading);
+                                header.Cell().Element(LeftPriceHeaderCell).Text(texts.Text(-41));
+                                header.Cell().Element(RightPriceHeaderCell).Text(content.PriceHeading);
                             });
                             table.Cell().Element(BodyCell).Text(content.Quantity);
                             table.Cell().Element(BodyCell).Text(content.Price);

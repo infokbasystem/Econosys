@@ -33,6 +33,7 @@ namespace Econosys.Api.Controllers
         {
             var customer = await _dbContext.Customers
                 .AsNoTracking()
+                .Include(x => x.ResponsibleUser)
                 .Include(x => x.DeliveryAddresses)
                 .Include(x => x.CustomerContactPersons)
                 .FirstOrDefaultAsync(x => x.Id == id);
@@ -675,6 +676,7 @@ namespace Econosys.Api.Controllers
                 ImportantCalculationInfo = customer.ImportantCalculationInfo,
                 LoadingInstruction = customer.LoadingInstruction,
                 ResponsibleUserId = customer.ResponsibleUserId,
+                ResponsibleUserName = customer.ResponsibleUser?.Name,
                 VAT = customer.VAT,
                 Active = customer.Active,
                 Country = customer.Country,

@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Printer, Save, Trash2 } from 'lucide-react';
-import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, GripVertical, Printer, Save, Trash2 } from 'lucide-react';
+import { useBlocker, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
@@ -20,7 +20,7 @@ import apiClient from '../../config/apiClient';
 import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { formatDateTime } from '../../helpers/dateUtils';
 import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
-import { parseNullableInt, parseNullableNumber, roundTo2 } from '../../helpers/numberUtils';
+import { parseNullableInt, parseNullableNumber } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import {
     createNewInvoiceModel,
@@ -29,6 +29,10 @@ import {
     toDateInputValue,
     autoResizeTextarea,
     applyInvoiceDerivedRows,
+    computeInvoiceRowSum,
+    getInvoiceInventorySource,
+    getInvoiceRowIdentity,
+    reorderInvoiceRows,
     VAT_PRICE_TYPE_ID,
     ROUNDING_PRICE_TYPE_ID,
 } from '../../helpers/invoiceUtils';
@@ -36,8 +40,6 @@ import {
 
 // Backend column is smallint.
 const MAX_INVOICE_DAYS = 32767;
-
-const getInvoiceRowIdentity = (row) => ((Number(row?.id) || 0) > 0 ? row.id : row.tempId);
 
 const normalizeInvoiceForEditor = (source) => {
     if (!source) {
@@ -80,6 +82,7 @@ const renderInvoiceMetaRow = (label, value, userName) => {
 
 const Invoice = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { id } = useParams();
     const [searchParams] = useSearchParams();
     const isNewInvoice = id == null || id === 'new';
@@ -96,12 +99,54 @@ const Invoice = () => {
 
     const [invoice, setInvoice] = useState(null);
     const [originalInvoice, setOriginalInvoice] = useState(null);
+    const [rowDrag, setRowDrag] = useState(null);
+    const rowElementsRef = useRef(new Map());
+    const rowPositionsRef = useRef(null);
+    const [newlyCreatedInvoiceId, setNewlyCreatedInvoiceId] = useState(location.state?.newlyCreatedInvoiceId ?? null);
     const [currencies, setCurrencies] = useState([]);
     const [units, setUnits] = useState([]);
     const [paymentTerms, setPaymentTerms] = useState([]);
     const [customerSelectionPending, setCustomerSelectionPending] = useState(false);
     const skipUnsavedCheckRef = useRef(false);
+    const createdInvoiceIdRef = useRef(null);
     const customerSelectionDisabled = isInvoiceCustomerLocked(originalInvoice) || isInvoiceCustomerLocked(invoice);
+    const inventorySource = getInvoiceInventorySource(invoice);
+    const originalInventorySource = getInvoiceInventorySource(originalInvoice);
+
+    useEffect(() => {
+        if (!originalInvoice) return;
+        if (inventorySource === originalInventorySource) {
+            setInvoice((prev) => prev ? { ...prev, invoiceAccountRows: originalInvoice.invoiceAccountRows } : prev);
+            setMessages((prev) => prev.filter((message) => message.code !== 'inventory-preview'));
+            return;
+        }
+        let active = true;
+        const timer = window.setTimeout(async () => {
+            try {
+                const response = await apiClient.post('/invoices/accounting-preview', {
+                    customerId: invoice?.customerId,
+                    invoiceRows: JSON.parse(inventorySource),
+                });
+                if (!active) return;
+                setInvoice((prev) => ({
+                    ...prev,
+                    invoiceAccountRows: response.data.map((row, index) => ({ ...row, tempKey: `preview_${index}` })),
+                }));
+                setMessages((prev) => prev.filter((message) => message.code !== 'inventory-preview'));
+            } catch (error) {
+                if (!active) return;
+                console.error('Failed to recalculate invoice inventory accounting:', error);
+                setMessages((prev) => [
+                    ...prev.filter((message) => message.code !== 'inventory-preview'),
+                    { type: 'error', code: 'inventory-preview', text: `Kunde inte beräkna lagerbokföringen: ${error?.response?.data?.message ?? error.message}` },
+                ]);
+            }
+        }, 250);
+        return () => {
+            active = false;
+            window.clearTimeout(timer);
+        };
+    }, [inventorySource, originalInventorySource, originalInvoice, invoice?.customerId, setMessages]);
 
     const hasUnsavedChanges = useCallback(() => {
         if (skipUnsavedCheckRef.current) return false;
@@ -141,6 +186,16 @@ const Invoice = () => {
     useEffect(() => {
         skipUnsavedCheckRef.current = false;
     }, [id]);
+
+    useEffect(() => {
+        if (location.state?.newlyCreatedInvoiceId == null) return;
+
+        // Consume the creation marker so refresh/back navigation does not replay it.
+        navigate(`${location.pathname}${location.search}${location.hash}`, {
+            replace: true,
+            state: { ...location.state, newlyCreatedInvoiceId: null },
+        });
+    }, [location, navigate]);
 
     const handleBackClick = () => {
         const hasSingleEntryHistory = window.history.length <= 1;
@@ -213,7 +268,7 @@ const Invoice = () => {
 
                 return {
                     ...prev,
-                    invoiceRows: applyInvoiceDerivedRows(updatedRows),
+                    invoiceRows: applyInvoiceDerivedRows(updatedRows, prev.vatRate),
                 };
             }
 
@@ -234,7 +289,11 @@ const Invoice = () => {
         markStale();
         setMessages((prev) => prev.filter((msg) => msg.type !== 'success' && msg.type !== 'warning'));
         setCustomerSelectionPending(false);
-        setInvoice((prev) => prev ? { ...prev, ...getInvoiceCustomerFields(customer) } : prev);
+        setInvoice((prev) => {
+            if (!prev) return prev;
+            const fields = getInvoiceCustomerFields(customer);
+            return { ...prev, ...fields, invoiceRows: applyInvoiceDerivedRows(prev.invoiceRows, fields.vatRate) };
+        });
 
         if (showPdfPanel) {
             closePdfPreview();
@@ -253,17 +312,11 @@ const Invoice = () => {
 
                 const next = { ...row, [field]: value };
                 if (field === 'nrOf' || field === 'unitPrice' || field === 'unitId') {
-                    const nrOf = parseNullableNumber(next.nrOf) ?? 0;
-                    const unitPrice = parseNullableNumber(next.unitPrice) ?? 0;
-                    const unitId = parseNullableInt(next.unitId);
-                    const unit = units.find((item) => item.id === unitId);
-                    const multiplier = parseNullableNumber(unit?.multiplicator) ?? 1;
-                    const safeMultiplier = multiplier > 0 ? multiplier : 1;
-                    next.sum = roundTo2((nrOf * unitPrice) / safeMultiplier);
+                    next.sum = computeInvoiceRowSum(next, units);
                 }
 
                 return next;
-            })),
+            }), prev?.vatRate),
         }));
     };
 
@@ -296,7 +349,7 @@ const Invoice = () => {
                         calculate: true,
                         sortOrder: maxSortOrder + 1,
                     },
-                ]),
+                ], prev?.vatRate),
             };
         });
     };
@@ -306,8 +359,28 @@ const Invoice = () => {
 
         setInvoice((prev) => ({
             ...prev,
-            invoiceRows: applyInvoiceDerivedRows((prev?.invoiceRows ?? []).filter((row) => getInvoiceRowIdentity(row) !== idOrTempId)),
+            invoiceRows: applyInvoiceDerivedRows((prev?.invoiceRows ?? []).filter((row) => getInvoiceRowIdentity(row) !== idOrTempId), prev?.vatRate),
         }));
+    };
+
+    const captureRowPositions = () => {
+        rowPositionsRef.current = new Map(
+            [...rowElementsRef.current].map(([rowId, element]) => [rowId, element.getBoundingClientRect().top]),
+        );
+        rowElementsRef.current.forEach((element) => {
+            element.getAnimations().forEach((animation) => animation.cancel());
+        });
+    };
+
+    const moveInvoiceRow = (sourceId, targetId) => {
+        if (sourceId === targetId) return;
+        captureRowPositions();
+        markStale();
+        setMessages((prev) => prev.filter((message) => message.type !== 'success'));
+        setInvoice((prev) => prev ? {
+            ...prev,
+            invoiceRows: reorderInvoiceRows(prev.invoiceRows, sourceId, targetId),
+        } : prev);
     };
 
     const buildInvoicePayload = (source) => {
@@ -413,10 +486,11 @@ const Invoice = () => {
                 responseType: 'blob',
             });
             const contentDisposition = response.headers['content-disposition'];
-            const apiFileName = getFileNameFromContentDisposition(contentDisposition) || 'invoice.pdf';
+            const apiFileName = getFileNameFromContentDisposition(contentDisposition)
+                || `Faktura ${invoice.invoiceNumber ?? invoice.id}.pdf`;
             const blob = response.data;
             const url = URL.createObjectURL(blob);
-            openPdfPreview(url, apiFileName);
+            openPdfPreview(url, apiFileName, null, null, { itemType: 'INVOICE', itemId: invoice.id });
         } catch (error) {
             console.error('Failed to get invoice PDF:', error);
             setMessages((prev) => [
@@ -455,7 +529,7 @@ const Invoice = () => {
                 ? await apiClient.put(`/invoices/${invoiceId}`, payload)
                 : await apiClient.post('/invoices', payload);
 
-            const savedInvoice = response.data;
+            const savedInvoice = normalizeInvoiceForEditor(response.data);
             setInvoice(savedInvoice ?? null);
             setOriginalInvoice(structuredClone(savedInvoice));
             clearStale();
@@ -465,11 +539,16 @@ const Invoice = () => {
             ]);
 
             if (isCreatingNew && savedInvoice?.id) {
+                createdInvoiceIdRef.current = savedInvoice.id;
+                setNewlyCreatedInvoiceId(savedInvoice.id);
                 if (draftKey) {
                     window.localStorage.removeItem(draftKey);
                 }
                 skipUnsavedCheckRef.current = true;
-                navigate(`/finance/invoice/${savedInvoice.id}`, { replace: true });
+                navigate(`/finance/invoice/${savedInvoice.id}`, {
+                    replace: true,
+                    state: { newlyCreatedInvoiceId: savedInvoice.id },
+                });
             }
         } catch (error) {
             console.error('Failed to save invoice:', error);
@@ -559,6 +638,12 @@ const Invoice = () => {
     }, [setMessages]);
 
     useEffect(() => {
+        // The create response already contains the saved invoice and its rows.
+        if (!isNewInvoice && String(createdInvoiceIdRef.current) === id) {
+            createdInvoiceIdRef.current = null;
+            return;
+        }
+
         let isActive = true;
 
         const loadOptions = async () => {
@@ -669,7 +754,7 @@ const Invoice = () => {
 
             sumExVat += rowSum;
             if (row?.vatGround) {
-                vatFromBase += rowSum * 0.25;
+                vatFromBase += rowSum * (invoice?.vatRate ?? 0.25);
             }
         });
 
@@ -690,14 +775,31 @@ const Invoice = () => {
             sumInclVat: sumExVat + vat + roundingValue,
             vatAccount,
         };
-    }, [invoice?.invoiceRows]);
+    }, [invoice?.invoiceRows, invoice?.vatRate]);
 
     const visibleInvoiceRows = useMemo(() => (
-        (invoice?.invoiceRows ?? []).filter((row) => {
+        (rowDrag?.rows ?? invoice?.invoiceRows ?? []).filter((row) => {
             const priceTypeId = Number(row?.priceTypeId);
             return priceTypeId !== VAT_PRICE_TYPE_ID && priceTypeId !== ROUNDING_PRICE_TYPE_ID;
         })
-    ), [invoice?.invoiceRows]);
+    ), [invoice?.invoiceRows, rowDrag?.rows]);
+
+    useLayoutEffect(() => {
+        const previousPositions = rowPositionsRef.current;
+        rowPositionsRef.current = null;
+        if (!previousPositions || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+        rowElementsRef.current.forEach((element, rowId) => {
+            const previousTop = previousPositions.get(rowId);
+            if (previousTop == null) return;
+            const offset = previousTop - element.getBoundingClientRect().top;
+            if (Math.abs(offset) < 1) return;
+            element.animate(
+                [{ transform: `translateY(${offset}px)` }, { transform: 'translateY(0)' }],
+                { duration: 180, easing: 'ease-out' },
+            );
+        });
+    }, [visibleInvoiceRows]);
 
     if (loading) {
         return (
@@ -759,7 +861,14 @@ const Invoice = () => {
 
             <OrderDetailLayout
                 title={invoice?.id ? (
-                    <>Faktura <span className="ml-2">{invoice.invoiceNumber ?? invoice.id}</span></>
+                    <>Faktura <span
+                        className={`ml-2 inline-block rounded-sm ${!isNewInvoice && newlyCreatedInvoiceId === invoice.id ? 'invoice-number-created' : ''}`}
+                        onAnimationEnd={(event) => {
+                            if (event.animationName === 'invoice-number-highlight') {
+                                setNewlyCreatedInvoiceId(null);
+                            }
+                        }}
+                    >{invoice.invoiceNumber ?? invoice.id}</span></>
                 ) : (
                     'Ny faktura'
                 )}
@@ -774,12 +883,12 @@ const Invoice = () => {
                         <div className="space-y-2 text-xs text-gray-600">
                             {renderInvoiceMetaRow('Skapad:', invoice?.created, invoice?.createdByUserName)}
                             {renderInvoiceMetaRow('Redigerad:', invoice?.edited, invoice?.editedByUserName)}
-                            <div className="grid grid-cols-21 gap-1 mt-3 mx-2">
+                            <div className="grid grid-cols-21 gap-1 mt-4 mx-2">
                                 <div className="col-span-5"><span className="font-medium">Fakt.nr:</span></div>
                                 <div className="col-span-8">{invoice.invoiceNumber}{invoice.invoiceTypeCode == 5 ? <span className='ml-3 text-red-500'>KREDIT, krediterar {invoice.creditingInvoiceNumber}</span> : ""}</div>
                             </div>
                             {invoice.invoiceDate && (
-                                <div className="grid grid-cols-21 gap-1 mx-2">
+                                <div className="grid grid-cols-21 gap-1 mx-2 mt-4">
                                     <div className="col-span-5"><span className="font-medium">Fakt.dag:</span></div>
                                     <div className="col-span-8">{toDateInputValue(invoice.invoiceDate)}</div>
                                 </div>
@@ -790,10 +899,12 @@ const Invoice = () => {
                                     <div className="col-span-8">{dueDate.toLocaleDateString('sv-SE')}</div>
                                 </div>
                             )}
-                            <div className="grid grid-cols-21 gap-1 mx-2">
+                            <div className="grid grid-cols-21 gap-1 mx-2 mt-4 items-center">
                                 <div className="col-span-5"><span className="font-medium">Bokförd:</span></div>
                                 <div className="col-span-8">
-                                    {invoice.accountDate ? toDateInputValue(invoice.accountDate) : <span className="text-gray-400 italic">Ej bokförd</span>}
+                                    <span className={`inline-flex items-center rounded-full px-2 py-[4px] text-tiny text-white ${invoice.accountDate ? 'bg-lime-600' : 'bg-red-400'}`}>
+                                        {invoice.accountDate ? toDateInputValue(invoice.accountDate) : 'Ej bokförd'}
+                                    </span>
                                 </div>
                             </div>
 
@@ -985,7 +1096,7 @@ const Invoice = () => {
                             height="h-20"
                         />
                         <LabeledTextArea
-                            label="Intern not"
+                            label="Anteckning"
                             value={invoice?.noteInternal || ''}
                             onChange={(value) => handleChange('noteInternal', value)}
                             labelWidth="w-19"
@@ -1023,8 +1134,44 @@ const Invoice = () => {
                                         const idOrTempId = getInvoiceRowIdentity(row);
 
                                         return (
-                                            <tr key={idOrTempId} className="border-b border-gray-100">
-                                                <td className="py-0 text-xs text-center text-gray-600">{row.sortOrder}</td>
+                                            <tr
+                                                key={idOrTempId}
+                                                ref={(element) => {
+                                                    if (element) rowElementsRef.current.set(idOrTempId, element);
+                                                    else rowElementsRef.current.delete(idOrTempId);
+                                                }}
+                                                className={`border-b border-gray-100 ${rowDrag?.sourceId === idOrTempId ? 'opacity-50 bg-lime-50 outline outline-1 outline-lime-500' : ''}`}
+                                                onDragOver={(event) => {
+                                                    if (!rowDrag) return;
+                                                    event.preventDefault();
+                                                    event.dataTransfer.dropEffect = 'move';
+                                                    if (rowDrag.sourceId === idOrTempId) return;
+                                                    if (event.currentTarget.getAnimations().some((animation) => animation.playState === 'running')) return;
+                                                    const sourceIndex = visibleInvoiceRows.findIndex((item) => getInvoiceRowIdentity(item) === rowDrag.sourceId);
+                                                    const bounds = event.currentTarget.getBoundingClientRect();
+                                                    const midpoint = bounds.top + bounds.height / 2;
+                                                    if (sourceIndex < index && event.clientY < midpoint) return;
+                                                    if (sourceIndex > index && event.clientY > midpoint) return;
+                                                    captureRowPositions();
+                                                    setRowDrag({
+                                                        ...rowDrag,
+                                                        rows: reorderInvoiceRows(rowDrag.rows, rowDrag.sourceId, idOrTempId),
+                                                    });
+                                                }}
+                                                onDrop={(event) => {
+                                                    if (!rowDrag) return;
+                                                    event.preventDefault();
+                                                    if (rowDrag.rows !== invoice.invoiceRows) {
+                                                        markStale();
+                                                        setMessages((prev) => prev.filter((message) => message.type !== 'success'));
+                                                        setInvoice((prev) => ({ ...prev, invoiceRows: rowDrag.rows }));
+                                                    }
+                                                    setRowDrag(null);
+                                                }}
+                                            >
+                                                <td className="py-0 text-xs text-center text-gray-600">
+                                                    {row.sortOrder}
+                                                </td>
                                                 <td className="p-0">
                                                     <textarea
                                                         value={row.text ?? ''}
@@ -1044,7 +1191,8 @@ const Invoice = () => {
                                                             rowId={idOrTempId}
                                                             field="weight"
                                                             value={row.weight ?? ''}
-                                                            decimals={0}
+                                                            decimals={Number(row.priceTypeId) === 2 ? 5 : 0}
+                                                            hideZeroDecimals
                                                             onChange={(rowId, field, value) => handleInvoiceRowChange(rowId, field, value)}
                                                             className="w-full h-full text-xs border-0 text-right focus:outline-none"
                                                         />
@@ -1055,7 +1203,8 @@ const Invoice = () => {
                                                         <NumberInput
                                                             rowId={idOrTempId}
                                                             field="nrOf"
-                                                            value={row.nrOf ?? ''}
+                                                            value={Number(row.priceTypeId) === 2 && Number(row.nrOf) === -1 ? '' : row.nrOf ?? ''}
+                                                            disabled={Number(row.priceTypeId) === 2 && Number(row.nrOf) === -1}
                                                             decimals={0}
                                                             onChange={(rowId, field, value) => handleInvoiceRowChange(rowId, field, value)}
                                                             className="w-full h-full text-xs border-0 text-right focus:outline-none"
@@ -1068,7 +1217,8 @@ const Invoice = () => {
                                                             rowId={idOrTempId}
                                                             field="unitPrice"
                                                             value={row.unitPrice ?? ''}
-                                                            decimals={2}
+                                                            decimals={Number(row.priceTypeId) === 2 ? 5 : 2}
+                                                            hideZeroDecimals={Number(row.priceTypeId) === 2}
                                                             onChange={(rowId, field, value) => handleInvoiceRowChange(rowId, field, value)}
                                                             className="w-full h-full text-xs border-0 text-right focus:outline-none"
                                                         />
@@ -1128,13 +1278,41 @@ const Invoice = () => {
                                                     </div>
                                                 </td>
                                                 <td className="px-0 relative">
-                                                    <div className="absolute inset-0 flex items-center justify-center border border-transparent bg-white focus-within:border-blue-400">
+                                                    <div className="absolute inset-0 flex items-center justify-center gap-1 border border-transparent bg-white focus-within:border-blue-400">
                                                         <button
                                                             type="button"
                                                             onClick={() => removeInvoiceRow(idOrTempId)}
-                                                            className="text-red-600 hover:underline"
+                                                            aria-label={`Ta bort fakturarad ${index + 1}`}
+                                                            title="Ta bort rad"
+                                                            className="rounded p-1 text-red-600 hover:bg-red-50 focus-visible:outline focus-visible:outline-blue-400"
                                                         >
-                                                            Ta bort
+                                                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            draggable={visibleInvoiceRows.length > 1}
+                                                            disabled={visibleInvoiceRows.length < 2}
+                                                            aria-label={`Flytta fakturarad ${index + 1}`}
+                                                            aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                                                            title="Dra för att flytta raden. Alt + pil upp/ned flyttar med tangentbordet."
+                                                            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 cursor-grab active:cursor-grabbing focus-visible:outline focus-visible:outline-blue-400 disabled:opacity-30 disabled:cursor-default"
+                                                            onDragStart={(event) => {
+                                                                event.dataTransfer.effectAllowed = 'move';
+                                                                event.dataTransfer.setData('text/plain', String(idOrTempId));
+                                                                setRowDrag({ sourceId: idOrTempId, rows: invoice.invoiceRows });
+                                                            }}
+                                                            onDragEnd={() => {
+                                                                if (rowDrag) captureRowPositions();
+                                                                setRowDrag(null);
+                                                            }}
+                                                            onKeyDown={(event) => {
+                                                                if (!event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+                                                                event.preventDefault();
+                                                                const target = visibleInvoiceRows[index + (event.key === 'ArrowUp' ? -1 : 1)];
+                                                                if (target) moveInvoiceRow(idOrTempId, getInvoiceRowIdentity(target));
+                                                            }}
+                                                        >
+                                                            <GripVertical className="h-3.5 w-3.5" aria-hidden="true" />
                                                         </button>
                                                     </div>
                                                 </td>

@@ -893,14 +893,17 @@ const Calloff = () => {
             }
             const url = URL.createObjectURL(response.data);
             pdfObjectUrlRef.current = url;
-            const prefix = pdfType === 'confirmation' ? 'calloffconfirmation' : 'calloff';
+            const prefix = pdfType === 'confirmation' ? 'Avropsbekräftelse' : 'Avrop';
             const onSent = async () => {
                 setMailLogRevision((value) => value + 1);
                 if (pdfType === 'freight-order') {
                     await handleFreightOrderSent(numericCallOffId);
                 }
             };
-            openPdfPreview?.(url, `${prefix}_${numericCallOffId}.pdf`, onSent, { callOffId: numericCallOffId });
+            openPdfPreview?.(url, `${prefix} ${numericCallOffId}.pdf`, onSent, { callOffId: numericCallOffId }, {
+                itemType: pdfType === 'confirmation' ? 'CALLOFFCONFIRMATION' : 'CALLOFF',
+                itemId: numericCallOffId,
+            });
         } catch (error) {
             if (requestId !== pdfRequestRef.current) return;
             console.error('Failed to load call-off PDF:', error);

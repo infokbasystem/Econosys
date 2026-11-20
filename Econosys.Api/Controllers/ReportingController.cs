@@ -1792,14 +1792,25 @@ namespace Econosys.Api.Controllers
             var now = SwedishTime.Now;
             var year = request?.Year is >= 2000 and <= 2100 ? request.Year : now.Year;
             var month = request?.Month is >= 1 and <= 12 ? request.Month : now.Month;
+            if (request?.StartDate.HasValue != request?.EndDate.HasValue)
+            {
+                return BadRequest("Both startDate and endDate are required.");
+            }
+
             var selectedCostIds = (request?.CostIds ?? new List<int>())
                 .Where(x => x > 0)
                 .Distinct()
                 .ToList();
             var filterByCostIds = request?.FilterByCostIds ?? false;
 
-            var startDate = new DateTime(year, month, 1);
-            var endDate = startDate.AddMonths(1);
+            var startDate = request?.StartDate?.Date ?? new DateTime(year, month, 1);
+            var selectedEndDate = request?.EndDate?.Date;
+            if (selectedEndDate < startDate)
+            {
+                return BadRequest("endDate must be on or after startDate.");
+            }
+
+            var endDate = selectedEndDate?.AddDays(1) ?? startDate.AddMonths(1);
 
             var rows = await _context.OrderCosts
                 .AsNoTracking()
@@ -1862,8 +1873,8 @@ namespace Econosys.Api.Controllers
 
             return Ok(new MonthlyOrderCostsReportResponseDto
             {
-                Year = year,
-                Month = month,
+                Year = startDate.Year,
+                Month = startDate.Month,
                 Rows = rows,
             });
         }

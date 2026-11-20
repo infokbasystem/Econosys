@@ -5,6 +5,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 import ExcelJS from 'exceljs';
 
 import DateRangePicker from '../../../components/DaterangePicker';
+import LabeledReactSelect from '../../../components/LabeledReactSelect';
 import apiClient from '../../../config/apiClient';
 import { getSharedRequest } from '../../../helpers/sharedRequest';
 import { formatDateShort } from '../../../helpers/dateUtils';
@@ -31,10 +32,12 @@ const InvoicedArticles = () => {
     const today = new Date();
     const firstDayOfYear = new Date(today.getFullYear(), 0, 1);
     const [filters, setFilters] = useState({ startDate: firstDayOfYear, endDate: today });
+    const [selectedCustomers, setSelectedCustomers] = useState(null);
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
     const [showSkeleton, setShowSkeleton] = useState(false);
     const [initialLoadCompleted, setInitialLoadCompleted] = useState(false);
+    const [showInfo, setShowInfo] = useState(false);
     const [sortConfig, setSortConfig] = useState({ key: 'invoiceDate', direction: 'desc' });
     const skeletonTimerRef = useRef(null);
     const requestRef = useRef(0);
@@ -86,9 +89,21 @@ const InvoicedArticles = () => {
         };
     }, []);
 
+    const customerOptions = useMemo(() => {
+        const names = new Set(selectedCustomers ?? []);
+        rows.forEach(({ customer }) => {
+            if (customer) names.add(customer);
+        });
+        return [...names]
+            .sort((left, right) => left.localeCompare(right, 'sv-SE'))
+            .map((name) => ({ id: name, name }));
+    }, [rows, selectedCustomers]);
+
     const sortedRows = useMemo(() => {
+        const selected = selectedCustomers === null ? null : new Set(selectedCustomers);
+        const matchingRows = selected === null ? [...rows] : rows.filter((row) => selected.has(row.customer));
         const direction = sortConfig.direction === 'asc' ? 1 : -1;
-        return [...rows].sort((left, right) => {
+        return matchingRows.sort((left, right) => {
             const leftValue = left?.[sortConfig.key];
             const rightValue = right?.[sortConfig.key];
             if (sortConfig.key === 'invoiceDate') {
@@ -99,7 +114,7 @@ const InvoicedArticles = () => {
             }
             return String(leftValue ?? '').localeCompare(String(rightValue ?? ''), 'sv-SE') * direction;
         });
-    }, [rows, sortConfig]);
+    }, [rows, selectedCustomers, sortConfig]);
 
     const handleDateChange = ({ startDate, endDate }) => {
         const nextFilters = { startDate, endDate };
@@ -164,10 +179,55 @@ const InvoicedArticles = () => {
                     widthClassName="w-60"
                     onApply={handleDateChange}
                 />
+                <div className="w-52 ml-5">
+                    <LabeledReactSelect
+                        label="Kund"
+                        labelWidth="w-10"
+                        name="customer"
+                        filterStyle
+                        value={selectedCustomers}
+                        items={customerOptions}
+                        onChange={(selected) => setSelectedCustomers(selected.length > 0 && selected.length === customerOptions.length ? null : selected)}
+                        isDisabled={loading}
+                        isMulti
+                        placeholder={selectedCustomers === null ? 'Alla kunder' : 'Inga kundervalda'}
+                    />
+                </div>
                 <button type="button" onClick={handleExport} disabled={loading || sortedRows.length === 0} className="ml-20 text-xs font-medium text-slate-500 hover:text-slate-700 disabled:cursor-not-allowed disabled:text-gray-300">
                     Exportera till EXCEL
                 </button>
                 <div className="ml-6 text-xs text-gray-500">Rader: <strong>{sortedRows.length}</strong></div>
+                <div className="pointer-events-auto relative ml-auto mr-4">
+                    {showInfo && (
+                        <div
+                            className="fixed inset-0 z-30"
+                            aria-hidden="true"
+                            onClick={() => setShowInfo(false)}
+                        />
+                    )}
+                    <button
+                        type="button"
+                        aria-expanded={showInfo}
+                        aria-controls="invoiced-articles-info"
+                        onClick={() => setShowInfo((previous) => !previous)}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Escape') setShowInfo(false);
+                        }}
+                        className="relative z-40 whitespace-nowrap text-xs font-medium text-slate-500 transition-colors hover:text-slate-700"
+                    >
+                        {showInfo ? 'Dölj info' : 'Visa info'}
+                    </button>
+                    <div
+                        id="invoiced-articles-info"
+                        hidden={!showInfo}
+                        className="absolute right-0 top-full z-40 mt-2 w-[420px] max-w-[calc(100vw-2rem)] space-y-2 border border-gray-400 bg-yellow-50 px-8 py-6 text-center text-xs text-yellow-900 shadow-sm"
+                    >
+                        <p>Rapporten visar fakturarader som är kopplade till en artikel via en kundleverans. Urvalet baseras på fakturadatum och valda kunder.</p>
+                        <p>Rapporten visar fakturerad intäkt, inte vinst: orderns kostnader dras inte av. Separat debiterade kostnader, som verktyg eller frakt, ingår inte om fakturaraden saknar koppling till kundleveransen. Andra fakturerade rader som är kopplade till leveransen, till exempel EUR-pallar, kan däremot ingå.</p>
+                        <p>Antal, enhetspris och summa hämtas från fakturaraden. För vanliga artikelrader beräknas summan som antal gånger enhetspris, delat med antalet som priset avser (t.ex. 1 000 vid pris per tusen).</p>
+                        <p>Rapporten visar det sparade radbeloppet utan egen omräkning, momsberäkning eller valutakonvertering.</p>
+                    </div>
+                </div>
             </div>
             <div className="border-t border-gray-300 py-1 mt-3 min-h-0 flex-1 overflow-auto">
                 <table className={`table-fixed w-full border-collapse text-xs [&_thead_th]:px-2 [&_thead_th]:pt-1 [&_thead_th]:pb-2 [&_thead_th]:text-tiny [&_thead_th]:font-semibold [&_thead_th]:text-gray-900 [&_thead_th]:tracking-[0.12em] [&_tbody_>_tr]:h-6 [&_tbody_>_tr]:border-b [&_tbody_>_tr]:border-gray-100 [&_tbody_td]:overflow-hidden [&_tbody_td]:text-ellipsis [&_tbody_td]:whitespace-nowrap [&_tbody_td]:px-2 [&_tbody_td]:py-0 [&_tbody_td]:text-gray-800 ${showSkeleton ? '' : '[&_tbody_>_tr:hover]:!bg-lime-200/70'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
@@ -204,7 +264,7 @@ const InvoicedArticles = () => {
                         ) : initialLoadCompleted && !loading && sortedRows.length === 0 ? (
                             <tr>
                                 <td colSpan={columns.length} className="px-4 py-6 text-center text-gray-400 text-xs">
-                                    Inga fakturarader hittades för vald period.
+                                    {rows.length === 0 ? 'Inga fakturarader hittades för vald period.' : 'Inga fakturarader matchar kundfiltret.'}
                                 </td>
                             </tr>
                         ) : (

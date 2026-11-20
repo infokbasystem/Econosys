@@ -1,0 +1,55 @@
+@baseUrl = https://localhost:5001
+@token = replace-with-access-token
+@customerId = 1
+@stockDeliveryId = 1
+
+### Unsaved draft: regular costs, recurring DMT, pallets and call-off freight follow the selected deliveries
+POST {{baseUrl}}/api/invoices/draft/from-selection
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customerId": {{customerId}},
+  "deliveries": [{"type": "DeliveryFromStock", "id": {{stockDeliveryId}}}],
+  "orderCostIds": []
+}
+
+### Separate pallets delivered through today (customer must invoice pallets separately)
+POST {{baseUrl}}/api/invoices/draft/from-selection
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customerId": {{customerId}},
+  "invoiceMode": "palletsNow"
+}
+
+### Separate pallets on future deliveries
+POST {{baseUrl}}/api/invoices/draft/from-selection
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customerId": {{customerId}},
+  "invoiceMode": "palletsFuture"
+}
+
+### Inventory preview only; does not persist rows or mark deliveries as invoiced
+POST {{baseUrl}}/api/invoices/accounting-preview
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customerId": {{customerId}},
+  "invoiceRows": [{"priceTypeId": 1, "deliveryFromStockId": {{stockDeliveryId}}, "nrOf": 2000}]
+}
+
+### Unknown stock delivery returns 400 with a visible validation message
+POST {{baseUrl}}/api/invoices/accounting-preview
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customerId": {{customerId}},
+  "invoiceRows": [{"priceTypeId": 1, "deliveryFromStockId": 2147483647, "nrOf": 2000}]
+}

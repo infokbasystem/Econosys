@@ -3,6 +3,7 @@ using Econosys.Api.Models;
 using QuestPDF.Fluent;
 using QuestPDF.Infrastructure;
 using static Econosys.Api.Services.DocumentPdfLayout;
+using PdfUnit = QuestPDF.Infrastructure.Unit;
 
 namespace Econosys.Api.Services;
 
@@ -102,7 +103,7 @@ public static class InquiryPdfDocument
                     {
                         product.Spacing(6);
                         product.Item().Element(container => Field(container, texts.Text(-1), inquiry.Product));
-                        product.Item().Element(container => Field(container, texts.Text(-2), inquiry.Format));
+                        product.Item().Element(container => Field(container, texts.Text(-2), FormatSize(inquiry.Format)));
                         product.Item().Element(container => Field(container, texts.Text(-4), inquiry.Construction));
                         var material = Join(inquiry.Material, inquiry.MaterialThickness);
                         if (inquiry.IsFSC)
@@ -143,6 +144,7 @@ public static class InquiryPdfDocument
                 {
                     additions.Spacing(6);
                     additions.Item().Text(texts.Text(DocumentPdfTranslations.Additions)).Bold();
+                    additions.Item().LineHorizontal(0.5f).LineColor("#000000");
                     additions.Item().Element(container => Field(container,
                         texts.Text(DocumentPdfTranslations.InquiryToolingCost) + ":", "?", 170));
                     if (!string.IsNullOrWhiteSpace(inquiry.Preparation))
@@ -155,7 +157,7 @@ public static class InquiryPdfDocument
                     }
                 });
 
-                column.Item().ExtendVertical().AlignBottom().PaddingTop(24).Column(terms =>
+                column.Item().ExtendVertical().AlignBottom().PaddingTop(24).PaddingBottom(2, PdfUnit.Centimetre).Column(terms =>
                 {
                     terms.Spacing(6);
                     terms.Item().Element(container => Field(container, texts.Text(-37), inquiry.TimeOfDelivery, 100));
@@ -169,6 +171,14 @@ public static class InquiryPdfDocument
     }
 
     private static string Date(DateTime? value) => value?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "";
+
+    private static string? FormatSize(string? value)
+    {
+        var size = value?.TrimEnd();
+        return string.IsNullOrWhiteSpace(size) || size.EndsWith("mm", StringComparison.OrdinalIgnoreCase)
+            ? size
+            : size + " mm";
+    }
 
     private static string Join(params string?[] values) =>
         string.Join(" ", values.Where(value => !string.IsNullOrWhiteSpace(value)));

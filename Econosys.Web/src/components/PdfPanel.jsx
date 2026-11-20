@@ -16,6 +16,7 @@ export default function PdfPanel({ onOpenFileModal = null }) {
         closePdfPreview,
         badges,
         emailInfo,
+        emailRecipientSource,
         onEmailSent,
         mailLogItem,
         openEmailModal,
@@ -26,12 +27,14 @@ export default function PdfPanel({ onOpenFileModal = null }) {
     const [numPages, setNumPages] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(false);
+    const [pageWidth, setPageWidth] = useState(560);
     const [visible, setVisible] = useState(false);
     const [mounted, setMounted] = useState(false);
     const [showDoc, setShowDoc] = useState(false);
     const [showLocalModal, setShowLocalModal] = useState(false);
     const delayRef = useRef(null);
     const unmountTimerRef = useRef(null);
+    const viewerRef = useRef(null);
 
     const pdfOptions = useMemo(() => ({
         disableRange: true,
@@ -155,17 +158,30 @@ export default function PdfPanel({ onOpenFileModal = null }) {
         return () => observers.forEach(o => o.disconnect());
     }, [showDoc]);
 
+    useEffect(() => {
+        const viewer = viewerRef.current;
+        if (!viewer) return undefined;
+
+        const resizeObserver = new ResizeObserver(([entry]) => {
+            const width = Math.floor(entry.contentRect.width) - 4;
+            if (width > 0) setPageWidth(width);
+        });
+        resizeObserver.observe(viewer);
+
+        return () => resizeObserver.disconnect();
+    }, [mounted]);
+
 
     return (
         <>
             <div
-                className={`absolute right-0 flex min-h-0 w-[560px] flex-col overflow-hidden border-l border-slate-200/80 bg-yellow-50/95 shadow-2xl z-50 pl-7 pr-10 py-10 backdrop-blur-sm
+                className={`absolute right-0 flex min-h-0 w-[min(640px,85vw)] flex-col overflow-hidden border-l border-slate-200/80 bg-yellow-50/95 shadow-2xl z-50 pl-7 pr-10 pt-6 backdrop-blur-sm
                     transform-gpu transition-[translate,scale,opacity] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform
                     ${!mounted ? 'hidden' : visible ? 'translate-x-0 scale-100 opacity-100 pointer-events-auto' : 'translate-x-full scale-[0.985] opacity-0 pointer-events-none'}`}
                 aria-hidden={!visible}
                 style={{ top: 0, bottom: 0 }}
             >
-                <div className="flex shrink-0 items-center pb-3 pl-5">
+                <div className="flex shrink-0 items-center pb-2 pl-5">
                     <div className="flex items-center gap-6">
                         <ActionButton
                             label="Stäng"
@@ -209,7 +225,7 @@ export default function PdfPanel({ onOpenFileModal = null }) {
                         </div>
                     )} */}
 
-                    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
+                    <div ref={viewerRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2">
                         {showPdfPanel && !pdfUrl ? null : null}
 
                         {pdfUrl && (
@@ -237,7 +253,7 @@ export default function PdfPanel({ onOpenFileModal = null }) {
                                         <Page
                                             key={`page_${pageNumber}`}
                                             pageNumber={pageNumber}
-                                            width={480}
+                                            width={pageWidth}
                                             renderTextLayer={false}
                                             renderAnnotationLayer={false}
                                         />
@@ -260,6 +276,7 @@ export default function PdfPanel({ onOpenFileModal = null }) {
 
             {showEmailModal && (
                 <EmailModal
+                    recipientSource={emailRecipientSource}
                     initialSubject={emailInfo?.subject || ''}
                     initialBody={emailInfo?.body || ''}
                     receiverList={emailInfo?.recipients || []}

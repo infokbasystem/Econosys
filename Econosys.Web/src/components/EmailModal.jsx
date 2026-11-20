@@ -4,12 +4,13 @@ import RichTextEditor from './RichTextEditor';
 import apiClient from '../config/apiClient';
 import useAppUpdateGuard from '../hooks/useAppUpdateGuard';
 
-const createEmptyRecipient = () => ({ email: '', doSend: false });
+const createEmptyRecipient = () => ({ email: '', doSend: true, title: '' });
 
 const normalizeRecipients = (items = []) => {
     const normalized = items.map((item) => ({
         email: item?.email || '',
         doSend: Boolean(item?.doSend),
+        title: item?.title || '',
     }));
 
     if (normalized.length === 0 || normalized[normalized.length - 1].email.trim() !== '') {
@@ -67,17 +68,26 @@ const RecipientTable = ({ title, rows, onChange }) => {
                     const isEmptyRow = row.email.trim() === '' && index === rows.length - 1;
                     return (
                         <div key={`${title}-${index}`} className="bg-white grid grid-cols-[1fr_90px_60px] border-b last:border-b-0 border-gray-200">
-                            <input
-                                className="px-2 py-1.5 text-xs outline-none"
-                                value={row.email}
-                                onChange={(e) => updateRow(index, 'email', e.target.value)}
-                                placeholder="namn@foretag.se"
-                            />
+                            <div className="flex min-w-0 items-center">
+                                <input
+                                    className="w-full min-w-0 px-2 py-1.5 text-xs outline-none"
+                                    value={row.email}
+                                    onChange={(e) => updateRow(index, 'email', e.target.value)}
+                                    placeholder="namn@foretag.se"
+                                    aria-label={`${title} ${index + 1}`}
+                                />
+                                {row.title && (
+                                    <span className="max-w-24 shrink-0 truncate px-2 text-xs text-gray-600" title={row.title}>
+                                        {row.title}
+                                    </span>
+                                )}
+                            </div>
                             <label className="flex items-center justify-center">
                                 <input
                                     type="checkbox"
                                     checked={row.doSend}
                                     onChange={(e) => updateRow(index, 'doSend', e.target.checked)}
+                                    aria-label={`Skicka till ${row.email || `${title} ${index + 1}`}`}
                                 />
                             </label>
                             <div className="flex items-center justify-center">
@@ -105,6 +115,7 @@ export default function EmailModal({
     onClose,
     receiverList = [],
     ccMailList = [],
+    recipientSource = null,
     sourceAttachmentUrl = '',
     sourceAttachmentName = '',
     inquiryId = null,
@@ -113,33 +124,72 @@ export default function EmailModal({
     transportOrderId = null,
     onSent,
 }) {
-    const [subject, setSubject] = useState(initialSubject);
+    const [subject, setSubject] = useState(recipientSource ? '' : initialSubject);
     useAppUpdateGuard(true);
-    const [body, setBody] = useState(initialBody);
-    const [receivers, setReceivers] = useState(() => normalizeRecipients(receiverList));
-    const [ccRecipients, setCcRecipients] = useState(() => normalizeRecipients(ccMailList));
+    const [body, setBody] = useState(recipientSource ? '' : initialBody);
+    const initialTextRef = useRef({ subject: initialSubject, body: initialBody });
+    initialTextRef.current = { subject: initialSubject, body: initialBody };
+    const [receivers, setReceivers] = useState(() => normalizeRecipients(recipientSource ? [] : receiverList));
+    const [ccRecipients, setCcRecipients] = useState(() => normalizeRecipients(recipientSource ? [] : ccMailList));
     const [extraFiles, setExtraFiles] = useState([]);
     const [isDragOverAttachments, setIsDragOverAttachments] = useState(false);
     const [isSending, setIsSending] = useState(false);
     const [emailSent, setEmailSent] = useState(false);
     const [sendError, setSendError] = useState('');
+    const [sendErrorDetail, setSendErrorDetail] = useState('');
+    const [isLoadingRecipients, setIsLoadingRecipients] = useState(Boolean(recipientSource));
+    const [recipientError, setRecipientError] = useState('');
     const fileInputRef = useRef(null);
 
     useEffect(() => {
+        if (recipientSource) return;
         setSubject(initialSubject || '');
-    }, [initialSubject]);
+    }, [initialSubject, recipientSource]);
 
     useEffect(() => {
+        if (recipientSource) return;
         setBody(initialBody || '');
-    }, [initialBody]);
+    }, [initialBody, recipientSource]);
 
     useEffect(() => {
+        if (recipientSource) return;
         setReceivers(normalizeRecipients(receiverList));
-    }, [receiverList]);
+    }, [receiverList, recipientSource]);
 
     useEffect(() => {
+        if (recipientSource) return;
         setCcRecipients(normalizeRecipients(ccMailList));
-    }, [ccMailList]);
+    }, [ccMailList, recipientSource]);
+
+    useEffect(() => {
+        if (!recipientSource) return;
+        const controller = new AbortController();
+        setIsLoadingRecipients(true);
+        setRecipientError('');
+        const query = new URLSearchParams();
+        if (recipientSource.receiverType) query.set('receiverType', recipientSource.receiverType);
+        (recipientSource.receiverIds || []).forEach((id) => query.append('receiverIds', String(id)));
+
+        apiClient.get(`/email/recipients/${recipientSource.itemType}/${recipientSource.itemId}?${query}`, {
+            signal: controller.signal,
+        }).then(({ data }) => {
+            if (controller.signal.aborted) return;
+            setReceivers(normalizeRecipients(data.recipients));
+            setCcRecipients(normalizeRecipients(data.ccRecipients));
+            setSubject(data.subject || initialTextRef.current.subject || '');
+            setBody(data.body || initialTextRef.current.body || '');
+        }).catch((error) => {
+            if (controller.signal.aborted) return;
+            setSubject(initialTextRef.current.subject || '');
+            setBody(initialTextRef.current.body || '');
+            console.error('Failed to load email recipients:', error);
+            setRecipientError(error.response?.data?.detail || 'Kunde inte ladda e-postmottagare. Stäng och öppna dialogen för att försöka igen.');
+        }).finally(() => {
+            if (!controller.signal.aborted) setIsLoadingRecipients(false);
+        });
+
+        return () => controller.abort();
+    }, [recipientSource]);
 
     const attachmentName = useMemo(
         () => ensurePdfFileName(sourceAttachmentName || getAttachmentNameFromUrl(sourceAttachmentUrl)),
@@ -240,8 +290,10 @@ export default function EmailModal({
     };
 
     const handleSendClick = async () => {
+        if (isLoadingRecipients || recipientError) return;
         setIsSending(true);
         setSendError('');
+        setSendErrorDetail('');
         let wasSent = false;
         const payload = {
             subject,
@@ -319,6 +371,7 @@ export default function EmailModal({
             } else {
                 console.error('Error sending email:', error);
                 setSendError(error.response?.data?.message || (typeof error.response?.data === 'string' ? error.response.data : '') || error.message || 'Kunde inte skicka e-post');
+                setSendErrorDetail(typeof error.response?.data?.detail === 'string' ? error.response.data.detail : '');
             }
         } finally {
             setIsSending(false);
@@ -348,10 +401,14 @@ export default function EmailModal({
 
                     <div className="grid grid-cols-1 lg:grid-cols-[0.8fr_1.1fr] gap-10 mx-10 mt-7">
                         <div>
-                            <RecipientTable title="Mottagare" rows={receivers} onChange={setReceivers} />
-                            <div className="mt-6">
-                                <RecipientTable title="Kopia" rows={ccRecipients} onChange={setCcRecipients} />
-                            </div>
+                            {isLoadingRecipients && <div role="status" className="mb-3 text-xs text-gray-700">Laddar e-postmottagare...</div>}
+                            {recipientError && <div role="alert" className="mb-3 text-xs text-red-700">{recipientError}</div>}
+                            <fieldset disabled={isLoadingRecipients || Boolean(recipientError) || isSending || emailSent}>
+                                <RecipientTable title="Mottagare" rows={receivers} onChange={setReceivers} />
+                                <div className="mt-6">
+                                    <RecipientTable title="Kopia till" rows={ccRecipients} onChange={setCcRecipients} />
+                                </div>
+                            </fieldset>
 
                             <div
                                 className={`mt-4 border rounded-sm p-3 bg-gray-50 transition-colors ${isDragOverAttachments ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}`}
@@ -432,7 +489,7 @@ export default function EmailModal({
                         </div>
                     </div>
                     <div className="flex gap-4 mt-6 mb-3 pt-4 mx-10 justify-end">
-                        {hasNoRecipients && (
+                        {!isLoadingRecipients && !recipientError && hasNoRecipients && (
                             <div className="text-xs text-amber-700 bg-amber-50 border border-gray-300 rounded px-10 py-1">
                                 Välj minst en mottagare.
                             </div>
@@ -440,6 +497,7 @@ export default function EmailModal({
                         {sendError && (
                             <div className="text-xs text-red-700 bg-red-50 border border-gray-300 rounded px-10 py-1">
                                 {sendError}
+                                {sendErrorDetail && <div className="mt-1">{sendErrorDetail}</div>}
                             </div>
                         )}
                         <button
@@ -453,7 +511,7 @@ export default function EmailModal({
                         <button
                             type="button"
                             onClick={handleSendClick}
-                            disabled={isSending || emailSent || hasNoRecipients}
+                            disabled={isSending || emailSent || hasNoRecipients || isLoadingRecipients || Boolean(recipientError)}
                             className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-10 p-[5px] disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isSending ? 'Skickar...' : 'Skicka'}

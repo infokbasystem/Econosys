@@ -2,6 +2,7 @@ using System.Globalization;
 using Econosys.Api.Models;
 using QuestPDF.Fluent;
 using QuestPDF.Infrastructure;
+using PdfUnit = QuestPDF.Infrastructure.Unit;
 
 namespace Econosys.Api.Services;
 
@@ -13,7 +14,7 @@ public static class QuotationPdfDocument
         IReadOnlyList<PriceLine> Prices, IReadOnlyList<CostLine> Costs);
 
     public static Content BuildContent(Quotation quotation, DocumentPdfTranslations texts,
-        IEnumerable<OrderCost>? orderCosts = null)
+        IEnumerable<OrderCost>? orderCosts = null, int? supplierOrderId = null)
     {
         var rows = quotation.QuotationRows.OrderBy(row => row.Id).ToList();
         var calculation = quotation.Calculation ?? rows.Select(row => row.CalculationRow?.Calculation)
@@ -26,55 +27,67 @@ public static class QuotationPdfDocument
         var prices = rows.Select(row => new PriceLine(
             texts.Number(row.Edition), texts.Number(row.Price, decimals), row.CalculationRow?.Info ?? "")).ToList();
         var costs = new List<CostLine>();
+        var unitPriceSeparator = $"{texts.Text(-101)}. *";
 
         if (quotation.EurPallet)
         {
-            var palletName = texts.Text(quotation.PalletFormat?.TranslationCode ?? 0,
-                quotation.PalletFormat?.Name ?? "EUR-pall");
+            var palletCode = quotation.PalletFormat?.TranslationCode ?? 0;
             var known = quotation.NrOfEurPallet.HasValue && quotation.EurPalletValue.HasValue;
-            costs.Add(new CostLine(
-                $"{texts.Text(-99)} {palletName}" + (known ? "" : $" {texts.Text(-100)}"),
-                known ? texts.Money((decimal)quotation.EurPalletValue!.Value * quotation.NrOfEurPallet!.Value, currencyName) : "",
-                ""));
+            var description = palletCode == 0 ? "Exkl. EUR-pall"
+                : $"{texts.Text(-99)} {texts.Text(palletCode, quotation.PalletFormat?.Name ?? "EUR-pall")}"
+                    + (known ? "" : $" {texts.Text(-100)}");
+            var amount = "";
+            if (quotation.NrOfEurPallet is short count && count != 0
+                && quotation.EurPalletValue is double unitPrice && unitPrice != 0)
+            {
+                amount = $"{count.ToString(texts.Culture)} {unitPriceSeparator} {unitPrice.ToString(texts.Culture)}"
+                    + $" = {(unitPrice * count).ToString(texts.Culture)} {currencyName}";
+            }
+            costs.Add(new CostLine(description, amount, ""));
         }
 
         foreach (var cost in (orderCosts ?? quotation.OrderCosts)
-            .Where(cost => cost.DoDebit && cost.DoPrintOnQuotation && cost.SupplierOrderId == null)
-            .DistinctBy(cost => cost.Id)
+            .Where(cost => cost.DoDebit && cost.SupplierOrderId == supplierOrderId)
             .OrderBy(cost => cost.CalculationRowId).ThenBy(cost => cost.Id))
         {
-            var known = cost.OutPrice.HasValue;
-            var code = known ? cost.Cost?.TranslationCodeQuotationKnown : cost.Cost?.TranslationCodeQuotationUnknown;
+            var known = UsesKnownCostText(cost);
             var fallback = $"{texts.Text(-99)} {cost.Cost?.Name}".TrimEnd()
                 + (known ? "" : $" {texts.Text(-100)}");
-            var description = texts.Text(code ?? 0, fallback);
-            var amount = texts.Money(cost.OutPrice * (cost.NrOf ?? 1m), currencyName);
-            if (known && cost.Cost?.IsNrOf == true && cost.NrOf.HasValue)
+            var description = texts.Text(CostTranslationCode(cost) ?? 0, fallback);
+            var amount = cost.OutPrice is decimal price
+                ? $"{(price * (cost.NrOf ?? 1m)).ToString("#,0", texts.Culture)} {currencyName}" : "";
+            if (cost.Cost?.IsNrOf == true && (supplierOrderId.HasValue || cost.OutPrice.HasValue))
             {
-                amount = $"{cost.NrOf.Value.ToString("0.#####", texts.Culture)} {texts.Text(-101)}"
-                    + $" \u00d7 {texts.Money(cost.OutPrice, currencyName)} = {amount}";
+                amount = $"{cost.NrOf.GetValueOrDefault().ToString("#,0", texts.Culture)} {unitPriceSeparator}"
+                    + $" {cost.OutPrice.GetValueOrDefault().ToString("#,0", texts.Culture)} = {amount}";
             }
 
-            var linkedRow = rows.FirstOrDefault(row => cost.QuotationRowId == row.Id
-                || (cost.QuotationRowId == null && cost.CalculationRowId.HasValue
-                    && cost.CalculationRowId == row.CalculationRowId));
+            var linkedRow = rows.FirstOrDefault(row => cost.CalculationRowId == row.CalculationRowId);
             var editionInfo = linkedRow == null ? ""
-                : $"{texts.Text(-97)}: {texts.Number(linkedRow.Edition)} {texts.Text(-101)}, "
-                    + $"{texts.Text(-98)} {texts.Number(linkedRow.Price, decimals)} {currencyName}/{unitName}";
+                : $"{texts.Text(-97)}: {linkedRow.Edition?.ToString(texts.Culture)} {texts.Text(-101)}"
+                    + (supplierOrderId.HasValue
+                        ? $", {texts.Number(linkedRow.Price ?? 0)}/{unit?.Multiplicator ?? 0} {texts.Text(-101)}"
+                        : $" {texts.Text(-98)} {texts.Number(linkedRow.Price ?? 0)}");
             costs.Add(new CostLine(description, amount, editionInfo));
         }
 
         return new Content(currencyName, $"{currencyName}/{unitName}", prices, costs);
     }
 
-    public static byte[] Generate(Quotation quotation, CompanyInfo? company, DocumentPdfTranslations texts,
-        IEnumerable<OrderCost>? orderCosts = null) =>
-        CreateDocument(quotation, company, texts, orderCosts).GeneratePdf();
+    private static bool UsesKnownCostText(OrderCost cost) =>
+        cost.OutPrice.HasValue && (cost.SupplierOrderId.HasValue || !cost.NrOf.HasValue);
+
+    internal static int? CostTranslationCode(OrderCost cost) =>
+        UsesKnownCostText(cost) ? cost.Cost?.TranslationCodeQuotationKnown : cost.Cost?.TranslationCodeQuotationUnknown;
+
+    public static byte[] Generate(Quotation quotation, CompanyInfo? company, DocumentPdfTranslations texts, string? customerMessage,
+        IEnumerable<OrderCost>? orderCosts = null, int? supplierOrderId = null) =>
+        CreateDocument(quotation, company, texts, customerMessage, orderCosts, supplierOrderId).GeneratePdf();
 
     public static IDocument CreateDocument(Quotation quotation, CompanyInfo? company, DocumentPdfTranslations texts,
-        IEnumerable<OrderCost>? orderCosts = null)
+        string? customerMessage = null, IEnumerable<OrderCost>? orderCosts = null, int? supplierOrderId = null)
     {
-        var content = BuildContent(quotation, texts, orderCosts);
+        var content = BuildContent(quotation, texts, orderCosts, supplierOrderId);
         return Document.Create(document => document.Page(page =>
         {
             DocumentPdfLayout.Configure(page);
@@ -139,26 +152,39 @@ public static class QuotationPdfDocument
                             product.Item().Element(container => Field(container, texts.Text(DocumentPdfTranslations.Note), quotation.ProductMessage));
                         }
                     });
-                    row.RelativeItem().Table(table =>
+                    row.RelativeItem().Column(pricing =>
                     {
-                        table.ColumnsDefinition(columns =>
+                        pricing.Item().Table(table =>
                         {
-                            columns.RelativeColumn(0.9f);
-                            columns.RelativeColumn(1.1f);
-                            columns.RelativeColumn(1.2f);
+                            table.ColumnsDefinition(columns =>
+                            {
+                                columns.RelativeColumn(0.9f);
+                                columns.RelativeColumn(1.1f);
+                                columns.RelativeColumn(1.2f);
+                            });
+                            table.Header(header =>
+                            {
+                                header.Cell().Element(HeaderCell).Text(texts.Text(-41));
+                                header.Cell().Element(HeaderCell).Text(content.PriceHeading);
+                                header.Cell().Element(HeaderCell).Text(texts.Text(DocumentPdfTranslations.Note));
+                            });
+                            foreach (var price in content.Prices)
+                            {
+                                table.Cell().Element(BodyCell).Text(price.Quantity);
+                                table.Cell().Element(BodyCell).Text(price.Price);
+                                table.Cell().Element(BodyCell).Text(price.Note);
+                            }
                         });
-                        table.Header(header =>
+                        pricing.Item().PaddingTop(26).PaddingLeft(5).Column(notes =>
                         {
-                            header.Cell().Element(HeaderCell).Text(texts.Text(-41));
-                            header.Cell().Element(HeaderCell).Text(content.PriceHeading);
-                            header.Cell().Element(HeaderCell).Text(texts.Text(DocumentPdfTranslations.Note));
+                            notes.Spacing(6);
+                            notes.Item().Text(texts.Text(-50)).FontSize(8);
+                            var validity = texts.Text(-93);
+                            if (!string.IsNullOrWhiteSpace(validity))
+                            {
+                                notes.Item().Text(validity).FontSize(8);
+                            }
                         });
-                        foreach (var price in content.Prices)
-                        {
-                            table.Cell().Element(BodyCell).Text(price.Quantity);
-                            table.Cell().Element(BodyCell).Text(price.Price);
-                            table.Cell().Element(BodyCell).Text(price.Note);
-                        }
                     });
                 });
 
@@ -181,26 +207,19 @@ public static class QuotationPdfDocument
                             }
                         });
                     }
-                    additions.Item().Text(texts.Text(DocumentPdfTranslations.ToolingDisclaimer)).Italic();
-                    if (!string.IsNullOrWhiteSpace(quotation.Message))
+                    if (!string.IsNullOrWhiteSpace(customerMessage))
                     {
-                        additions.Item().PaddingTop(6).Text(quotation.Message);
+                        additions.Item().PaddingTop(6).Text(customerMessage);
                     }
                 });
 
-                column.Item().ExtendVertical().AlignBottom().PaddingTop(24).Column(terms =>
+                column.Item().ExtendVertical().AlignBottom().PaddingTop(24).PaddingBottom(2, PdfUnit.Centimetre).Column(terms =>
                 {
                     terms.Spacing(6);
                     terms.Item().Element(container => Field(container, texts.Text(-37), quotation.TimeOfDelivery, 100));
                     terms.Item().Element(container => Field(container, texts.Text(-38), quotation.TermsOfDelivery, 100));
                     terms.Item().Element(container => Field(container, texts.Text(-39), quotation.TermsOfPayment, 100));
                     terms.Item().PaddingLeft(100).Text(texts.Text(DocumentPdfTranslations.PaymentDisclaimer)).Italic();
-                    terms.Item().Text(texts.Text(-50)).FontSize(8);
-                    var validity = texts.Text(-93);
-                    if (!string.IsNullOrWhiteSpace(validity))
-                    {
-                        terms.Item().Text(validity).FontSize(8);
-                    }
                 });
             });
             page.Footer().PaddingTop(14).Element(container => DocumentPdfLayout.Footer(container, company, texts.Text));

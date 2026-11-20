@@ -490,7 +490,7 @@ namespace Econosys.Api.Controllers
                 HideCustomerNameOnPrint = true,
                 HideProductNameOnPrint = true,
                 EconopackTransportResponsible = supplier.EconopackTransportResponsible,
-                EurPallet = calculation.PalletType == 1,
+                EurPallet = calculation.DoDebitPalletPrice,
                 OneWayPallet = calculation.PalletType == 2,
                 PalletFormatId = calculation.PalletFormatId,
                 IsFSC = supplier.FscDefault,

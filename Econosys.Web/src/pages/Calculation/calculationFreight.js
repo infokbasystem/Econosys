@@ -76,6 +76,17 @@ export const changeFreightMode = (calculation, field, enabled) => {
     return next;
 };
 
+export const applySupplierFreightSettings = (calculation, supplier) => {
+    if (!supplier) return calculation;
+    const responsible = supplier.econopackTransportResponsible === true;
+    const next = changeFreightMode(calculation, 'deactivateFreightCalculation', !responsible);
+    if (responsible) {
+        next.autoFreightCalc = true;
+        next.autoFreightPrice = true;
+    }
+    return next;
+};
+
 export const parseFreightFactors = (items, length, width) => {
     const matches = items.filter((item) => item.lengthFrom < length && item.lengthTo >= length
         && item.widthFrom < width && item.widthTo >= width);

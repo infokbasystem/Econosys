@@ -18,6 +18,32 @@ namespace Econosys.Api.Tests;
 public class OrderCreationTests
 {
     [Theory]
+    [InlineData(22, true, "Customer salesperson")]
+    [InlineData(22, false, "Customer salesperson")]
+    [InlineData(null, true, null)]
+    public async Task CustomerDetailsIncludeAssignedSalespersonForNewOrderReference(
+        int? responsibleUserId, bool active, string? expectedName)
+    {
+        using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        context.LegacyUsers.AddRange(
+            new LegacyUser { Id = 22, Name = "Customer salesperson", Active = active },
+            new LegacyUser { Id = 42, Name = "Order creator", Active = true });
+        context.Customers.Add(new Customer { Id = 1, ResponsibleUserId = responsibleUserId });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+        var controller = new CustomersController(context,
+            NullLogger<CustomersController>.Instance,
+            new UserResolution(new LegacyUser { Id = 42, CompanyId = 1 }));
+
+        var result = await controller.GetById(1);
+
+        var details = Assert.IsType<CustomerDetailsDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(responsibleUserId, details.Customer.ResponsibleUserId);
+        Assert.Equal(expectedName, details.Customer.ResponsibleUserName);
+    }
+
+    [Theory]
     [InlineData("ApplyCreateRequestToEntity", null, null)]
     [InlineData("ApplyCreateRequestToEntity", 12, 175.5)]
     [InlineData("ApplyUpdateRequestToEntity", null, null)]
@@ -409,6 +435,118 @@ public class OrderCreationTests
         Assert.Equal(expectedNumber, updated.SupplierOrderNr);
         context.ChangeTracker.Clear();
         Assert.Equal(expectedNumber, (await context.SupplierOrders.SingleAsync()).SupplierOrderNr);
+    }
+
+    [Fact]
+    public async Task SupplierOrderUpdatePersistsAndReturnsOrderCostCurrency()
+    {
+        using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        context.SupplierOrders.Add(new SupplierOrder { Id = 50, SupplierOrderNr = "TEST-50" });
+        context.OrderCosts.Add(new OrderCost
+        {
+            Id = 10,
+            SupplierOrderId = 50,
+            CostId = 3,
+            InPriceCurrencyId = 3,
+        });
+        await context.SaveChangesAsync();
+        var controller = new SupplierOrdersController(context,
+            NullLogger<SupplierOrdersController>.Instance,
+            new UserResolution(new LegacyUser { Id = 42, CompanyId = 7 }),
+            new PalletFormatOptionsService(context));
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+
+        var updateRequest = JsonSerializer.Deserialize<UpdateSupplierOrderRequest>(
+            """{"id":50,"orderCosts":[{"id":10,"costId":3,"inPriceCurrencyId":7}]}""",
+            options);
+        Assert.NotNull(updateRequest);
+
+        var updateResult = await controller.Update(50, updateRequest);
+
+        var updated = Assert.IsType<SupplierOrderDto>(Assert.IsType<OkObjectResult>(updateResult.Result).Value);
+        Assert.Equal(7, Assert.Single(updated.OrderCosts).InPriceCurrencyId);
+        context.ChangeTracker.Clear();
+        Assert.Equal(7, (await context.OrderCosts.SingleAsync()).InPriceCurrencyId);
+
+        var clearRequest = JsonSerializer.Deserialize<UpdateSupplierOrderRequest>(
+            """{"id":50,"orderCosts":[{"id":10,"costId":3,"inPriceCurrencyId":null}]}""",
+            options);
+        Assert.NotNull(clearRequest);
+
+        var clearResult = await controller.Update(50, clearRequest);
+
+        var cleared = Assert.IsType<SupplierOrderDto>(Assert.IsType<OkObjectResult>(clearResult.Result).Value);
+        Assert.Null(Assert.Single(cleared.OrderCosts).InPriceCurrencyId);
+        context.ChangeTracker.Clear();
+        Assert.Null((await context.OrderCosts.SingleAsync()).InPriceCurrencyId);
+    }
+
+    [Fact]
+    public async Task SupplierOrderCreatePersistsOrderCostCurrency()
+    {
+        using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)).Options);
+        context.Customers.Add(new Customer { Id = 1, OrderNrPrefix = "TEST-" });
+        await context.SaveChangesAsync();
+        var controller = new SupplierOrdersController(context,
+            NullLogger<SupplierOrdersController>.Instance,
+            new UserResolution(new LegacyUser { Id = 42, CompanyId = 7 }),
+            new PalletFormatOptionsService(context));
+
+        var result = await controller.Create(new CreateSupplierOrderRequest
+        {
+            CustomerId = 1,
+            OrderCosts =
+            [
+                new UpsertSupplierOrderOrderCostRequest
+                {
+                    CostId = 3,
+                    InPriceCurrencyId = 7,
+                },
+            ],
+        });
+
+        var created = Assert.IsType<SupplierOrderDto>(Assert.IsType<CreatedAtActionResult>(result.Result).Value);
+        var createdOrderCost = Assert.Single(created.OrderCosts);
+        Assert.Equal(7, createdOrderCost.InPriceCurrencyId);
+        Assert.Equal(created.Id, createdOrderCost.SupplierOrderId);
+        context.ChangeTracker.Clear();
+        var persistedOrderCost = Assert.Single(await context.OrderCosts.ToListAsync());
+        Assert.Equal(7, persistedOrderCost.InPriceCurrencyId);
+        Assert.Equal(created.Id, persistedOrderCost.SupplierOrderId);
+    }
+
+    [Fact]
+    public async Task SupplierOrderUpdatePreservesOrderCostCurrencyWhenOmitted()
+    {
+        using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        context.SupplierOrders.Add(new SupplierOrder { Id = 50, SupplierOrderNr = "TEST-50" });
+        context.OrderCosts.Add(new OrderCost
+        {
+            Id = 10,
+            SupplierOrderId = 50,
+            CostId = 3,
+            InPriceCurrencyId = 7,
+        });
+        await context.SaveChangesAsync();
+        var controller = new SupplierOrdersController(context,
+            NullLogger<SupplierOrdersController>.Instance,
+            new UserResolution(new LegacyUser { Id = 42, CompanyId = 7 }),
+            new PalletFormatOptionsService(context));
+        var request = JsonSerializer.Deserialize<UpdateSupplierOrderRequest>(
+            """{"id":50,"orderCosts":[{"id":10,"costId":3}]}""",
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.NotNull(request);
+
+        var result = await controller.Update(50, request);
+
+        var updated = Assert.IsType<SupplierOrderDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(7, Assert.Single(updated.OrderCosts).InPriceCurrencyId);
+        context.ChangeTracker.Clear();
+        Assert.Equal(7, (await context.OrderCosts.SingleAsync()).InPriceCurrencyId);
     }
 
     [Theory]

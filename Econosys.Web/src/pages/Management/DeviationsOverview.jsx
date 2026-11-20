@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     ArrowLeftCircle,
     ArrowRightCircle,
+    Building2,
     CalendarDays,
     CheckCircle2,
     ChevronDown,
@@ -39,6 +40,7 @@ const searchColumns = [
     { key: 'status', label: 'Status', align: 'left', width: '6%' },
     { key: 'deviationProcessCode', label: 'Process', align: 'left', width: '7%' },
     { key: 'description', label: 'Beskrivning', align: 'left' },
+    { key: 'deviationClosed', label: 'Månad', align: 'left', width: '6%' },
 ];
 
 const initialPagination = {
@@ -147,6 +149,14 @@ const getProcessLabel = (code) => {
 
 const getStatusLabel = (status, deviationClosed) => {
     return status === 'CLOSED' && deviationClosed != null ? 'Stängd' : 'Öppen';
+};
+
+const getClosedMonthLabel = (closedDate) => {
+    const monthMatch = String(closedDate ?? '').match(/^\d{4}-(\d{2})/);
+    const monthNumber = Number(monthMatch?.[1]);
+    return monthNumber >= 1 && monthNumber <= MONTH_LABELS.length
+        ? MONTH_LABELS[monthNumber - 1]
+        : '';
 };
 
 const readCachedOverviewPageState = () => {
@@ -355,7 +365,7 @@ const DeviationsOverview = () => {
     };
 
     const handleExportSearchToExcel = () => {
-        const headers = ['Ansvarig', 'Avvikelsenr', 'Ordernr', 'Kund', 'Leverantör', 'Dagar öppen', 'Status', 'Process', 'Beskrivning'];
+        const headers = ['Ansvarig', 'Avvikelsenr', 'Ordernr', 'Kund', 'Leverantör', 'Dagar öppen', 'Status', 'Månad', 'Process', 'Beskrivning'];
         const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
         const lines = [
             headers.map(escapeCsv).join(';'),
@@ -367,6 +377,7 @@ const DeviationsOverview = () => {
                 row.supplierName,
                 row.openDays,
                 getStatusLabel(row.status, row.deviationClosed),
+                getClosedMonthLabel(row.deviationClosed),
                 getProcessLabel(row.deviationProcessCode),
                 row.description,
             ].map(escapeCsv).join(';')),
@@ -507,7 +518,8 @@ const DeviationsOverview = () => {
                     <div ref={openListRef} className="mt-2 max-h-56 overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
                         <table className="table-fixed w-full border-collapse text-xs" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
                             <colgroup>
-                                <col style={{ width: '20%' }} />
+                                <col style={{ width: '4%' }} />
+                                <col style={{ width: '16%' }} />
                                 <col style={{ width: '14%' }} />
                                 <col style={{ width: '14%' }} />
                                 <col style={{ width: '22%' }} />
@@ -516,6 +528,9 @@ const DeviationsOverview = () => {
                             </colgroup>
                             <thead>
                                 <tr className="text-tiny">
+                                    <th className="bg-slate-100 px-2 py-2.5" aria-label="Intern avvikelse">
+                                        <span className="sr-only">Intern avvikelse</span>
+                                    </th>
                                     <th className="bg-slate-100 pl-4 py-2.5 text-left font-medium text-slate-600">Ansvarig</th>
                                     <th className="border-l border-white/70 bg-slate-100 px-2 py-2.5 text-left font-medium text-slate-600">Avvikelsenr</th>
                                     <th className="border-l border-white/70 bg-slate-100 px-2 py-2.5 text-left font-medium text-slate-600">Ordernr</th>
@@ -528,12 +543,12 @@ const DeviationsOverview = () => {
                                 {showOverviewSkeleton ? (
                                     Array.from({ length: 6 }).map((_, index) => (
                                         <tr key={index}>
-                                            <td className="px-2 py-1" colSpan={6}><Skeleton height={16} /></td>
+                                            <td className="px-2 py-1" colSpan={7}><Skeleton height={16} /></td>
                                         </tr>
                                     ))
                                 ) : overview.openItems.length === 0 ? (
                                     <tr>
-                                        <td colSpan={6} className="px-4 py-6 text-center text-gray-400">Inga oppna avvikelser.</td>
+                                        <td colSpan={7} className="px-4 py-6 text-center text-gray-400">Inga oppna avvikelser.</td>
                                     </tr>
                                 ) : (
                                     overview.openItems.map((item) => (
@@ -542,6 +557,13 @@ const DeviationsOverview = () => {
                                             onClick={() => setSelectedOpenItemId((prev) => (prev === item.id ? null : item.id))}
                                             className={getOpenItemRowClass(item)}
                                         >
+                                            <td className="px-2 py-1 text-center">
+                                                {item.isInternal ? (
+                                                    <span title="Intern avvikelse" aria-label="Intern avvikelse">
+                                                        <Building2 className="inline h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+                                                    </span>
+                                                ) : null}
+                                            </td>
                                             <td className="truncate pl-4 py-1">{item.responsibleUserName}</td>
                                             <td className="truncate px-2 py-1">
                                                 <button
@@ -749,12 +771,16 @@ const DeviationsOverview = () => {
                 <div ref={searchListRef} className="border-t border-gray-300 py-1 mt-4 min-h-0 flex-1 overflow-auto">
                     <table ref={resize.tableRef} className={`table-fixed border-collapse text-xs ${resize.widths ? '' : 'w-full'}`} style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif", width: resize.tableWidth }}>
                         <colgroup>
+                            <col style={{ width: '28px' }} />
                             {searchColumns.map((column, index) => (
-                                <col key={column.key} style={{ width: resize.widths?.[index] ?? column.width }} />
+                                <col key={column.key} style={{ width: resize.widths?.[index + 1] ?? column.width }} />
                             ))}
                         </colgroup>
                         <thead className="[&_th]:font-semibold [&_th]:text-gray-900 [&_th]:tracking-[0.12em]">
                             <tr>
+                                <th className="px-2 py-2" aria-label="Intern avvikelse">
+                                    <span className="sr-only">Intern avvikelse</span>
+                                </th>
                                 {searchColumns.map((column, index) => (
                                     <th
                                         key={column.key}
@@ -769,7 +795,7 @@ const DeviationsOverview = () => {
                                                 <ChevronUp className="h-3 w-3 opacity-0" />
                                             )}
                                         </span>
-                                        {resize.handle(index, column.label)}
+                                        {resize.handle(index + 1, column.label)}
                                     </th>
                                 ))}
                             </tr>
@@ -778,12 +804,12 @@ const DeviationsOverview = () => {
                             {showSearchSkeleton ? (
                                 Array.from({ length: 12 }).map((_, index) => (
                                     <tr key={index}>
-                                        <td colSpan={searchColumns.length} className="px-2 py-1"><Skeleton height={16} /></td>
+                                        <td colSpan={searchColumns.length + 1} className="px-2 py-1"><Skeleton height={16} /></td>
                                     </tr>
                                 ))
                             ) : rows.length === 0 ? (
                                 <tr>
-                                    <td colSpan={searchColumns.length} className="px-4 py-8 text-center text-gray-400">Inga avvikelser hittades.</td>
+                                    <td colSpan={searchColumns.length + 1} className="px-4 py-8 text-center text-gray-400">Inga avvikelser hittades.</td>
                                 </tr>
                             ) : (
                                 rows.map((row, index) => (
@@ -792,6 +818,13 @@ const DeviationsOverview = () => {
                                         onClick={() => setSelectedSearchRowId((prev) => (prev === row.id ? null : row.id))}
                                         className={getSearchRowClass(row, index)}
                                     >
+                                        <td className="px-2 py-1 text-center text-gray-800">
+                                            {row.isInternal ? (
+                                                <span title="Intern avvikelse" aria-label="Intern avvikelse">
+                                                    <Building2 className="inline h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
+                                                </span>
+                                            ) : null}
+                                        </td>
                                         <td className="truncate px-2 py-1 text-gray-800">{row.responsibleUserName}</td>
                                         <td className="truncate px-2 py-1 text-gray-800">
                                             <button
@@ -809,6 +842,7 @@ const DeviationsOverview = () => {
                                         <td className="truncate px-2 py-1 text-gray-800">{getStatusLabel(row.status, row.deviationClosed)}</td>
                                         <td className="truncate px-2 py-1 text-gray-800">{getProcessLabel(row.deviationProcessCode)}</td>
                                         <td className="truncate px-2 py-1 text-gray-800" title={row.description}>{row.description}</td>
+                                        <td className="truncate px-2 py-1 text-gray-800">{getClosedMonthLabel(row.deviationClosed)}</td>
                                     </tr>
                                 ))
                             )}

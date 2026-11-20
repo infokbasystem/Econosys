@@ -32,6 +32,36 @@ a[href] .cursor-pointer,
   --text-xs: 0.7rem; 
 }
 
+.invoice-number-created {
+  animation: invoice-number-pop 650ms ease-out, invoice-number-highlight 4s ease-out;
+}
+
+@keyframes invoice-number-pop {
+  0% { transform: scale(0.85); }
+  40% { transform: scale(1.2); }
+  70% { transform: scale(0.97); }
+  100% { transform: scale(1); }
+}
+
+@keyframes invoice-number-highlight {
+  0%, 70% {
+    color: var(--color-lime-800);
+    background-color: var(--color-lime-100);
+    box-shadow: 0 0 0 6px var(--color-lime-100);
+  }
+  100% {
+    color: inherit;
+    background-color: transparent;
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .invoice-number-created {
+    animation-name: invoice-number-highlight;
+  }
+}
+
   input:-webkit-autofill,
   input:-webkit-autofill:focus {
     transition: background-color 0s 600000s, color 0s 600000s !important;

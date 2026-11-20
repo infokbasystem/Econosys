@@ -42,7 +42,7 @@ const fetchFilterOptions = async (endpoint) => {
 const columns = [
     { key: 'id', label: 'Produktnr', align: 'left', width: '8%' },
     { key: 'name', label: 'Namn', align: 'left', width: '23%' },
-    { key: 'productcode', label: 'Produktkod', align: 'left', width: '14%' },
+    { key: 'ppwrupdatedat', label: 'PPWR', align: 'left', width: '14%' },
     { key: 'format', label: 'Format', align: 'left', width: '15%' },
     { key: 'constructionid', label: 'Konstruktion', align: 'left', width: '16%' },
     { key: 'active', label: 'Aktiv', align: 'left', width: '8%' },
@@ -442,7 +442,16 @@ const ProductSearch = () => {
                                             {row.name}
                                         </Link>
                                     </td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{row.productCode}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">
+                                        {row.ppwrUpdatedAt && (
+                                            <span
+                                                className="inline-flex items-center whitespace-nowrap rounded-full border border-teal-200 bg-teal-50 px-2 py-[1px] text-tiny font-medium text-teal-700"
+                                                title={`PPWR uppdaterad ${formatDateShort(row.ppwrUpdatedAt)}`}
+                                            >
+                                                PPWR
+                                            </span>
+                                        )}
+                                    </td>
                                     <td className="truncate px-2 py-1 text-gray-800">{formatProductDimensions(row)}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.construction?.name ?? row.constructionId}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.active ? 'Ja' : 'Nej'}</td>

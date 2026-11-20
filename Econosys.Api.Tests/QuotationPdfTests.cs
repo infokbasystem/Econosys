@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
 using Econosys.Api.Models;
@@ -9,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
+using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 using QuestPDF.Fluent;
 using Xunit;
@@ -59,10 +61,209 @@ public class QuotationPdfTests
             InvoiceNumber = 123,
             CustomerName = "Customer",
             InvoiceDate = new DateTime(2026, 11, 9)
-        }, new CompanyInfo { CompanyName = "Econopack" });
+        }, new CompanyInfo { CompanyName = "Econopack" }, "Configured tax text");
 
         Assert.Equal("%PDF-", Encoding.ASCII.GetString(bytes, 0, 5));
         Assert.True(bytes.Length > 1000);
+    }
+
+    [Fact]
+    public void InvoiceDatesEndAtTheSameRightEdge()
+    {
+        PdfFontRegistration.Register();
+        var date = new DateTime(2026, 11, 10);
+        var document = InvoicePdfDocument.CreateDocument(new Invoice { InvoiceDate = date, InvoiceDays = 0 }, null, null);
+        var dates = XDocument.Parse(document.GenerateSvg().Single()).Descendants()
+            .Where(element => element.Name.LocalName == "text" && element.Value.Trim() == "2026-11-10")
+            .Take(2)
+            .Select(FirstGlyphX)
+            .ToArray();
+
+        Assert.Equal(2, dates.Length);
+        Assert.InRange(Math.Abs(dates[0] - dates[1]), 0, 0.01);
+    }
+
+    [Fact]
+    public void InvoiceTitleAndNumberAreRightAligned()
+    {
+        PdfFontRegistration.Register();
+        var document = InvoicePdfDocument.CreateDocument(new Invoice { InvoiceNumber = 19 }, null, null);
+        var reference = Document.Create(document => document.Page(page =>
+        {
+            DocumentPdfLayout.Configure(page);
+            page.Content().Column(column =>
+            {
+                column.Item().AlignRight().Text("Faktura").FontSize(16).SemiBold();
+                column.Item().AlignRight().Text("19").FontSize(16).SemiBold();
+            });
+        }));
+
+        var invoiceText = XDocument.Parse(document.GenerateSvg().Single());
+        var referenceText = XDocument.Parse(reference.GenerateSvg().Single());
+        foreach (var value in new[] { "Faktura", "19" })
+        {
+            var actual = Assert.Single(invoiceText.Descendants(), element => element.Name.LocalName == "text" && element.Value.Trim() == value);
+            var expected = Assert.Single(referenceText.Descendants(), element => element.Name.LocalName == "text" && element.Value.Trim() == value);
+            Assert.InRange(Math.Abs(FirstGlyphX(actual) - FirstGlyphX(expected)), 0, 0.01);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SharedPdfLayoutUsesNarrowerSideMarginsWithoutChangingVerticalMargins(bool printForScanning)
+    {
+        const string fill = "#123456";
+        const double pointsPerCentimetre = 72 / 2.54;
+        var document = Document.Create(document => document.Page(page =>
+        {
+            DocumentPdfLayout.Configure(page, printForScanning);
+            page.Content().Background(fill).Extend().Text("");
+        }));
+
+        var svg = XDocument.Parse(document.GenerateSvg().Single());
+        var content = Assert.Single(svg.Descendants(), element => element.Name.LocalName == "rect"
+            && string.Equals((string?)element.Attribute("fill"), fill, StringComparison.OrdinalIgnoreCase));
+        var translation = content.Attribute("transform")!.Value["translate(".Length..^1].Split(' ');
+        var left = double.Parse(translation[0], CultureInfo.InvariantCulture);
+        var top = double.Parse(translation[1], CultureInfo.InvariantCulture);
+        var right = PageSizes.A4.Width - left - (double)content.Attribute("width")!;
+        var bottom = PageSizes.A4.Height - top - (double)content.Attribute("height")!;
+
+        Assert.Equal(0.85 * pointsPerCentimetre, left, 2);
+        Assert.Equal(0.85 * pointsPerCentimetre, right, 2);
+        Assert.Equal(1.5 * pointsPerCentimetre, top, 2);
+        Assert.Equal(1.5 * pointsPerCentimetre, bottom, 2);
+    }
+
+    private static double FirstGlyphX(XElement element)
+    {
+        var translation = element.Attribute("transform")!.Value["translate(".Length..].Split(' ')[0];
+        var firstGlyph = element.Attribute("x")!.Value.Split(',')[0];
+        return double.Parse(translation, CultureInfo.InvariantCulture)
+            + double.Parse(firstGlyph, CultureInfo.InvariantCulture);
+    }
+
+    [Fact]
+    public void InvoiceSummaryAmountsAlignWithLineTotals()
+    {
+        PdfFontRegistration.Register();
+        var invoice = new Invoice
+        {
+            InvoiceRows =
+            [
+                new() { Id = 1, Sum = 10 },
+                new() { Id = 2, Sum = 20 },
+                new() { Id = 3, Sum = 30 },
+                new() { Id = 4, Sum = -60 },
+                new() { Id = 5, Sum = 10, PriceTypeId = 13 },
+                new() { Id = 6, Sum = 20, PriceTypeId = 12 }
+            ]
+        };
+        var document = InvoicePdfDocument.CreateDocument(invoice, null, null);
+        var text = XDocument.Parse(document.GenerateSvg().Single()).Descendants()
+            .Where(element => element.Name.LocalName == "text").ToList();
+
+        foreach (var amount in new[] { 10m, 20m, 30m })
+        {
+            var matches = text.Where(element => element.Value.Trim() == $"{amount:N2} SEK").ToArray();
+            Assert.Equal(2, matches.Length);
+            Assert.InRange(Math.Abs(FirstGlyphX(matches[0]) - FirstGlyphX(matches[1])), 0, 0.01);
+        }
+    }
+
+    [Fact]
+    public void InvoiceScanningModeUsesBlackInkAndNoBackground()
+    {
+        PdfFontRegistration.Register();
+        var invoice = new Invoice
+        {
+            Customer = new Customer { PrintForDocumentScanning = true },
+            InvoiceRows = [new InvoiceRow { Text = "Test product", Sum = 100 }]
+        };
+        var document = InvoicePdfDocument.CreateDocument(invoice, new CompanyInfo { Bank = "Test Bank" }, "Configured tax text");
+        var svg = XDocument.Parse(document.GenerateSvg().Single());
+        var image = Assert.Single(svg.Descendants(), element => element.Name.LocalName == "image");
+        var imageData = Assert.Single(image.Attributes(), attribute => attribute.Name.LocalName == "href").Value;
+        using var logo = SkiaSharp.SKBitmap.Decode(Convert.FromBase64String(imageData[(imageData.IndexOf(',') + 1)..]));
+        var visiblePixels = logo.Pixels.Where(pixel => pixel.Alpha > 0).ToArray();
+        Assert.NotEmpty(visiblePixels);
+        Assert.True(visiblePixels.All(pixel => pixel.Red == 0 && pixel.Green == 0 && pixel.Blue == 0));
+
+        var colors = svg.Descendants().Attributes()
+            .Where(attribute => attribute.Name.LocalName is "fill" or "stroke")
+            .Select(attribute => attribute.Value.ToUpperInvariant()).Distinct().ToList();
+        Assert.All(colors, color => Assert.Contains(color, new[] { "#000000", "#FFFFFF", "NONE" }));
+        Assert.Contains("Configured tax text", svg.Root!.Value);
+        Assert.Contains("Test Bank", svg.Root.Value);
+
+        invoice.Customer.PrintForDocumentScanning = false;
+        var standard = XDocument.Parse(InvoicePdfDocument.CreateDocument(invoice, null, null).GenerateSvg().Single());
+        Assert.Equal(2, standard.Descendants().Count(element => element.Name.LocalName == "image"));
+        Assert.Contains(standard.Descendants().Attributes("fill"), attribute =>
+            string.Equals(attribute.Value, "#f1f4f3", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void InvoiceRoundsOnlyTheOuterEdgesOfTheShadedHeader()
+    {
+        PdfFontRegistration.Register();
+        var document = InvoicePdfDocument.CreateDocument(new Invoice(), null, null);
+        var svg = XDocument.Parse(document.GenerateSvg().Single());
+        var headerShapes = svg.Descendants()
+            .Where(element => string.Equals((string?)element.Attribute("fill"), "#f1f4f3", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        string? FindClip(XElement shape) =>
+            shape.Ancestors().Attributes("clip-path").FirstOrDefault()?.Value;
+
+        void AssertTwoRoundedCorners(XElement shape)
+        {
+            var clip = Assert.Single(svg.Descendants(), element => element.Name.LocalName == "clipPath"
+                && $"url(#{(string?)element.Attribute("id")})" == FindClip(shape));
+            var path = Assert.Single(clip.Elements(), element => element.Name.LocalName == "path");
+            Assert.Equal(2, ((string?)path.Attribute("d") ?? "").Count(command => command == 'C'));
+        }
+
+        Assert.Collection(headerShapes,
+            AssertTwoRoundedCorners,
+            shape => Assert.Null(FindClip(shape)),
+            shape => Assert.Null(FindClip(shape)),
+            AssertTwoRoundedCorners);
+    }
+
+    [Fact]
+    public void InvoiceFooterRendersConfiguredContactDetailsAndItalicTaxInfo()
+    {
+        const string vatInfo = "Configured tax text";
+        PdfFontRegistration.Register();
+        var company = new CompanyInfo
+        {
+            Address = "Testgatan 19", ZipCode = "431 49", PostalAddress = "Mölndal",
+            Telephone1 = "0313633502", Telephone2 = "+46 (0)31 363 35 02",
+            Email = "test@example.com", Web = "www.example.com", Bank = "Test Bank"
+        };
+        var document = Document.Create(document =>
+        {
+            document.Page(page =>
+            {
+                DocumentPdfLayout.Configure(page);
+                page.Footer().Element(container => DocumentPdfLayout.InvoiceFooter(container, company, vatInfo));
+            });
+        });
+        var textElements = XDocument.Parse(document.GenerateSvg().Single()).Descendants()
+            .Where(element => element.Name.LocalName == "text").ToList();
+        var renderedText = string.Join(" ", textElements.Select(element => element.Value));
+
+        Assert.Contains("Testgatan 19, 431 49 Mölndal \u2022 Sverige \u2022 T +46 (0)31 363 35 02", renderedText);
+        Assert.Contains("\u2022 test@example.com \u2022 www.example.com", renderedText);
+        Assert.DoesNotContain("0313633502", renderedText);
+        Assert.Contains("Test Bank", renderedText);
+        Assert.Contains(vatInfo, renderedText);
+        Assert.DoesNotContain("F-skatt", renderedText);
+        Assert.All(textElements, element =>
+            Assert.Equal("#4b5563", element.AncestorsAndSelf().Attributes("fill").FirstOrDefault()?.Value, ignoreCase: true));
+        Assert.Contains("DMSans-Italic", Encoding.Latin1.GetString(document.GeneratePdf()));
     }
 
     [Theory]
@@ -118,7 +319,7 @@ public class QuotationPdfTests
     }
 
     [Fact]
-    public void CostsRespectPrintFlagsAndKnownPricesIncludingZero()
+    public void CostsUseSelectedVersionAndLegacyDebitAndWordingRules()
     {
         var quotation = Fixture();
         var costType = new Cost { Name = "Tooling", TranslationCodeQuotationKnown = 501, TranslationCodeQuotationUnknown = 502 };
@@ -129,7 +330,9 @@ public class QuotationPdfTests
             new() { Id = 3, DoDebit = true, DoPrintOnQuotation = true, Cost = costType },
             new() { Id = 4, DoDebit = false, DoPrintOnQuotation = true, Cost = costType, OutPrice = 100 },
             new() { Id = 5, DoDebit = true, DoPrintOnQuotation = false, Cost = costType, OutPrice = 100 },
-            new() { Id = 6, DoDebit = true, DoPrintOnQuotation = true, SupplierOrderId = 20, Cost = costType, OutPrice = 100 }
+            new() { Id = 6, DoDebit = true, SupplierOrderId = 20, Cost = costType, OutPrice = 125, NrOf = 2 },
+            new() { Id = 7, DoDebit = true, SupplierOrderId = 21, Cost = costType, OutPrice = 700 },
+            new() { Id = 8, DoDebit = true, Cost = costType, OutPrice = 125, NrOf = 2 }
         };
         var texts = new DocumentPdfTranslations("EN", new[]
         {
@@ -137,10 +340,16 @@ public class QuotationPdfTests
             new TranslationItem { TranslationCode = 502, LangCode = "EN", Translation = "Tooling will be added" }
         });
         var costs = QuotationPdfDocument.BuildContent(quotation, texts).Costs;
-        Assert.Equal(3, costs.Count);
-        Assert.Contains(costs, cost => cost.Description == "Known tooling" && cost.Amount == "0.00 SEK");
+        Assert.Equal(5, costs.Count);
+        Assert.Contains(costs, cost => cost.Description == "Known tooling" && cost.Amount == "0 SEK");
+        Assert.Contains(costs, cost => cost.Description == "Known tooling" && cost.Amount == "100 SEK");
+        Assert.Contains(costs, cost => cost.Description == "Tooling will be added" && cost.Amount == "250 SEK");
         Assert.Contains(costs, cost => cost.Description == "Tooling will be added" && cost.Amount == "");
-        Assert.Contains(costs, cost => cost.Amount == "4,503.00 SEK" && cost.EditionInfo.Contains("6,400"));
+        Assert.Contains(costs, cost => cost.Amount == "4,503 SEK" && cost.EditionInfo.Contains("6400 pcs and price 7,230"));
+
+        var selected = Assert.Single(QuotationPdfDocument.BuildContent(quotation, texts, supplierOrderId: 20).Costs);
+        Assert.Equal("Known tooling", selected.Description);
+        Assert.Equal("250 SEK", selected.Amount);
     }
 
     [Fact]
@@ -148,6 +357,7 @@ public class QuotationPdfTests
     {
         var quotation = Fixture();
         quotation.EurPallet = true;
+        quotation.PalletFormat = new PalletFormat { TranslationCode = -66 };
         quotation.EurPalletValue = 50;
         quotation.OrderCosts.Add(new OrderCost
         {
@@ -157,9 +367,11 @@ public class QuotationPdfTests
         var costs = QuotationPdfDocument.BuildContent(quotation, new DocumentPdfTranslations("EN")).Costs;
         Assert.Equal("", costs[0].Amount);
         Assert.Contains("will be added", costs[0].Description);
-        Assert.Contains("60.00 SEK", costs[1].Amount);
+        Assert.Equal("3 pcs. * 20 = 60 SEK", costs[1].Amount);
         quotation.NrOfEurPallet = 2;
-        Assert.Equal("100.00 SEK", QuotationPdfDocument.BuildContent(quotation, new DocumentPdfTranslations("EN")).Costs[0].Amount);
+        Assert.Equal("2 pcs. * 50 = 100 SEK", QuotationPdfDocument.BuildContent(quotation, new DocumentPdfTranslations("EN")).Costs[0].Amount);
+        quotation.EurPalletValue = 0;
+        Assert.Empty(QuotationPdfDocument.BuildContent(quotation, new DocumentPdfTranslations("EN")).Costs[0].Amount);
     }
 
     [Fact]
@@ -169,6 +381,7 @@ public class QuotationPdfTests
         await using var db = CreateContext();
         var quotation = Fixture();
         quotation.Customer = new Customer { Id = 20, Name = "Live name", Language = new Language { Id = 2, LanguageCode = "EN" } };
+        quotation.OrderCosts.Add(new OrderCost { SupplierOrderId = 20, DoDebit = true, OutPrice = 100 });
         db.Quotations.Add(quotation);
         db.TranslationItems.Add(new TranslationItem
         {
@@ -180,8 +393,10 @@ public class QuotationPdfTests
         var pdfController = new PdfController(db);
         var result = Assert.IsType<FileContentResult>(await pdfController.GetQuotationPdfById(quotation.Id));
         Assert.Equal("application/pdf", result.ContentType);
-        Assert.Equal("quotation_25691.pdf", result.FileDownloadName);
+        Assert.Equal("Proposal 25691.pdf", result.FileDownloadName);
         Assert.True(result.EnableRangeProcessing);
+        Assert.IsType<FileContentResult>(await pdfController.GetQuotationPdfById(quotation.Id, supplierOrderId: 20));
+        Assert.IsType<NotFoundObjectResult>(await pdfController.GetQuotationPdfById(quotation.Id, supplierOrderId: 21));
         Assert.Empty(db.ChangeTracker.Entries());
         Assert.IsType<NotFoundObjectResult>(await pdfController.GetQuotationPdfById(-1));
 
@@ -242,7 +457,7 @@ public class QuotationPdfTests
         quotation.Customer = new Customer { Name = "LIVE CUSTOMER NOT SNAPSHOT" };
         quotation.IsFsc = true;
         quotation.NoteInternal = "SECRET QUOTATION NOTE";
-        quotation.Message = "External customer message";
+        quotation.Message = "OLD QUOTATION MESSAGE";
         quotation.OrderCosts.Add(new OrderCost
         {
             Id = 1, DoDebit = true, DoPrintOnQuotation = true, OutPrice = 4503,
@@ -254,18 +469,70 @@ public class QuotationPdfTests
             new TranslationItem { TranslationCode = DocumentPdfTranslations.ToolingDisclaimer,
                 LangCode = "EN", Translation = "CUSTOM TOOLING DISCLAIMER" }
         });
-        var svg = QuotationPdfDocument.CreateDocument(quotation, null, texts).GenerateSvg().Single();
+        var svg = QuotationPdfDocument.CreateDocument(quotation, null, texts,
+            customerMessage: hideDelivery ? " \n " : "Company greeting\n\nCompany signature").GenerateSvg().Single();
         var renderedText = string.Join(" ", XDocument.Parse(svg).Descendants()
             .Where(element => element.Name.LocalName == "text").Select(element => element.Value));
         Assert.Contains("AB Tingstad Papper", renderedText);
         Assert.Contains("Quotation", renderedText);
-        Assert.Contains("CUSTOM TOOLING DISCLAIMER", renderedText);
-        Assert.Contains("External customer message", renderedText);
+        Assert.DoesNotContain("CUSTOM TOOLING DISCLAIMER", renderedText);
+        Assert.DoesNotContain("OLD QUOTATION MESSAGE", renderedText);
+        Assert.Equal(!hideDelivery, renderedText.Contains("Company greeting"));
+        Assert.Equal(!hideDelivery, renderedText.Contains("Company signature"));
         Assert.Contains("2+1 colours", renderedText);
         Assert.Contains("FSC certified", renderedText);
         Assert.Equal(!hideDelivery, renderedText.Contains("UNIQUE DELIVERY ADDRESS"));
         Assert.DoesNotContain("SECRET", renderedText);
         Assert.DoesNotContain("LIVE CUSTOMER", renderedText);
+    }
+
+    [Fact]
+    public void VatAndValidityNotesAppearDirectlyUnderThePriceTable()
+    {
+        var quotation = Fixture();
+        quotation.OrderCosts.Add(new OrderCost
+        {
+            DoDebit = true, CalculationRowId = 50, Cost = new Cost { Name = "Tooling" }
+        });
+        const string validity = "Affärsförslagets giltighet, 15 dagar";
+        const string greeting = "Med vänlig hälsning";
+        var texts = new DocumentPdfTranslations("SW",
+            new[] { new TranslationItem { TranslationCode = -93, LangCode = "SW", Translation = validity } });
+        var svg = QuotationPdfDocument.CreateDocument(quotation, null, texts, greeting).GenerateSvg().Single();
+        var elements = XDocument.Parse(svg).Descendants().Where(element => element.Name.LocalName == "text").ToList();
+        var lastQuantity = Assert.Single(elements, element => element.Value.Trim().Replace('\u00a0', ' ') == "12 800");
+        var vatNote = Assert.Single(elements, element => element.Value.Trim() == "Exkl. mervärdesskatt");
+        var validityNote = Assert.Single(elements, element => element.Value.Trim() == validity);
+        var additionsHeading = Assert.Single(elements, element => element.Value.Trim() == texts.Text(DocumentPdfTranslations.Additions));
+        var signature = Assert.Single(elements, element => element.Value.Trim() == greeting);
+
+        Assert.InRange(Math.Abs(FirstGlyphX(lastQuantity) - FirstGlyphX(vatNote)), 0, 0.01);
+        Assert.InRange(Math.Abs(FirstGlyphX(vatNote) - FirstGlyphX(validityNote)), 0, 0.01);
+        Assert.True(elements.IndexOf(lastQuantity) < elements.IndexOf(vatNote));
+        Assert.True(elements.IndexOf(vatNote) < elements.IndexOf(validityNote));
+        Assert.True(elements.IndexOf(validityNote) < elements.IndexOf(additionsHeading));
+        Assert.True(elements.IndexOf(additionsHeading) < elements.IndexOf(signature));
+    }
+
+    [Fact]
+    public void DeliveryAndPaymentTermsLeaveSpaceAboveFooter()
+    {
+        var company = new CompanyInfo { Address = "Jolengatan 19" };
+        var texts = new DocumentPdfTranslations("EN");
+        var svg = QuotationPdfDocument.CreateDocument(Fixture(), company, texts).GenerateSvg().Single();
+        var elements = XDocument.Parse(svg).Descendants().Where(element => element.Name.LocalName == "text").ToList();
+        var paymentNote = Assert.Single(elements, element => element.Value.Trim() == texts.Text(DocumentPdfTranslations.PaymentDisclaimer));
+        var footerAddress = Assert.Single(elements, element => element.Value.Contains("Jolengatan 19", StringComparison.Ordinal));
+
+        static double VerticalPosition(XElement element)
+        {
+            var translation = element.Attribute("transform")!.Value["translate(".Length..^1].Split(' ');
+            var baseline = element.Attribute("y")!.Value.Split(',')[0];
+            return double.Parse(translation[1], CultureInfo.InvariantCulture)
+                + double.Parse(baseline, CultureInfo.InvariantCulture);
+        }
+
+        Assert.True(VerticalPosition(footerAddress) - VerticalPosition(paymentNote) >= 2 * 72 / 2.54);
     }
 
     [Fact]
@@ -290,10 +557,6 @@ public class QuotationPdfTests
         Assert.DoesNotContain("INVOICE", rendered);
         Assert.DoesNotContain("F-skatt", rendered);
         Assert.Contains("Sweden", DocumentPdfLayout.ContactLines(company, new DocumentPdfTranslations("EN").Text).Address);
-        var reportFooter = DocumentPdfLayout.ContactReportFooter(company);
-        var reportText = Assert.IsType<Telerik.Reporting.TextBox>(Assert.Single(reportFooter.Items));
-        Assert.Equal(lines.Address + "\n" + lines.Contact, reportText.Value);
-        Assert.True(reportText.CanGrow);
     }
 
     private static ApplicationDbContext CreateContext() => new(new DbContextOptionsBuilder<ApplicationDbContext>()

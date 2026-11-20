@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link, useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChevronDown, ExternalLink, FilePlus2, Info as InfoIcon, Minus, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RefreshCw, Save, Send, ShoppingCart, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronDown, FilePlus2, Info as InfoIcon, Minus, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RefreshCw, Save, Send, ShoppingCart, Trash2 } from 'lucide-react';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
 import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import CalculationRowEditModal from '../../components/CalculationRowEditModal';
+import OrderProductInfo from '../../components/OrderProductInfo';
 import LabeledCheckbox from '../../components/LabeledCheckbox';
 import LabeledSelect from '../../components/LabeledSelect';
 import LabeledInput from '../../components/LabeledInput';
@@ -23,7 +24,7 @@ import { formatDateTime } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import { calculatePackagesPerPallet, updateAutomaticLoadingInstruction } from './calculationPackaging';
 import { applyApprovalRows, calculatePackagingCost, getApprovalText, getFreightForApproval, updateAndApproveAllSections } from './calculationApprovals';
-import { changeFreightMode, getAutomaticFreightGeometry, getFreightEditState, getFreightMode, getFreightWarningMessage, parseFreightFactors } from './calculationFreight';
+import { applySupplierFreightSettings, changeFreightMode, getAutomaticFreightGeometry, getFreightEditState, getFreightMode, getFreightWarningMessage, parseFreightFactors } from './calculationFreight';
 import CalculationNavigation from './CalculationNavigation';
 import { handleCalculationTableKeyDown } from './calculationTableNavigation';
 import useDocumentTitle from '../../hooks/useDocumentTitle';
@@ -620,15 +621,6 @@ const SavedField = ({ label, value, numeric = false, integerOnly = false, editin
 
 const SavedFlag = ({ label, checked, editing = false, onChange }) => (
     <LabeledCheckbox label={label} checked={Boolean(checked)} disabled={!editing} onChange={onChange} color="red" />
-);
-
-const ProductInfoRow = ({ label, value, numeric = false }) => (
-    <div className="min-w-0">
-        <dt className="text-tiny tracking-wide text-black font-bold">{label}</dt>
-        <dd className="mt-1 whitespace-pre-wrap break-words text-xs text-black">
-            {numeric ? numberText(value) : (value ?? '') === '' ? '' : value}
-        </dd>
-    </div>
 );
 
 const CompactSelect = ({ value, items, onChange, className, ariaLabel, isDisabled = false, openInNewTabUrl, openInNewTabLabel }) => (
@@ -2208,13 +2200,30 @@ const CalculationPage = ({ id, productId }) => {
 
     const handleCalculationSupplierSelect = (supplier) => {
         ++currencyRefreshSequenceRef.current.purchase;
+        const supplierChanged = formDraft?.supplier?.id !== (supplier?.id ?? null);
+        if (supplierChanged) {
+            ++freightRefreshSequenceRef.current;
+            setIsRefreshingFreight(false);
+            setPendingFreightRefreshKeys(null);
+            pendingAutoFreightRefreshRef.current = supplier?.econopackTransportResponsible === true;
+            if (pendingAutoFreightRefreshRef.current) manualFreightDestinationRef.current = false;
+        }
         setDraft((previous) => {
             if (!previous) return previous;
             const nextSupplier = supplier ? { id: supplier.id, name: supplier.name ?? '' } : null;
             if (previous.supplier?.id === nextSupplier?.id) {
                 return { ...previous, supplier: nextSupplier };
             }
-            return { ...previous, supplier: nextSupplier, supplierFactoryId: null };
+            let next = { ...previous, supplier: nextSupplier, supplierFactoryId: null };
+            if (supplier) {
+                next = applySupplierFreightSettings(next, supplier);
+                const multiplier = getUnitMultiplier(next.unitId);
+                next.rows = next.rows.map((row) => row.archived || row.isDraft ? row
+                    : next.deactivateFreightCalculation
+                        ? recalculateSalesRow(row, next, multiplier)
+                        : recalculateDraftFreight(next.autoFreightCalc ? deriveNrOfPallets(row, next) : row, next, multiplier));
+            }
+            return next;
         });
         if (supplier?.currencyId != null) {
             void handleCurrencyChange('purchase', supplier.currencyId);
@@ -3016,53 +3025,20 @@ const CalculationPage = ({ id, productId }) => {
                         </p>
                     ) : data ? (
                         <>
-                            <div className="mb-5 w-280 rounded-sm border border-gray-200 bg-[#e8eeed] px-5 pt-3 pb-3 shadow-sm">
-                                <dl className="min-w-0 flex flex-row gap-5">
-                                    <div className="w-60 space-y-2">
-                                        <ProductInfoRow label="Produkt" value={data.product?.name} />
-                                        <ProductInfoRow label="Material" value={data.product?.material} />
-                                    </div>
-                                    <div className="w-60 space-y-2">
-                                        <ProductInfoRow label="Konstruktion" value={data.product?.construction} />
-                                        <ProductInfoRow label="Format" value={productDimensions || data.product?.format} />
-                                    </div>
-                                    <div className="w-30 space-y-2">
-                                        <ProductInfoRow label="Färger" value={data.product?.colors} />
-                                        <ProductInfoRow
-                                            label="Lack"
-                                            value={data.product?.varnishOther
-                                                ? `${data.product.varnish || 'Övrig'}: ${data.product.varnishOther}`
-                                                : data.product?.varnish}
-                                        />
-                                    </div>
-                                    <div className="w-40 space-y-2">
-                                        <ProductInfoRow
-                                            label="Not. intern"
-                                            value={data.product?.noteInternal || '-'}
-                                        />
-                                        <ProductInfoRow
-                                            label="Not. extern"
-                                            value={data.product?.noteExternal || '-'}
-                                        />
-                                    </div>
-                                    <div>
-                                        {data.product ? (
-                                            <div className="mb-4 flex justify-end">
-                                                <Link
-                                                    to={`/order/products/${data.product.id}`}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="inline-flex items-center gap-1 text-xs text-blue-800 hover:underline"
-                                                >
-                                                    Öppna produkt i ny flik
-                                                    <ExternalLink size={14} aria-hidden="true" />
-                                                </Link>
-                                            </div>
-                                        ) : null}
-
-                                    </div>
-                                </dl>
-                            </div>
+                            <OrderProductInfo
+                                productId={data.product?.id}
+                                fallbackProduct={{
+                                    name: data.product?.name,
+                                    material: data.product?.material,
+                                    construction: data.product?.construction,
+                                    format: productDimensions || data.product?.format,
+                                    colors: data.product?.colors,
+                                    varnish: data.product?.varnish,
+                                    varnishOther: data.product?.varnishOther,
+                                    noteInternal: data.product?.noteInternal,
+                                    noteExternal: data.product?.noteExternal,
+                                }}
+                            />
 
                             <CalculationSection title="Kalkylrader" initiallyOpen>
                                 <div className="mb-5 flex flex-wrap gap-x-15 gap-y-10">

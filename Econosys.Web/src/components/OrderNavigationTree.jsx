@@ -91,7 +91,7 @@ const containsCurrentNode = (node, type, isCurrent) => (
 const nodeLabels = {
     calculation: 'Kalkyl',
     inquiry: 'Förfrågan',
-    quotation: 'Offert',
+    quotation: 'Affärsförslag',
     supplierOrder: 'Beställning',
     customerOrder: 'Kundorder',
 };

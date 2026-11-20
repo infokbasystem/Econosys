@@ -60,6 +60,50 @@ public class SupplierOrderNumberDisplayTests
         Assert.Equal("ABC-50", Assert.Single(dto.Rows).OrderNumber);
     }
 
+    [Fact]
+    public async Task MonthlyCostsReportFiltersInclusiveDatePeriod()
+    {
+        using var context = CreateContext();
+        context.SupplierOrders.AddRange(
+            new SupplierOrder { Id = 50, SupplierOrderNr = "BEFORE", Created = new DateTime(2026, 11, 9) },
+            new SupplierOrder { Id = 51, SupplierOrderNr = "START", Created = new DateTime(2026, 11, 10) },
+            new SupplierOrder { Id = 52, SupplierOrderNr = "END", Created = new DateTime(2026, 11, 20, 23, 59, 59) },
+            new SupplierOrder { Id = 53, SupplierOrderNr = "AFTER", Created = new DateTime(2026, 11, 21) });
+        context.OrderCosts.AddRange(
+            new OrderCost { Id = 10, SupplierOrderId = 50, InPrice = 10 },
+            new OrderCost { Id = 11, SupplierOrderId = 51, InPrice = 20 },
+            new OrderCost { Id = 12, SupplierOrderId = 52, InPrice = 30 },
+            new OrderCost { Id = 13, SupplierOrderId = 53, InPrice = 40 });
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var result = await new ReportingController(context).GetMonthlyOrderCostsReport(
+            new MonthlyOrderCostsReportRequestDto
+            {
+                StartDate = new DateTime(2026, 11, 10),
+                EndDate = new DateTime(2026, 11, 20),
+            });
+
+        var dto = Assert.IsType<MonthlyOrderCostsReportResponseDto>(
+            Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(new[] { "END", "START" }, dto.Rows.Select(row => row.OrderNumber));
+    }
+
+    [Fact]
+    public async Task MonthlyCostsReportRejectsEndDateBeforeStartDate()
+    {
+        using var context = CreateContext();
+
+        var result = await new ReportingController(context).GetMonthlyOrderCostsReport(
+            new MonthlyOrderCostsReportRequestDto
+            {
+                StartDate = new DateTime(2026, 11, 20),
+                EndDate = new DateTime(2026, 11, 19),
+            });
+
+        Assert.IsType<BadRequestObjectResult>(result.Result);
+    }
+
     private static ApplicationDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);

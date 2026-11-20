@@ -145,7 +145,8 @@ const Deviation = () => {
                 responseType: 'blob'
             });
             const contentDisposition = res.headers['content-disposition'];
-            const apiFileName = getFileNameFromContentDisposition(contentDisposition);
+            const apiFileName = getFileNameFromContentDisposition(contentDisposition)
+                || `Avvikelse ${deviation?.deviationNr ?? id}.pdf`;
             const blob = res.data;
             const url = URL.createObjectURL(blob);
             openPdfPreview(url, apiFileName); // update the panel with the real PDF and file name from API

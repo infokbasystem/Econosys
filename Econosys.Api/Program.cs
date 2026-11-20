@@ -12,6 +12,8 @@ using Econosys.Api.Services;
 using QuestPDF.Infrastructure;
 
 QuestPDF.Settings.License = LicenseType.Community;
+PdfFontRegistration.Register();
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Configuration
@@ -114,6 +116,7 @@ builder.Services.AddCors(options =>
             corsoptions.SetIsOriginAllowed(_ => true)
                    .AllowAnyMethod()
                    .AllowAnyHeader()
+                   .WithExposedHeaders("Content-Disposition")
                    .AllowCredentials();
         });
     }
@@ -135,6 +138,7 @@ builder.Services.AddCors(options =>
             corsBuilder.SetIsOriginAllowed(origin => allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
                .AllowAnyMethod()
                .AllowAnyHeader()
+               .WithExposedHeaders("Content-Disposition")
                .AllowCredentials();
         });
     }
@@ -158,6 +162,7 @@ builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddScoped<ILegacyUserResolutionService, LegacyUserResolutionService>();
 builder.Services.AddScoped<EmailService>();
+builder.Services.AddScoped<IEmailRecipientService, EmailRecipientService>();
 builder.Services.AddScoped<IEmailTransport, SmtpEmailTransport>();
 builder.Services.AddScoped<IMailLogService, MailLogService>();
 builder.Services.AddScoped<CalculationFreightPriceService>();

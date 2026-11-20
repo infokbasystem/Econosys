@@ -1,5 +1,11 @@
 namespace Econosys.Api.DTOs
 {
+    public class UpdateCustomerOrderPricesRequest
+    {
+        public decimal PurchasePrice { get; set; }
+        public decimal SalesPrice { get; set; }
+    }
+
     public class CustomerOrderOrderCostDto
     {
         public int Id { get; set; }

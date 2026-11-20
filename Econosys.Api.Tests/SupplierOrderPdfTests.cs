@@ -119,6 +119,35 @@ public class SupplierOrderPdfTests
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PriceTableHeaderRoundsOnlyItsOuterCorners(bool customerOrder)
+    {
+        var texts = new DocumentPdfTranslations("EN");
+        var document = customerOrder
+            ? CustomerOrderPdfDocument.CreateDocument(new CustomerOrder
+            {
+                SalesCurrency = new Currency { Name = "SEK" },
+                Unit = new Models.Unit { Name = "1000pcs" }
+            }, Company(), texts)
+            : SupplierOrderPdfDocument.CreateDocument(Fixture(), Company(), texts);
+        var svg = XDocument.Parse(document.GenerateSvg().Single());
+
+        foreach (var label in new[] { "Quantity", "SEK/1000pcs" })
+        {
+            var heading = Assert.Single(svg.Descendants(), element => element.Name.LocalName == "text"
+                && element.Value.Trim() == label);
+            var clippedCell = Assert.Single(heading.Ancestors(), element => element.Attribute("clip-path") is not null);
+            Assert.Contains(clippedCell.Descendants(), element =>
+                string.Equals((string?)element.Attribute("fill"), "#f1f4f3", StringComparison.OrdinalIgnoreCase));
+            var clip = Assert.Single(svg.Descendants(), element => element.Name.LocalName == "clipPath"
+                && $"url(#{(string?)element.Attribute("id")})" == (string?)clippedCell.Attribute("clip-path"));
+            var path = Assert.Single(clip.Elements(), element => element.Name.LocalName == "path");
+            Assert.Equal(2, ((string?)path.Attribute("d") ?? "").Count(command => command == 'C'));
+        }
+    }
+
     [Fact]
     public void LongTextAndCostListsPaginate()
     {
@@ -140,7 +169,7 @@ public class SupplierOrderPdfTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)).Options);
         var order = Fixture();
-        order.Supplier = new Supplier { Name = "Supplier", Language = new Language { LanguageCode = "EN" } };
+        order.Supplier = new Supplier { Name = "Supplier", Language = new Language { Id = 2, LanguageCode = "EN" } };
         order.SelectedCalculationRow = new CalculationRow { Calculation = new Calculation { NrOfCalcDecimalsPurchase = 3 } };
         order.PalletFormatId = 10;
         db.SupplierOrders.Add(order);
@@ -153,7 +182,7 @@ public class SupplierOrderPdfTests
         var controller = new PdfController(db);
         var file = Assert.IsType<FileContentResult>(await controller.GetSupplierOrderPdfById(order.Id));
         Assert.Equal("application/pdf", file.ContentType);
-        Assert.Equal("supplierorder_43625.pdf", file.FileDownloadName);
+        Assert.Equal("Supplier order 1.pdf", file.FileDownloadName);
         Assert.True(file.EnableRangeProcessing);
         Assert.Equal("%PDF-", Encoding.ASCII.GetString(file.FileContents, 0, 5));
         Assert.Empty(db.ChangeTracker.Entries());
@@ -179,19 +208,35 @@ public class SupplierOrderPdfTests
         Assert.Contains("43625 / 158964", RenderedText(SupplierOrderPdfDocument.CreateDocument(order, Company(), texts)));
     }
 
-    [Fact]
-    public void NamesMovedToGoodsMarkingAreNotDuplicatedInNormalSections()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PrintsSavedProducerAndDeliveryAddressesRegardlessOfGoodsMarkingOptions(bool useAutomaticGoodsMarking)
     {
         var order = Fixture();
         order.Customer!.Address = "PRIVATE CUSTOMER STREET";
-        order.HideProductNameOnPrint = true;
-        order.HideCustomerNameOnPrint = true;
-        order.HideCustomerInfoOnPrint = true;
+        order.Supplier = new Supplier { Name = "LIVE SUPPLIER NAME", Address = "LIVE SUPPLIER STREET" };
+        order.SupplierName = "Saved Producer";
+        order.Address = "Producer Street";
+        order.Address2 = "Producer Suite";
+        order.PostalNr = "543 51";
+        order.PostalAddress = "Producer City";
+        order.Country = "Producer Country";
+        order.DeliveryAddressName = "Saved Delivery Recipient";
+        order.DeliveryCountry = "Delivery Country";
+        order.HideProductNameOnPrint = useAutomaticGoodsMarking;
+        order.HideCustomerNameOnPrint = useAutomaticGoodsMarking;
+        order.HideCustomerInfoOnPrint = useAutomaticGoodsMarking;
         var text = RenderedText(SupplierOrderPdfDocument.CreateDocument(order, Company(), new DocumentPdfTranslations("EN")));
+        text = string.Join(" ", text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+        Assert.Contains("Saved Producer Producer Street Producer Suite 543 51 Producer City Producer Country", text);
+        Assert.Contains("Delivery address", text);
+        Assert.Contains("Saved Delivery Recipient Box 13013 40251 Göteborg Delivery Country", text);
         Assert.DoesNotContain("PRIVATE CUSTOMER STREET", text);
-        Assert.DoesNotContain("Box 13013", text);
+        Assert.DoesNotContain("LIVE SUPPLIER", text);
         Assert.Equal(1, text.Split(order.Customer.Name!, StringSplitOptions.None).Length - 1);
-        Assert.Equal(1, text.Split(order.Product!, StringSplitOptions.None).Length - 1);
+        Assert.Equal(useAutomaticGoodsMarking ? 1 : 2, text.Split(order.Product!, StringSplitOptions.None).Length - 1);
         Assert.Contains("158964", text);
         Assert.DoesNotContain("SECRET", text);
     }

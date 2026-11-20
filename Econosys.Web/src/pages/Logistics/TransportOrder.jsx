@@ -873,12 +873,13 @@ const TransportOrder = () => {
             const url = URL.createObjectURL(response.data);
             pdfObjectUrlRef.current = url;
             const fallbackId = receiverIds.length > 0 ? receiverIds.join('-') : transportOrderForm.shipperId ?? '0';
-            const fileName = `Transportorder_${transportOrderForm.transportOrderNr || id}_${fallbackId}.pdf`;
+            const fileName = `Transportorder ${transportOrderForm.transportOrderNr || id} ${fallbackId}.pdf`;
             openPdfPreview?.(
                 url,
                 fileName,
                 () => setMailLogRevision((value) => value + 1),
                 { transportOrderId: Number(id) },
+                { itemType: 'TRANSPORTORDER', itemId: Number(id), receiverType, receiverIds },
             );
         } catch (error) {
             if (requestId !== pdfRequestRef.current) return;

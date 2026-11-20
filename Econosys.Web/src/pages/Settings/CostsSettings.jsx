@@ -848,7 +848,7 @@ const CostsSettings = () => {
                                 <LabeledSwitch
                                     id="cost-print-quotation-default"
                                     name="cost-print-quotation-default"
-                                    label="Utskrift offert"
+                                    label="Utskrift affärsförslag"
                                     labelWidth="w-40"
                                     marginTop={4}
                                     value={form.doPrintQuotationDefault}

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
 using Econosys.Api.Models;
@@ -137,7 +138,7 @@ public class InquiryPdfTests
         var controller = new PdfController(db);
         var file = Assert.IsType<FileContentResult>(await controller.GetInquiryPdfById(inquiry.Id));
         Assert.Equal("application/pdf", file.ContentType);
-        Assert.Equal("inquiry_25691.pdf", file.FileDownloadName);
+        Assert.Equal("Förfrågan 25691.pdf", file.FileDownloadName);
         Assert.True(file.EnableRangeProcessing);
         Assert.Equal("%PDF-", Encoding.ASCII.GetString(file.FileContents, 0, 5));
         Assert.Empty(db.ChangeTracker.Entries());
@@ -154,6 +155,55 @@ public class InquiryPdfTests
         inquiry.Calculation!.Product!.NoteExternal = "1200x800x1300mm 680st/pall";
         Assert.Equal("1200x800x1300mm 680st/pall",
             InquiryPdfDocument.BuildContent(inquiry, new DocumentPdfTranslations("SW")).ProductNote);
+    }
+
+    [Theory]
+    [InlineData("294 x 123 x 146", "294 x 123 x 146 mm")]
+    [InlineData("123x45x67mm", "123x45x67mm")]
+    public void RendersSizeWithMillimetersWithoutDuplicatingTheUnit(string format, string expected)
+    {
+        var inquiry = Fixture();
+        inquiry.Format = format;
+        var text = RenderedText(InquiryPdfDocument.CreateDocument(inquiry, Company(), new DocumentPdfTranslations("EN")));
+
+        Assert.Contains(expected, text);
+        Assert.DoesNotContain(expected + " mm", text);
+    }
+
+    [Fact]
+    public void RendersBlackDividerBetweenAdditionalCostsHeadingAndToolingCost()
+    {
+        var document = InquiryPdfDocument.CreateDocument(Fixture(), Company(), new DocumentPdfTranslations("EN"));
+        var elements = XDocument.Parse(document.GenerateSvg().Single()).Descendants().ToList();
+        var heading = elements.FindIndex(element => element.Name.LocalName == "text"
+            && element.Value.Trim() == "Additional costs");
+        var toolingCost = elements.FindIndex(element => element.Name.LocalName == "text"
+            && element.Value.Contains("Die-cutting tooling cost:", StringComparison.Ordinal));
+
+        Assert.True(heading >= 0 && toolingCost > heading);
+        Assert.Contains(elements.Skip(heading + 1).Take(toolingCost - heading - 1), element =>
+            element.Name.LocalName == "path"
+            && (string?)element.Attribute("stroke") is "black" or "#000000");
+    }
+
+    [Fact]
+    public void DeliveryAndPaymentTermsLeaveSpaceAboveFooter()
+    {
+        var document = InquiryPdfDocument.CreateDocument(Fixture(), Company(), new DocumentPdfTranslations("EN"));
+        var text = XDocument.Parse(document.GenerateSvg().Single()).Descendants()
+            .Where(element => element.Name.LocalName == "text").ToList();
+        var paymentNote = Assert.Single(text, element => element.Value.Contains("Late payment interest", StringComparison.Ordinal));
+        var footerAddress = Assert.Single(text, element => element.Value.Contains("Jolengatan 19", StringComparison.Ordinal));
+
+        static double VerticalPosition(XElement element)
+        {
+            var translation = element.Attribute("transform")!.Value["translate(".Length..^1].Split(' ');
+            var baseline = element.Attribute("y")!.Value.Split(',')[0];
+            return double.Parse(translation[1], CultureInfo.InvariantCulture)
+                + double.Parse(baseline, CultureInfo.InvariantCulture);
+        }
+
+        Assert.True(VerticalPosition(footerAddress) - VerticalPosition(paymentNote) >= 2 * 72 / 2.54);
     }
 
     private static string RenderedText(IDocument document) =>

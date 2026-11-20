@@ -3,25 +3,13 @@ import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 import ExcelJS from 'exceljs';
 
+import DateRangePicker from '../../../components/DaterangePicker';
 import LabeledReactSelect from '../../../components/LabeledReactSelect';
 import apiClient from '../../../config/apiClient';
 import { formatDateShort } from '../../../helpers/dateUtils';
 import { getSharedRequest } from '../../../helpers/sharedRequest';
 
-const monthOptions = [
-    { id: 1, name: 'Januari' },
-    { id: 2, name: 'Februari' },
-    { id: 3, name: 'Mars' },
-    { id: 4, name: 'April' },
-    { id: 5, name: 'Maj' },
-    { id: 6, name: 'Juni' },
-    { id: 7, name: 'Juli' },
-    { id: 8, name: 'Augusti' },
-    { id: 9, name: 'September' },
-    { id: 10, name: 'Oktober' },
-    { id: 11, name: 'November' },
-    { id: 12, name: 'December' },
-];
+const defaultCostIds = [12, 11, 9, 21, 33, 16];
 
 const columns = [
     { key: 'cost', label: 'Kostnad', align: 'left', width: '8%' },
@@ -43,17 +31,18 @@ const columns = [
 
 const MonthlyOrderCostsReport = () => {
     const now = new Date();
+    const initialStartDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    const initialEndDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     const [loading, setLoading] = useState(false);
     const [showSkeleton, setShowSkeleton] = useState(false);
     const skeletonTimerRef = useRef(null);
     const reportRequestRef = useRef(0);
     const [rows, setRows] = useState([]);
     const [initialLoadCompleted, setInitialLoadCompleted] = useState(false);
-    const [yearOptions, setYearOptions] = useState([]);
     const [costOptions, setCostOptions] = useState([]);
     const [filters, setFilters] = useState({
-        year: now.getFullYear(),
-        month: now.getMonth() + 1,
+        startDate: initialStartDate,
+        endDate: initialEndDate,
         costIds: null,
     });
 
@@ -63,16 +52,9 @@ const MonthlyOrderCostsReport = () => {
         let isActive = true;
 
         const initialize = async () => {
-            const selectedYear = await loadSelectableYears(isActive);
-            await loadCosts(isActive);
-            const currentMonth = new Date().getMonth() + 1;
-            const initialFilters = {
-                ...filters,
-                year: selectedYear || filters.year,
-                month: currentMonth,
-            };
-
+            const defaultCostIds = await loadCosts(isActive);
             if (!isActive) return;
+            const initialFilters = { ...filters, costIds: defaultCostIds };
             setFilters(initialFilters);
             await loadReport(isActive, initialFilters);
 
@@ -89,43 +71,6 @@ const MonthlyOrderCostsReport = () => {
         };
     }, []);
 
-    const loadSelectableYears = async (isActive = true) => {
-        try {
-            const requestConfig = {
-                params: {
-                    itemType: 'supplier-order',
-                    dateField: 'created',
-                },
-            };
-            const response = await getSharedRequest(
-                'reporting:selectable-years:supplier-order:created',
-                () => apiClient.get('/reporting/selectable-years', requestConfig),
-            );
-            if (!isActive) return null;
-
-            const years = response?.data?.years ?? [];
-            const options = years.map((year) => ({ id: year, name: String(year) }));
-            setYearOptions(options);
-
-            let selectedYear = filters.year;
-            if (!years.includes(selectedYear) && years.length > 0) {
-                selectedYear = years[0];
-            }
-
-            setFilters((prev) => ({
-                ...prev,
-                year: selectedYear,
-            }));
-
-            return selectedYear;
-        } catch (error) {
-            console.error('Failed to load selectable years:', error);
-            if (!isActive) return null;
-            setYearOptions([]);
-            return null;
-        }
-    };
-
     const handleFilterChange = (field, value) => {
         setFilters((prev) => {
             const nextFilters = {
@@ -140,16 +85,32 @@ const MonthlyOrderCostsReport = () => {
         });
     };
 
+    const handlePeriodChange = ({ startDate, endDate }) => {
+        if (!startDate || !endDate) return;
+
+        setFilters((prev) => {
+            const nextFilters = { ...prev, startDate, endDate };
+            void loadReport(true, nextFilters);
+            return nextFilters;
+        });
+    };
+
     const loadCosts = async (isActive = true) => {
         try {
             const response = await getSharedRequest('costs:search:monthly-order-costs', () => apiClient.post('/costs/search', {}));
             if (!isActive) return;
             const costs = Array.isArray(response?.data) ? response.data : [];
-            setCostOptions(costs.filter((cost) => cost.isActive).map((cost) => ({ id: cost.id, name: cost.name })));
+            const activeCosts = costs.filter((cost) => cost.isActive);
+            setCostOptions(activeCosts.map((cost) => ({ id: cost.id, name: cost.name })));
+            return activeCosts
+                .filter((cost) => defaultCostIds.includes(Number(cost.id)))
+                .map((cost) => Number(cost.id))
+                .filter((id) => id > 0);
         } catch (error) {
             console.error('Failed to load costs:', error);
             if (!isActive) return;
             setCostOptions([]);
+            return [];
         }
     };
 
@@ -171,8 +132,8 @@ const MonthlyOrderCostsReport = () => {
 
         try {
             const requestBody = {
-                year: requestFilters.year,
-                month: requestFilters.month,
+                startDate: toDateString(requestFilters.startDate),
+                endDate: toDateString(requestFilters.endDate),
                 costIds: requestFilters.costIds ?? [],
                 filterByCostIds: requestFilters.costIds !== null,
             };
@@ -255,6 +216,12 @@ const MonthlyOrderCostsReport = () => {
         }).format(Number(value));
     };
 
+    const toDateString = (value) => {
+        if (!value) return null;
+        const date = value instanceof Date ? value : new Date(value);
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    };
+
     const totalPurchaseAmountSEK = useMemo(() => {
         return sortedRows.reduce((sum, row) => sum + (Number(row.purchasePriceSEK) || 0), 0);
     }, [sortedRows]);
@@ -266,7 +233,6 @@ const MonthlyOrderCostsReport = () => {
     const handleExport = async () => {
         if (!sortedRows.length) return;
 
-        const reportMonth = monthOptions.find((item) => item.id === filters.month)?.name ?? String(filters.month);
         const generatedAt = new Date().toLocaleString('sv-SE');
 
         const header = [
@@ -306,8 +272,8 @@ const MonthlyOrderCostsReport = () => {
         ]));
 
         const aoa = [
-            ['Orderkostnader per månad'],
-            [`Period: ${filters.year}-${String(filters.month).padStart(2, '0')} (${reportMonth})`],
+            ['Orderkostnader per period'],
+            [`Period: ${formatDateShort(filters.startDate)} – ${formatDateShort(filters.endDate)}`],
             [`Genererad: ${generatedAt}`],
             [],
             header,
@@ -374,7 +340,7 @@ const MonthlyOrderCostsReport = () => {
             to: { row: tableLastRow, column: 15 },
         };
 
-        const dateSuffix = `${filters.year}-${String(filters.month).padStart(2, '0')}`;
+        const dateSuffix = `${toDateString(filters.startDate)}-${toDateString(filters.endDate)}`;
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], {
             type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -398,27 +364,19 @@ const MonthlyOrderCostsReport = () => {
 
             <div className={`relative z-20 flex items-center gap-4 mt-2 pb-2 ${loading && !initialLoadCompleted ? 'opacity-60 pointer-events-none' : ''}`}>
                 <div className="flex items-center">
-                    <div className="w-50">
-                        <LabeledReactSelect
-                            label=""
-                            name="year"
-                            filterStyle
-                            value={filters.year}
-                            items={yearOptions}
-                            onChange={(selected) => handleFilterChange('year', selected)}
-                            isDisabled={loading || yearOptions.length === 0}
-                        />
-                    </div>
-
-                    <div className="w-56 ml-8">
-                        <LabeledReactSelect
-                            label=""
-                            name="month"
-                            filterStyle
-                            value={filters.month}
-                            items={monthOptions}
-                            onChange={(selected) => handleFilterChange('month', selected)}
-                            isDisabled={loading}
+                    <div className="w-60">
+                        <DateRangePicker
+                            presets={['this-month', 'last-month', 'last-3-months', 'last-12-months', 'last-year', 'year-to-date']}
+                            initialStartDate={initialStartDate}
+                            initialEndDate={initialEndDate}
+                            onApply={handlePeriodChange}
+                            placeholder="Välj period"
+                            allowClear={false}
+                            triggerRadius="full"
+                            triggerClassName="h-7 w-[260px] border-lime-600 px-3 text-xs text-gray-700 focus:border-lime-700"
+                            openTriggerClassName="border-lime-700 ring-1 ring-lime-200"
+                            closedTriggerClassName="border-lime-600 hover:border-lime-700"
+                            widthClassName="w-60"
                         />
                     </div>
 

@@ -5,10 +5,14 @@ namespace Econosys.Api.DTOs
         public int? CustomerId { get; set; }
         public string CustomerName { get; set; } = string.Empty;
         public string? CustomerInvoicingInfo { get; set; }
+        public IReadOnlyList<InvoicePalletSourceDto> Pallets { get; set; } = Array.Empty<InvoicePalletSourceDto>();
         public IReadOnlyList<InvoiceDeliveriesAndOrderCostsDeliveryDto> Deliveries { get; set; } = Array.Empty<InvoiceDeliveriesAndOrderCostsDeliveryDto>();
         public IReadOnlyList<InvoiceDeliveriesAndOrderCostsOrderCostDto> OrderCosts { get; set; } = Array.Empty<InvoiceDeliveriesAndOrderCostsOrderCostDto>();
         public IReadOnlyList<InvoiceDeliveriesAndOrderCostsSupplierOrderDto> SupplierOrders { get; set; } = Array.Empty<InvoiceDeliveriesAndOrderCostsSupplierOrderDto>();
     }
+
+    /// <summary>A selectable customer-wide pallet invoice bucket, matching the legacy source rows.</summary>
+    public sealed record InvoicePalletSourceDto(string Type, decimal Quantity);
 
     public class InvoiceDeliveriesAndOrderCostsDeliveryDto
     {

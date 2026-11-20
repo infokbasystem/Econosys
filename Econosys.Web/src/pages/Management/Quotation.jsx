@@ -10,6 +10,7 @@ import ConfirmationModal from '../../components/ConfirmationModal';
 import InquirySelectionModal from '../../components/InquirySelectionModal';
 import EntityOrderFlowNavigation from '../../components/EntityOrderFlowNavigation';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
+import OrderProductInfo from '../../components/OrderProductInfo';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 import useDocumentTitle from '../../hooks/useDocumentTitle';
 import OrderCost from '../../components/OrderCost';
@@ -19,7 +20,7 @@ import LabeledSwitch from '../../components/LabeledSwitch';
 import apiClient, { logApiRequestSummary } from '../../config/apiClient';
 import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { formatDateTime, fromDateInputToSwedishIso, toSwedishDateInputValue } from '../../helpers/dateUtils';
-import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
+import { resolvePdfFileName } from '../../helpers/pdfFileName';
 import { parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import LabeledTextArea from '../../components/LabeledTextArea';
@@ -147,17 +148,6 @@ const renderQuotationMetaRow = (label, value, userName) => {
     );
 };
 
-const renderReadOnlyInfoRow = (label, value) => (
-    <div className="">
-        <div className="text-tiny tracking-wide text-black font-bold">
-            {label}
-        </div>
-        <div className="mt-1 text-xs text-gray-800 break-words">
-            {value || 'Saknas'}
-        </div>
-    </div>
-);
-
 const Quotation = () => {
     const navigate = useNavigate();
     const { id } = useParams();
@@ -167,7 +157,7 @@ const Quotation = () => {
     const isNewQuotation = id === 'new' || id == null;
 
     const [quotation, setQuotation] = useState(null);
-    useDocumentTitle(isNewQuotation ? 'Ny offert' : `Offert ${quotation?.id || id}`);
+    useDocumentTitle(isNewQuotation ? 'Ny affärsförslag' : `Affärsförslag ${quotation?.id || id}`);
 
     const {
         openPdfPreview,
@@ -186,7 +176,6 @@ const Quotation = () => {
     const [unsavedWarningReason, setUnsavedWarningReason] = useState('navigate');
 
     const [originalQuotation, setOriginalQuotation] = useState(null);
-    const [selectedSupplierDetails, setSelectedSupplierDetails] = useState(null);
     const [inquiryOptions, setInquiryOptions] = useState(null);
     const [isCreatingInquiry, setIsCreatingInquiry] = useState(false);
     const [inquiryCreationError, setInquiryCreationError] = useState('');
@@ -195,9 +184,9 @@ const Quotation = () => {
     const [selectedCustomerDetails, setSelectedCustomerDetails] = useState(null);
     const [, setSelectedDeliveryAddressOption] = useState('');
     const [legacyUserOptions, setLegacyUserOptions] = useState([]);
-    const [loadedSupplierDetailsForId, setLoadedSupplierDetailsForId] = useState(null);
     const [loadedCustomerDetailsForId, setLoadedCustomerDetailsForId] = useState(null);
     const [orderCostOptions, setOrderCostOptions] = useState([]);
+    const [pdfCostVersion, setPdfCostVersion] = useState(null);
     const [currencyOptions, setCurrencyOptions] = useState([]);
     const [palletFormatOptions, setPalletFormatOptions] = useState([]);
     const skipUnsavedCheckRef = useRef(false);
@@ -274,6 +263,10 @@ const Quotation = () => {
         skipUnsavedCheckRef.current = false;
     }, [id]);
 
+    const handleCostVersionChange = useCallback((supplierOrderId) => {
+        setPdfCostVersion({ quotationId: quotation?.id, supplierOrderId });
+    }, [quotation?.id]);
+
     const getPdf = useCallback(async ({ ignoreUnsaved = false } = {}) => {
         if (!quotation?.id) return null;
 
@@ -288,22 +281,24 @@ const Quotation = () => {
         try {
             const response = await apiClient.get(`/pdf/quotation/${quotation.id}`, {
                 responseType: 'blob',
+                params: {
+                    supplierOrderId: pdfCostVersion?.quotationId === quotation.id ? pdfCostVersion.supplierOrderId : null,
+                },
             });
-            const contentDisposition = response.headers['content-disposition'];
-            const fileName = getFileNameFromContentDisposition(contentDisposition) || `quotation_${quotation.id}.pdf`;
+            const fileName = await resolvePdfFileName(response, 'quotation', quotation.id, `Affärsförslag ${quotation.id}.pdf`);
             const blob = response.data;
             const url = URL.createObjectURL(blob);
-            openPdfPreview(url, fileName);
+            openPdfPreview(url, fileName, null, null, { itemType: 'QUOTATION', itemId: quotation.id });
             return { url, fileName };
         } catch (error) {
             console.error('Failed to get quotation PDF:', error);
             setMessages((prev) => [
                 ...prev.filter((message) => message.type !== 'error'),
-                { type: 'error', text: 'Kunde inte ladda offert-PDF.' },
+                { type: 'error', text: 'Kunde inte ladda affärsförslag-PDF.' },
             ]);
             return null;
         }
-    }, [hasUnsavedChanges, openPdfPreview, quotation?.id, setMessages]);
+    }, [hasUnsavedChanges, openPdfPreview, pdfCostVersion, quotation?.id, setMessages]);
 
     const updateQuotation = useCallback((patch) => {
         markStale();
@@ -332,32 +327,23 @@ const Quotation = () => {
     }, [selectedCustomerDetails, updateQuotation]);
 
     const syncEmailContext = useCallback((currentQuotation) => {
-        const selectedSupplierEmail = currentQuotation?.selectedSupplierEmail ?? selectedSupplierDetails?.supplier?.email;
-        const selectedCustomerEmail = selectedCustomerDetails?.customer?.email;
-
         setBadges([
             { text: currentQuotation?.isFsc ? 'FSC' : 'Ej FSC', color: currentQuotation?.isFsc ? '#166534' : '#6b7280' },
             { text: currentQuotation?.hideDeliveryAddressOnPrint ? 'Döljer leveransadress' : 'Visar leveransadress', color: currentQuotation?.hideDeliveryAddressOnPrint ? '#b45309' : '#2563eb' },
         ]);
 
         setEmailInfo({
-            recipients: selectedSupplierEmail
-                ? [{ email: selectedSupplierEmail, doSend: true }]
-                : [{ email: '', doSend: true }],
-            ccRecipients: selectedCustomerEmail
-                ? [{ email: selectedCustomerEmail, doSend: false }]
-                : [{ email: '', doSend: false }],
-            subject: `Offert ${currentQuotation?.id || ''}`.trim(),
+            subject: `Affärsförslag ${currentQuotation?.id || ''}`.trim(),
             body: [
                 'Hej,',
                 '',
-                `Bifogar offert ${currentQuotation?.id || ''}.`,
+                `Bifogar affärsförslag ${currentQuotation?.id || ''}.`,
                 '',
                 'Vänliga hälsningar',
             ].join('\n'),
             quotationId: Number.isInteger(currentQuotation?.id) ? currentQuotation.id : null,
         });
-    }, [selectedCustomerDetails, selectedSupplierDetails, setBadges, setEmailInfo]);
+    }, [setBadges, setEmailInfo]);
 
     useEffect(() => {
         if (quotation) {
@@ -479,7 +465,7 @@ const Quotation = () => {
             clearStale();
             setMessages((prev) => [
                 ...prev.filter((message) => message.type !== 'success'),
-                { type: 'success', text: 'Offert sparades.' },
+                { type: 'success', text: 'Affärsförslag sparades.' },
             ]);
 
             if (isCreatingNew && savedQuotation?.id) {
@@ -490,7 +476,7 @@ const Quotation = () => {
             console.error('Failed to save quotation:', error);
             setMessages((prev) => [
                 ...prev.filter((message) => message.type !== 'error'),
-                { type: 'error', text: error.response?.data?.detail || error.response?.data?.message || 'Kunde inte spara offert.' },
+                { type: 'error', text: error.response?.data?.detail || error.response?.data?.message || 'Kunde inte spara affärsförslag.' },
             ]);
         }
     };
@@ -505,14 +491,12 @@ const Quotation = () => {
             console.error('Failed to delete quotation:', error);
             setMessages((prev) => [
                 ...prev.filter((message) => message.type !== 'error'),
-                { type: 'error', text: 'Kunde inte radera offert.' },
+                { type: 'error', text: 'Kunde inte radera affärsförslag.' },
             ]);
         }
     };
 
-    const supplierId = parseNullableInt(quotation?.selectedSupplierId);
     const customerId = parseNullableInt(quotation?.customerId);
-    const isSupplierDetailsLoading = Boolean(supplierId && supplierId > 0 && loadedSupplierDetailsForId !== supplierId);
     const isCustomerDetailsLoading = Boolean(customerId && customerId > 0 && loadedCustomerDetailsForId !== customerId);
 
     useEffect(() => {
@@ -525,10 +509,6 @@ const Quotation = () => {
             quotationLoadStartedAtRef.current = Date.now();
 
             try {
-                if (isActive) {
-                    setSelectedSupplierDetails(null);
-                }
-
                 if (isNewQuotation) {
                     let emptyQuotation = createNewQuotationModel();
                     if (calculationId && calculationId > 0) {
@@ -595,7 +575,7 @@ const Quotation = () => {
     }, [calculationId, clearStale, id, inquiryId, isNewQuotation]);
 
     useEffect(() => {
-        if (loading || isSupplierDetailsLoading || isCustomerDetailsLoading) {
+        if (loading || isCustomerDetailsLoading) {
             return;
         }
 
@@ -627,40 +607,7 @@ const Quotation = () => {
         });
 
         quotationLoadStartedAtRef.current = null;
-    }, [isCustomerDetailsLoading, isSupplierDetailsLoading, loading, quotation?.id]);
-
-    useEffect(() => {
-        const supplierId = parseNullableInt(quotation?.selectedSupplierId);
-
-        if (!supplierId || supplierId <= 0) {
-            setSelectedSupplierDetails(null);
-            setLoadedSupplierDetailsForId(null);
-            return;
-        }
-
-        let isActive = true;
-
-        const loadSupplierDetails = async () => {
-            try {
-                const requestKey = `suppliers:${supplierId}:details`;
-                const response = await getSharedRequest(requestKey, () => apiClient.get(`/suppliers/${supplierId}/details`));
-                if (!isActive) return;
-                setSelectedSupplierDetails(response?.data ?? null);
-                setLoadedSupplierDetailsForId(supplierId);
-            } catch (error) {
-                console.error('Failed to load supplier details:', error);
-                if (!isActive) return;
-                setSelectedSupplierDetails(null);
-                setLoadedSupplierDetailsForId(supplierId);
-            }
-        };
-
-        loadSupplierDetails();
-
-        return () => {
-            isActive = false;
-        };
-    }, [quotation?.selectedSupplierId]);
+    }, [isCustomerDetailsLoading, loading, quotation?.id]);
 
     useEffect(() => {
         let isActive = true;
@@ -787,7 +734,7 @@ const Quotation = () => {
         setSelectedDeliveryAddressOption(customerDeliveryAddressId ? String(customerDeliveryAddressId) : '');
     }, [quotation?.customerDeliveryAddressId, quotation?.customerId]);
 
-    if (loading || isSupplierDetailsLoading || isCustomerDetailsLoading) {
+    if (loading || isCustomerDetailsLoading) {
         return (
             <div className="pl-10 space-y-4 pt-1 ml-80 mr-60">
                 <Skeleton height={30} width={420} className='mb-5' />
@@ -885,7 +832,7 @@ const Quotation = () => {
                 onClose={() => setShowDeleteConfirm(false)}
                 onConfirm={handleDelete}
                 title="RADERA OFFERT"
-                message={`Är du säker på att du vill radera offert ${quotation.id}? Åtgärden kan inte ångras.`}
+                message={`Är du säker på att du vill radera affärsförslag ${quotation.id}? Åtgärden kan inte ångras.`}
                 confirmText="Radera"
                 cancelText="Avbryt"
                 isDestructive={true}
@@ -897,7 +844,7 @@ const Quotation = () => {
                 onConfirm={handleUnsavedWarningConfirm}
                 title="Osparade ändringar"
                 message={unsavedWarningReason === 'print'
-                    ? 'Du har osparade ändringar. Spara offert innan du skriver ut.'
+                    ? 'Du har osparade ändringar. Spara affärsförslag innan du skriver ut.'
                     : 'Det finns osparade ändringar, vill du ändå fortsätta?'}
                 confirmText={unsavedWarningReason === 'print' ? '' : 'Fortsätt ändå'}
                 cancelText="Avbryt"
@@ -905,7 +852,7 @@ const Quotation = () => {
             />
 
             <OrderDetailLayout
-                title={quotation?.id ? <>Offert <span className="ml-2">{quotation.id}</span></> : 'Ny offert'}
+                title={quotation?.id ? <>Affärsförslag <span className="ml-2">{quotation.id}</span></> : 'Ny affärsförslag'}
                 messages={messages}
                 isInfoPanelExpanded={isInfoPanelExpanded}
                 isInfoPanelUsingResponsiveDefault={isInfoPanelUsingResponsiveDefault}
@@ -961,22 +908,16 @@ const Quotation = () => {
                         </div>
                     </div>
 
-                    <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-[#e8eeed] px-5 py-4 shadow-sm">
-                        <div className="grid grid-cols-[3fr_1fr]">
-                            <div className="mt-0 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                {renderReadOnlyInfoRow('Produkt', quotation?.product)}
-                                {renderReadOnlyInfoRow('Material', quotation?.material)}
-                                {/* {renderReadOnlyInfoRow('Tjocklek', quotation?.materialThickness)} */}
-                                {renderReadOnlyInfoRow('Format', quotation?.format)}
-                                {renderReadOnlyInfoRow('Färg', quotation?.color)}
-                                {renderReadOnlyInfoRow('Konstruktion', quotation?.construction)}
-                                {renderReadOnlyInfoRow('FSC', quotation?.isFsc ? 'Ja' : 'Nej')}
-                            </div>
-                            <div>
-                                {renderReadOnlyInfoRow('Packning', 'todo')}
-                            </div>
-                        </div>
-                    </div>
+                    <OrderProductInfo
+                        calculationId={quotation?.calculationId ?? calculationId}
+                        fallbackProduct={{
+                            name: quotation?.product,
+                            material: quotation?.material,
+                            format: quotation?.format,
+                            color: quotation?.color,
+                            construction: quotation?.construction,
+                        }}
+                    />
 
                     <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
                         <span>
@@ -1112,7 +1053,7 @@ const Quotation = () => {
                                 </span>
 
                                 <span>
-                                    <p className="text-sm font-semibold text-gray-500 mb-1 pb-2 text-center">Offertrader</p>
+                                    <p className="text-sm font-semibold text-gray-500 mb-1 pb-2 text-center">Affärsförslagrader</p>
                                     {Array.isArray(quotation?.quotationRows) && quotation.quotationRows.length > 0 && (
                                         <table className="w-full text-xs border-collapse">
                                             <thead>
@@ -1158,6 +1099,7 @@ const Quotation = () => {
                                         eurPalletValue={quotation?.eurPalletValue}
                                         palletFormatOptions={palletFormatOptions}
                                         onPalletChange={handlePalletRowChange}
+                                        onCostVersionChange={handleCostVersionChange}
                                         onChange={handleOrderCostChange}
                                     />
                                 </span>

@@ -3,6 +3,18 @@
 @callOffId = 1
 @transportOrderId = 1
 
+### Supplier order contacts and the logged-in user's copy-to default
+GET {{baseUrl}}/api/email/recipients/SUPPLIERORDER/44774
+Authorization: Bearer {{token}}
+
+### Transporter contacts for a transport order
+GET {{baseUrl}}/api/email/recipients/TRANSPORTORDER/{{transportOrderId}}?receiverType=TRANSPORTER
+Authorization: Bearer {{token}}
+
+### Unsupported document type returns 400
+GET {{baseUrl}}/api/email/recipients/unknown/1
+Authorization: Bearer {{token}}
+
 ### Sent emails for a call-off
 GET {{baseUrl}}/api/email/log/calloff/{{callOffId}}
 Authorization: Bearer {{token}}

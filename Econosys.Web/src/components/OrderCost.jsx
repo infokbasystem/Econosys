@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeftCircle, ArrowRightCircle, CircleHelp, CheckCircle, Trash2 } from 'lucide-react';
+import { ArrowLeftCircle, ArrowRightCircle, CheckCircle, Info, Trash2 } from 'lucide-react';
 import apiClient from '../config/apiClient';
 import useAppUpdateGuard from '../hooks/useAppUpdateGuard';
 import { formatDateTime } from '../helpers/dateUtils';
@@ -33,6 +33,22 @@ const parseNullableDecimal = (value) => {
 const getPalletFormatCustomerPrice = (palletFormatOption) => parseNullableDecimal(
     palletFormatOption?.customerPrice ?? palletFormatOption?.CustomerPrice,
 );
+
+const getPalletFormatSupplierPrice = (palletFormatOption) => parseNullableDecimal(
+    palletFormatOption?.supplierPrice ?? palletFormatOption?.SupplierPrice,
+);
+
+const getPalletFormatOptionLabel = (palletFormatOption) => {
+    const supplierPrice = getPalletFormatSupplierPrice(palletFormatOption);
+    if (supplierPrice == null) return palletFormatOption.name;
+
+    const formattedPrice = new Intl.NumberFormat('sv-SE', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    }).format(supplierPrice);
+    const currencyName = palletFormatOption.supplierCurrencyName ?? palletFormatOption.SupplierCurrencyName;
+    return `${palletFormatOption.name} ${formattedPrice}${currencyName ? ` ${currencyName}` : ''}`;
+};
 
 const NO_SUPPLIER_ORDER_KEY = '__no-supplier-order__';
 
@@ -108,12 +124,16 @@ const OrderCost = ({
     rows,
     costOptions,
     currencyOptions,
+    supplierCurrencyId,
+    supplierCurrencyLoading = false,
+    supplierCurrencyError = '',
     palletFormatId,
     eurPallet,
     nrOfEurPallet,
     eurPalletValue,
     palletFormatOptions,
     onPalletChange,
+    onCostVersionChange,
     onChange,
 }) => {
     const [detailsLocalId, setDetailsLocalId] = useState(null);
@@ -177,6 +197,11 @@ const OrderCost = ({
     const activeGroup = activeGroupIndex >= 0
         ? supplierOrderGroups[activeGroupIndex]
         : null;
+
+    const activeSupplierOrderId = activeGroup?.supplierOrderId ?? null;
+    useEffect(() => {
+        onCostVersionChange?.(activeSupplierOrderId);
+    }, [activeSupplierOrderId, onCostVersionChange]);
 
     const rowsWithDraft = useMemo(() => {
         if (!activeGroup) return [];
@@ -251,13 +276,17 @@ const OrderCost = ({
     };
 
     const openDetailsModal = async (row) => {
-        if (!row?.id) {
+        if (!row) return;
+
+        setDetailsLocalId(row.localId);
+        setDetailsError('');
+        if (!row.id) {
+            setDetailsDraft(createDetailsDraft(row));
+            setDetailsLoading(false);
             return;
         }
 
-        setDetailsLocalId(row.localId);
         setDetailsDraft(null);
-        setDetailsError('');
         setDetailsLoading(true);
 
         try {
@@ -302,7 +331,22 @@ const OrderCost = ({
     };
 
     const saveDetails = async () => {
-        if (!detailsRow?.id || !detailsDraft) return;
+        if (!detailsRow || !detailsDraft) return;
+
+        if (!detailsRow.id) {
+            patchRow(detailsRow.localId, {
+                supplierName: (detailsDraft.supplierName || '').trim(),
+                note: (detailsDraft.note || '').trim(),
+                doPrintOnCustomerOrder: Boolean(detailsDraft.doPrintOnCustomerOrder),
+                doPrintOnSupplierOrder: Boolean(detailsDraft.doPrintOnSupplierOrder),
+                doPrintOnQuotation: Boolean(detailsDraft.doPrintOnQuotation),
+                inPriceAttested: toInputValue(detailsDraft.inPriceAttested),
+                doInvoiceSeparately: Boolean(detailsDraft.doInvoiceSeparately),
+                doInvoiceSeparatelyImmediately: Boolean(detailsDraft.doInvoiceSeparatelyImmediately),
+            });
+            closeDetailsModal();
+            return;
+        }
 
         setDetailsSaving(true);
         setDetailsError('');
@@ -437,7 +481,7 @@ const OrderCost = ({
                             <th className="py-1 pl-[8px] text-left font-thin">Kostnad</th>
                             <th className="w-10 py-1 pr-[8px] text-right font-thin">Ant</th>
                             <th className="w-15 py-1 pr-[8px] text-right font-thin">Inpris</th>
-                            <th className="w-15 py-1 pl-[8px] text-left font-thin">Valuta</th>
+                            <th className="w-24 py-1 pl-[8px] text-left font-thin">Valuta</th>
                             <th className="w-20 py-1 pl-[8px] text-left font-thin">Attest</th>
                             <th className="w-10 py-1 pl-[8px] text-left font-thin">Kalk</th>
                             <th className="w-24 py-1 pr-[8px] text-right font-thin">Utp. SEK</th>
@@ -492,11 +536,11 @@ const OrderCost = ({
                                                 value={selectedPalletFormat.id}
                                                 style={{ color: '#6b7280' }}
                                             >
-                                                {selectedPalletFormat.name + ' — inaktiv'}
+                                                {getPalletFormatOptionLabel(selectedPalletFormat) + ' — inaktiv'}
                                             </option>
                                         )}
                                         {(Array.isArray(palletFormatOptions) ? palletFormatOptions : []).map((option) => (
-                                            <option key={option.id} value={option.id}>{option.name}</option>
+                                            <option key={option.id} value={option.id}>{getPalletFormatOptionLabel(option)}</option>
                                         ))}
                                     </select>
                                 </td>
@@ -559,8 +603,11 @@ const OrderCost = ({
                                             value={toInputValue(row.costId)}
                                             onChange={(event) => {
                                                 const costId = parseNullableInt(event.target.value);
+                                                const selectedCost = (Array.isArray(costOptions) ? costOptions : [])
+                                                    .find((option) => String(option.id) === String(costId));
                                                 patchRow(row.localId, {
                                                     costId,
+                                                    inPriceCurrencyId: selectedCost?.isSupplier ? supplierCurrencyId ?? null : null,
                                                     ...(costId != null && { doDebit: true }),
                                                 });
                                             }}
@@ -609,9 +656,15 @@ const OrderCost = ({
                                             value={toInputValue(row.inPriceCurrencyId)}
                                             onChange={(event) => patchRow(row.localId, { inPriceCurrencyId: parseNullableInt(event.target.value) })}
                                             disabled={!isCurrencyEnabled}
-                                            className={`rounded-sm border border-gray-300 px-2 pt-[3px] pb-[4px] ${isCurrencyEnabled ? 'bg-white' : 'bg-gray-100 text-gray-500 cursor-not-allowed'}`}
+                                            className={`w-full min-w-0 rounded-sm border border-gray-300 px-2 pt-[3px] pb-[4px] ${isCurrencyEnabled ? 'bg-white' : 'bg-gray-100 text-gray-500 cursor-not-allowed'}`}
                                         >
-                                            <option value=""></option>
+                                            <option value="">
+                                                {selectedOption?.isSupplier
+                                                    ? supplierCurrencyLoading
+                                                        ? 'Laddar valuta...'
+                                                        : supplierCurrencyError || 'Valuta saknas'
+                                                    : ''}
+                                            </option>
                                             {selectedCurrency && selectedCurrency.active === false && (
                                                 <option
                                                     key={`selected-currency-${selectedCurrency.id}`}
@@ -620,6 +673,9 @@ const OrderCost = ({
                                                 >
                                                     {selectedCurrency.name + ' — inaktiv'}
                                                 </option>
+                                            )}
+                                            {row.inPriceCurrencyId != null && !selectedCurrency && (
+                                                <option value={row.inPriceCurrencyId}>ID {row.inPriceCurrencyId}</option>
                                             )}
                                             {activeCurrencyOptions.map((option) => (
                                                 <option key={option.id} value={option.id}>{option.name}</option>
@@ -673,15 +729,15 @@ const OrderCost = ({
                                         </div>
                                     </td>
                                     <td className="py-0 px-[1px]">
-                                        {row.localId !== '__draft__' && row.id != null && (
+                                        {row.localId !== '__draft__' && (
                                             <button
                                                 type="button"
                                                 onClick={() => openDetailsModal(row)}
                                                 className="ml-8 p-1 text-gray-700 hover:bg-gray-100 text-right"
-                                                title="Detaljer"
-                                                aria-label="Detaljer"
+                                                title="Visa eller redigera infotext"
+                                                aria-label="Visa eller redigera infotext"
                                             >
-                                                <CircleHelp size={14} strokeWidth={1.75} />
+                                                <Info size={14} strokeWidth={1.75} />
                                             </button>
                                         )}
                                     </td>
@@ -778,13 +834,13 @@ const OrderCost = ({
                                                 disabled={detailsSaving || detailsAttesting}
                                             />
                                             <LabeledSwitch
-                                                id="ordercost-popup-print-offert"
-                                                name="ordercost-popup-print-offert"
+                                                id="ordercost-popup-print-affärsförslag"
+                                                name="ordercost-popup-print-affärsförslag"
                                                 rowId={detailsDraft.id ?? detailsRow.localId}
                                                 field="doPrintOnQuotation"
                                                 value={Boolean(detailsDraft.doPrintOnQuotation)}
                                                 onChange={(_rowId, _field, checked) => patchDetailsDraft({ doPrintOnQuotation: checked })}
-                                                label="Utskrift Offert"
+                                                label="Utskrift Affärsförslag"
                                                 labelWidth="w-[120px]"
                                                 disabled={detailsSaving || detailsAttesting}
                                             />
@@ -851,7 +907,7 @@ const OrderCost = ({
                                 <button
                                     type="button"
                                     onClick={attestDetails}
-                                    disabled={detailsLoading || !detailsDraft || detailsSaving || detailsAttesting}
+                                    disabled={detailsLoading || !detailsDraft || !detailsRow?.id || detailsSaving || detailsAttesting}
                                     className="shadow-md/30 text-xs text-white bg-blue-800 hover:bg-blue-900 px-5 p-[5px] disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {detailsAttesting ? 'ATTESTERAR...' : 'ATTESTERA'}

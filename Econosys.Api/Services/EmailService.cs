@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Net;
 using System.Net.Mail;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Econosys.Api.Common;
 using Econosys.Api.Data;
 using Econosys.Api.DTOs;
@@ -37,15 +38,57 @@ public sealed class SmtpEmailTransport : IEmailTransport
 
 public sealed class EmailValidationException(string message) : Exception(message);
 public sealed class EmailConfigurationException(string message) : Exception(message);
+public sealed class EmailDeliveryCancelledException(Exception innerException)
+    : Exception("SMTP delivery was cancelled or timed out.", innerException);
+public sealed class EmailSmtpFailureException(SmtpException innerException, string? serverDetail)
+    : Exception("SMTP delivery could not be confirmed.", innerException)
+{
+    public SmtpException SmtpException { get; } = innerException;
+    public string? ServerDetail { get; } = serverDetail;
+}
 public sealed class EmailLogPersistenceException(Exception innerException)
     : Exception("The email was sent, but its log could not be saved.", innerException);
 
-public sealed class EmailService(ApplicationDbContext dbContext, IEmailTransport transport)
+public sealed class EmailService(
+    ApplicationDbContext dbContext,
+    IEmailTransport transport,
+    ILogger<EmailService> logger)
 {
     private static readonly string[] SettingNames =
         ["SMTPServer", "SMTPServerPort", "SMTPUseSSL", "SendUserName", "SendPassword"];
+    private static readonly Regex DataImageRegex = new(
+        """src\s*=\s*(?<quote>["'])data:(?<type>image/[a-z0-9.+-]+);base64,(?<data>[a-z0-9+/=\s]+)\k<quote>""",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex SendAsDeniedRegex = new(
+        @"(?<account>[^\s<>;]+@[^\s<>;]+)\s+not allowed to send as\s+(?<sender>[^\s<>;]+@[^\s<>;]+)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public async Task SendAsync(SendEmailRequest request, LegacyUser user, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await SendCoreAsync(request, user, cancellationToken);
+        }
+        catch (EmailValidationException)
+        {
+            logger.LogWarning("Email validation failed for user {UserId}.", user.Id);
+            throw;
+        }
+        catch (EmailConfigurationException)
+        {
+            logger.LogWarning("Email configuration is invalid for user {UserId}, company {CompanyId}.",
+                user.Id, user.CompanyId);
+            throw;
+        }
+        catch (Exception exception) when (exception is DbException or DbUpdateException or TimeoutException)
+        {
+            logger.LogError("Email operation failed for user {UserId}; delivery could not be confirmed: {ErrorType}.",
+                user.Id, exception.GetType().Name);
+            throw;
+        }
+    }
+
+    private async Task SendCoreAsync(SendEmailRequest request, LegacyUser user, CancellationToken cancellationToken)
     {
         var recipients = ParseRecipients(request.Receivers);
         var ccRecipients = ParseRecipients(request.CcRecipients);
@@ -103,9 +146,9 @@ public sealed class EmailService(ApplicationDbContext dbContext, IEmailTransport
         {
             From = new MailAddress(sender!, user.Name ?? string.Empty),
             Subject = request.Subject ?? string.Empty,
-            Body = $"<div style=\"font-family: Verdana, Geneva, sans-serif; font-size: 11pt;\">{request.Body ?? string.Empty}</div>",
             IsBodyHtml = true,
         };
+        SetHtmlBody(message, $"<div style=\"font-family: DM Sans,Verdana, Geneva, sans-serif; font-size: 11pt;\">{request.Body ?? string.Empty}</div>");
         foreach (var recipient in recipients)
         {
             message.To.Add(recipient);
@@ -131,7 +174,24 @@ public sealed class EmailService(ApplicationDbContext dbContext, IEmailTransport
             }
         }
 
-        await transport.SendAsync(message, new SmtpDeliverySettings(host.Trim(), port, enableSsl, username?.Trim(), password), cancellationToken);
+        try
+        {
+            await transport.SendAsync(message, new SmtpDeliverySettings(host.Trim(), port, enableSsl, username?.Trim(), password), cancellationToken);
+        }
+        catch (SmtpException exception)
+        {
+            logger.LogError("SMTP delivery could not be confirmed for user {UserId}, status {SmtpStatus}.",
+                user.Id, exception.StatusCode);
+            throw new EmailSmtpFailureException(exception, GetSendAsDenialDetail(exception, sender!, password));
+        }
+        catch (OperationCanceledException exception)
+        {
+            logger.LogWarning("SMTP delivery was cancelled or timed out for user {UserId}; delivery could not be confirmed. Client cancellation: {ClientCancelled}.",
+                user.Id, cancellationToken.IsCancellationRequested);
+            if (cancellationToken.IsCancellationRequested) throw;
+            throw new EmailDeliveryCancelledException(exception);
+        }
+        logger.LogInformation("SMTP accepted an email for user {UserId}.", user.Id);
 
         if (logItem is { } item)
         {
@@ -150,12 +210,63 @@ public sealed class EmailService(ApplicationDbContext dbContext, IEmailTransport
             {
                 // Once SMTP has accepted the email, a disconnected client must not cancel its log.
                 await dbContext.SaveChangesAsync(CancellationToken.None);
+                logger.LogInformation("Email history saved for {ItemType} {ItemId}, user {UserId}.",
+                    item.Item, item.Id, user.Id);
             }
             catch (Exception exception) when (exception is DbUpdateException or DbException or TimeoutException)
             {
+                logger.LogError("SMTP accepted an email but history could not be saved for {ItemType} {ItemId}, user {UserId}: {ErrorType}.",
+                    item.Item, item.Id, user.Id, exception.GetType().Name);
                 throw new EmailLogPersistenceException(exception);
             }
         }
+    }
+
+    private static string? GetSendAsDenialDetail(SmtpException exception, string sender, string? password)
+    {
+        var match = SendAsDeniedRegex.Match(exception.Message);
+        if (!match.Success
+            || !TryParseAddress(match.Groups["account"].Value, out var account)
+            || !TryParseAddress(match.Groups["sender"].Value, out var deniedSender))
+            return null;
+
+        const string genericDetail = "SMTP-servern anger att kontot inte har behörighet att skicka som den angivna avsändaren.";
+        if (!string.Equals(deniedSender, sender, StringComparison.OrdinalIgnoreCase)
+            || (!string.IsNullOrEmpty(password)
+                && (account!.Contains(password, StringComparison.OrdinalIgnoreCase)
+                    || deniedSender!.Contains(password, StringComparison.OrdinalIgnoreCase))))
+            return genericDetail;
+
+        return $"SMTP-servern anger att {account} inte har behörighet att skicka som {deniedSender}.";
+    }
+
+    // Like legacy, images in the body are embedded as inline attachments; most mail clients block data: URIs.
+    private static void SetHtmlBody(MailMessage message, string html)
+    {
+        var images = new List<LinkedResource>();
+        html = DataImageRegex.Replace(html, match =>
+        {
+            byte[] bytes;
+            try
+            {
+                bytes = Convert.FromBase64String(match.Groups["data"].Value);
+            }
+            catch (FormatException)
+            {
+                return match.Value;
+            }
+            var contentId = $"image{images.Count + 1}@econosys";
+            images.Add(new LinkedResource(new MemoryStream(bytes), match.Groups["type"].Value) { ContentId = contentId });
+            return $"src={match.Groups["quote"].Value}cid:{contentId}{match.Groups["quote"].Value}";
+        });
+        if (images.Count == 0)
+        {
+            message.Body = html;
+            return;
+        }
+        var view = AlternateView.CreateAlternateViewFromString(html, System.Text.Encoding.UTF8, "text/html");
+        images.ForEach(view.LinkedResources.Add);
+        message.AlternateViews.Add(view);
     }
 
     private async Task<(string Item, int Id)?> ResolveLogItemAsync(

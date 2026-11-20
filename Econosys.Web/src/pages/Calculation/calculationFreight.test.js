@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { changeFreightMode, getAutomaticFreightGeometry, getFreightEditState, getFreightMode, getFreightWarningMessage, parseFreightFactors } from './calculationFreight.js';
+import { applySupplierFreightSettings, changeFreightMode, getAutomaticFreightGeometry, getFreightEditState, getFreightMode, getFreightWarningMessage, parseFreightFactors } from './calculationFreight.js';
 
 test('transport-responsible suppliers warn for either or both disabled automatic freight settings', () => {
     const supplier = { econopackTransportResponsible: true };
@@ -47,6 +47,31 @@ const createCalculation = () => ({
         { archived: true, freight: 150, preCalcAdditionPercent: 5 },
         { isDraft: true, edition: null, freight: null },
     ],
+});
+
+test('supplier selection enables automatic freight for transport-responsible suppliers', () => {
+    const result = applySupplierFreightSettings(
+        { ...createCalculation(), autoFreightCalc: false, autoFreightPrice: false },
+        { econopackTransportResponsible: true },
+    );
+    assert.equal(result.deactivateFreightCalculation, false);
+    assert.equal(result.autoFreightCalc, true);
+    assert.equal(result.autoFreightPrice, true);
+});
+
+test('supplier selection deactivates freight for suppliers that are not transport-responsible', () => {
+    const result = applySupplierFreightSettings(createCalculation(), { econopackTransportResponsible: false });
+    assert.equal(result.deactivateFreightCalculation, true);
+    assert.equal(result.autoFreightCalc, false);
+    assert.equal(result.autoFreightPrice, false);
+    assert.equal(result.supplierFactoryId, null);
+    assert.equal(result.customerDeliveryAddressId, null);
+    assert.equal(result.rows[0].freight, null);
+});
+
+test('clearing supplier selection does not change freight settings', () => {
+    const calculation = createCalculation();
+    assert.equal(applySupplierFreightSettings(calculation, null), calculation);
 });
 
 test('opening a saved calculation does not apply freight defaults or recalculate saved rows', () => {

@@ -20,6 +20,17 @@ namespace Econosys.Api.Services
                 return new List<PalletFormatDto>();
             }
 
+            var supplierCurrencyName = supplierId.HasValue
+                ? await (
+                    from supplier in _dbContext.Suppliers.AsNoTracking()
+                    join currency in _dbContext.Currencies.AsNoTracking()
+                        on supplier.CurrencyId equals (int?)currency.Id into supplierCurrencies
+                    from currency in supplierCurrencies.DefaultIfEmpty()
+                    where supplier.Id == supplierId.Value
+                    select currency != null ? currency.Name : null
+                ).FirstOrDefaultAsync()
+                : null;
+
             var items = _dbContext.PalletFormats
                 .AsNoTracking()
                 .Select(x => new
@@ -61,6 +72,7 @@ namespace Econosys.Api.Services
                     Name = x.PalletFormat.Name,
                     M2 = x.PalletFormat.M2,
                     SupplierPrice = x.SupplierPrice,
+                    SupplierCurrencyName = supplierCurrencyName,
                     CustomerPrice = x.CustomerPrice,
                     Active = x.PalletFormat.Active
                         && x.PalletFormat.PalletType != null

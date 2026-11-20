@@ -73,7 +73,7 @@ public sealed class DocumentPdfTranslations
             "Die-cutting tools and printing plates are stored for 18 months after the last production date, after which all tools are recycled."),
         new Definition(-95, "Paketleverans", "Paketleverans", "Parcel delivery"),
         new Definition(-96, "FSC", "FSC-certifierat", "FSC certified"),
-        new Definition(-97, "Kostnadens offertrad", "Avser offertrad", "Applies to quotation row"),
+        new Definition(-97, "Kostnadens affärsförslagrad", "Avser affärsförslagrad", "Applies to quotation row"),
         new Definition(-98, "Och pris", "och pris", "and price"),
         new Definition(-99, "Kostnad f\u00f6r", "Kostnad f\u00f6r", "Cost for"),
         new Definition(-100, "Tillkommer", "tillkommer", "will be added"),

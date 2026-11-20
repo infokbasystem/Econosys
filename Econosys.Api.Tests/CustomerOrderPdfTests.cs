@@ -1,5 +1,6 @@
 using Econosys.Api.Models;
 using Econosys.Api.Services;
+using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
 using QuestPDF.Fluent;
@@ -59,7 +60,13 @@ public class CustomerOrderPdfTests
             new() { Id = 3, Cost = type, DoDebit = true, DoPrintOnCustomerOrder = true },
             new() { Id = 4, Cost = new Cost { Name = "DMT", DmtPercent = 5 }, DoDebit = true, DoPrintOnCustomerOrder = true, OutPrice = 666666 },
             new() { Id = 5, Cost = type, DoDebit = false, DoPrintOnCustomerOrder = true, OutPrice = 100 },
-            new() { Id = 6, Cost = type, DoDebit = true, DoPrintOnCustomerOrder = false, OutPrice = 100 }
+            new() { Id = 6, Cost = type, DoDebit = true, DoPrintOnCustomerOrder = false, OutPrice = 100 },
+            new() { Id = 7, Cost = new Cost { Name = "Quantity tooling", IsNrOf = true }, DoDebit = true,
+                DoPrintOnCustomerOrder = true, OutPrice = 25.4m, NrOf = 3 },
+            new() { Id = 8, Cost = new Cost { Name = "Quantity tooling", IsNrOf = true }, DoDebit = true,
+                DoPrintOnCustomerOrder = true, OutPrice = 25 },
+            new() { Id = 9, Cost = new Cost { Name = "Fixed DMT", DmtFixed = 1, IsNrOf = true }, DoDebit = true,
+                DoPrintOnCustomerOrder = true, OutPrice = 80, NrOf = 2 }
         };
         var texts = new DocumentPdfTranslations("EN", new[]
         {
@@ -67,13 +74,17 @@ public class CustomerOrderPdfTests
             new TranslationItem { TranslationCode = 502, LangCode = "EN", Translation = "Tooling will be added" }
         });
         var costs = CustomerOrderPdfDocument.BuildContent(order, texts).Costs;
-        Assert.Equal(4, costs.Count);
-        Assert.Equal("4,503.00 SEK", costs[0].Amount);
+        Assert.Equal(7, costs.Count);
+        Assert.Equal("4503 SEK", costs[0].Amount);
         Assert.Equal("Known tooling", costs[0].Description);
-        Assert.Equal("0.00 SEK", costs[1].Amount);
+        Assert.Equal("0 SEK", costs[1].Amount);
+        Assert.Equal("Tooling will be added", costs[1].Description);
         Assert.Equal("", costs[2].Amount);
         Assert.Equal("Tooling will be added", costs[2].Description);
         Assert.Equal("", costs[3].Amount);
+        Assert.Equal("3 pcs. * 25 = 76 SEK", costs[4].Amount);
+        Assert.Equal("0 pcs. * 25 = 25 SEK", costs[5].Amount);
+        Assert.Equal("", costs[6].Amount);
     }
 
     [Fact]
@@ -82,10 +93,23 @@ public class CustomerOrderPdfTests
         var order = Fixture();
         order.EurPallet = true;
         order.EurPalletValue = 50;
-        var texts = new DocumentPdfTranslations("EN");
-        Assert.Equal("", CustomerOrderPdfDocument.BuildContent(order, texts).Costs[0].Amount);
+        var texts = new DocumentPdfTranslations("EN",
+            new[] { new TranslationItem { TranslationCode = 501, LangCode = "EN", Translation = "EUR pallet" } });
+        var pallet = new PalletFormat { TranslationCode = 501 };
+        Assert.Single(CustomerOrderPdfDocument.BuildContent(order, texts, pallet).Costs);
+        var unknown = CustomerOrderPdfDocument.BuildContent(order, texts, pallet, quotationIncludesPallet: true).Costs[0];
+        Assert.Equal("Cost for EUR pallet will be added", unknown.Description);
+        Assert.Empty(unknown.Amount);
         order.NrOfEurPallet = 2;
-        Assert.Equal("100.00 SEK", CustomerOrderPdfDocument.BuildContent(order, texts).Costs[0].Amount);
+        var known = CustomerOrderPdfDocument.BuildContent(order, texts, pallet, quotationIncludesPallet: true).Costs[0];
+        Assert.Equal("Cost for EUR pallet", known.Description);
+        Assert.Equal("2 pcs. * 50 = 100 SEK", known.Amount);
+        order.NrOfEurPallet = 0;
+        var zero = CustomerOrderPdfDocument.BuildContent(order, texts, quotationIncludesPallet: true).Costs[0];
+        Assert.Equal("Exkl. EUR-pall", zero.Description);
+        Assert.Empty(zero.Amount);
+        order.EurPallet = false;
+        Assert.Single(CustomerOrderPdfDocument.BuildContent(order, texts, pallet, quotationIncludesPallet: true).Costs);
         order.DeliveryDate = new DateTime(2027, 1, 1);
         order.DeliveryDateWeekMode = true;
         order.IsCallOff = true;
@@ -139,10 +163,13 @@ public class CustomerOrderPdfTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning)).Options);
         var order = Fixture();
-        order.Customer = new Customer { Name = "SECRET LIVE CUSTOMER", Language = new Language { LanguageCode = "EN" } };
+        order.Customer = new Customer { Name = "SECRET LIVE CUSTOMER", Language = new Language { Id = 2, LanguageCode = "EN" } };
         order.SelectedCalculationRow = new CalculationRow { Calculation = new Calculation { NrOfCalcDecimalsSales = 3 } };
+        order.EurPallet = true;
+        order.QuotationId = 20;
         order.PalletFormatId = 10;
         db.CustomerOrders.Add(order);
+        db.Quotations.Add(new Quotation { Id = 20, EurPallet = true });
         db.PalletFormats.Add(new PalletFormat { Id = 10, Name = "EUR-pall", TranslationCode = 502 });
         db.CompanyInfos.Add(Company());
         db.TranslationItems.Add(new TranslationItem { TranslationCode = 502, LangCode = "EN", Translation = "EUR pallet" });
@@ -151,7 +178,7 @@ public class CustomerOrderPdfTests
         var controller = new PdfController(db);
         var file = Assert.IsType<FileContentResult>(await controller.GetCustomerOrderPdfById(order.Id));
         Assert.Equal("application/pdf", file.ContentType);
-        Assert.Equal("customerorder_43625.pdf", file.FileDownloadName);
+        Assert.Equal("Customer order 43625.pdf", file.FileDownloadName);
         Assert.True(file.EnableRangeProcessing);
         Assert.Equal("%PDF-", Encoding.ASCII.GetString(file.FileContents, 0, 5));
         Assert.Empty(db.ChangeTracker.Entries());
@@ -169,6 +196,7 @@ public class CustomerOrderPdfTests
         order.Customer = new Customer { Name = "SECRET LIVE NAME", Address = "SECRET LIVE ADDRESS" };
         order.SupplierOrder = new SupplierOrder { SupplierName = "SECRET SUPPLIER", PurchasePrice = 888888 };
         order.OrderCosts.First().Cost!.DoPrintScrapToolsTextOnCustomerOrder = true;
+        order.OrderCosts.First().DoPrintOnCustomerOrder = false;
         var texts = new DocumentPdfTranslations("EN", new[]
         {
             new TranslationItem { TranslationCode = DocumentPdfTranslations.ToolingDisclaimer, LangCode = "EN", Translation = "Fixed tooling standard text" },
@@ -177,11 +205,47 @@ public class CustomerOrderPdfTests
         var text = RenderedText(CustomerOrderPdfDocument.CreateDocument(order, Company(), texts));
         Assert.Contains("AB Tingstad Papper", text);
         Assert.Contains("Box 13013", text);
-        Assert.Contains("Fixed tooling standard text", text);
+        Assert.DoesNotContain("Fixed tooling standard text", text);
         Assert.Contains("Fixed payment standard text", text);
         Assert.Contains("18 months", text);
+        order.OrderCosts.First().DoDebit = false;
+        Assert.DoesNotContain("18 months", RenderedText(CustomerOrderPdfDocument.CreateDocument(order, Company(), texts)));
         Assert.DoesNotContain("SECRET", text);
         Assert.DoesNotContain("888888", text);
+    }
+
+    [Fact]
+    public void DeliveryAndPaymentTermsUseThePageWidthWithNoDividerAndSpaceAboveTheFooter()
+    {
+        var order = Fixture();
+        order.TermsOfPayment = "Payment is due 30 days after the invoice date. Late payments accrue interest.";
+        var texts = new DocumentPdfTranslations("EN");
+        var svg = CustomerOrderPdfDocument.CreateDocument(order, Company(), texts).GenerateSvg().Single();
+        var elements = XDocument.Parse(svg).Descendants().ToList();
+        XElement FindText(string value) =>
+            Assert.Single(elements, element => element.Name.LocalName == "text" && element.Value.Trim() == value);
+
+        var message = FindText(order.Message!);
+        var delivery = FindText(texts.Text(-37));
+        FindText(order.TermsOfPayment);
+        var paymentNote = FindText(texts.Text(DocumentPdfTranslations.PaymentDisclaimer));
+        var footer = Assert.Single(elements, element => element.Name.LocalName == "text"
+            && element.Value.Contains("Jolengatan 19", StringComparison.Ordinal));
+        var messageIndex = elements.IndexOf(message);
+        var deliveryIndex = elements.IndexOf(delivery);
+        Assert.True(deliveryIndex > messageIndex);
+        Assert.DoesNotContain(elements.Skip(messageIndex + 1).Take(deliveryIndex - messageIndex - 1), element =>
+            string.Equals((string?)element.Attribute("stroke"), "#dbe4e2", StringComparison.OrdinalIgnoreCase));
+
+        static double VerticalPosition(XElement element)
+        {
+            var translation = element.Attribute("transform")!.Value["translate(".Length..^1].Split(' ');
+            var baseline = element.Attribute("y")!.Value.Split(',')[0];
+            return double.Parse(translation[1], CultureInfo.InvariantCulture)
+                + double.Parse(baseline, CultureInfo.InvariantCulture);
+        }
+
+        Assert.True(VerticalPosition(footer) - VerticalPosition(paymentNote) >= 2 * 72 / 2.54);
     }
 
     [Fact]

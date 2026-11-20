@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, ClipboardCopy, Printer, RefreshCw, Save, Trash2 } from 'lucide-react';
-import { useBlocker, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, ClipboardCopy, ExternalLink, Printer, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { Link, useBlocker, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
@@ -10,6 +10,7 @@ import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import EntityOrderFlowNavigation from '../../components/EntityOrderFlowNavigation';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
+import OrderProductInfo from '../../components/OrderProductInfo';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 import useDocumentTitle from '../../hooks/useDocumentTitle';
 import OrderCost from '../../components/OrderCost';
@@ -22,7 +23,7 @@ import LabeledTextArea from '../../components/LabeledTextArea';
 import apiClient from '../../config/apiClient';
 import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { formatDateTime } from '../../helpers/dateUtils';
-import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
+import { resolvePdfFileName } from '../../helpers/pdfFileName';
 import { formatNumber, parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import { fetchSupplierOrderPackaging } from './supplierOrderPackaging';
@@ -48,6 +49,8 @@ const formatCompactNumber = (value, maxFractionDigits = 2) => {
 const makeTempId = () => `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const getTodayDate = () => new Date().toLocaleDateString('sv-SE');
 const inventoryRequiredMessage = 'Ett lager måste först väljas';
+const deliveryDateRequiredMessage = 'Måste ha valt ett Önskat lev.datum för att kunna spara en beställning, VARNING';
+const confirmedDeliveryDateRequiredMessage = 'Måste ha valt ett Bekräftat lev.datum för att kunna skapa ett OE';
 
 const mapApiOrderCostToEditable = (row) => ({
     localId: row?.id ? String(row.id) : makeTempId(),
@@ -83,6 +86,7 @@ const buildOrderCostPayload = (row) => ({
     doDebit: Boolean(row.doDebit),
     nrOf: parseNullableDecimal(row.nrOf),
     inPrice: parseNullableDecimal(row.inPrice),
+    inPriceCurrencyId: parseNullableInt(row.inPriceCurrencyId),
     inPriceAttested: parseNullableDecimal(row.inPriceAttested),
     outPrice: parseNullableDecimal(row.outPrice),
     note: row.note || null,
@@ -157,13 +161,6 @@ const renderMetaRow = (label, value, userName) => {
     );
 };
 
-const renderReadOnlyInfoRow = (label, value) => (
-    <div>
-        <div className="text-tiny tracking-wide text-gray-400">{label}</div>
-        <div className="mt-1 text-xs text-gray-800 break-words">{value || 'Saknas'}</div>
-    </div>
-);
-
 const SupplierOrder = () => {
     const location = useLocation();
     const navigate = useNavigate();
@@ -192,6 +189,9 @@ const SupplierOrder = () => {
 
     const [originalSupplierOrder, setOriginalSupplierOrder] = useState(null);
     const [selectedCustomerDetails, setSelectedCustomerDetails] = useState(null);
+    const [supplierCurrencyId, setSupplierCurrencyId] = useState(null);
+    const [supplierCurrencyLoading, setSupplierCurrencyLoading] = useState(false);
+    const [supplierCurrencyError, setSupplierCurrencyError] = useState('');
     const [, setSelectedDeliveryAddressOption] = useState('');
     const [legacyUserOptions, setLegacyUserOptions] = useState([]);
     const [supplierFactoryOptions, setSupplierFactoryOptions] = useState([]);
@@ -203,7 +203,6 @@ const SupplierOrder = () => {
     const [workflowLoading, setWorkflowLoading] = useState(false);
     const [workflowSaving, setWorkflowSaving] = useState(false);
     const [workflowDraftReady, setWorkflowDraftReady] = useState(false);
-    const [workflowStep, setWorkflowStep] = useState('inquiry');
     const [workflowOptions, setWorkflowOptions] = useState(null);
     const [selectedCalculationRowId, setSelectedCalculationRowId] = useState('');
     const [selectedInquiryId, setSelectedInquiryId] = useState('');
@@ -274,11 +273,10 @@ const SupplierOrder = () => {
                 responseType: 'blob',
             });
 
-            const contentDisposition = response.headers['content-disposition'];
-            const fileName = getFileNameFromContentDisposition(contentDisposition) || `supplierorder_${supplierOrder.id}.pdf`;
+            const fileName = await resolvePdfFileName(response, 'supplierorder', supplierOrder.id, `Beställning ${supplierOrder.id}.pdf`);
             const blob = response.data;
             const url = URL.createObjectURL(blob);
-            openPdfPreview(url, fileName);
+            openPdfPreview(url, fileName, null, null, { itemType: 'SUPPLIERORDER', itemId: supplierOrder.id });
             return { url, fileName };
         } catch (error) {
             console.error('Failed to get supplier order PDF:', error);
@@ -548,6 +546,17 @@ const SupplierOrder = () => {
         }
     };
 
+    const showDateValidationMessage = (text) => {
+        setMessages((previous) => [
+            ...previous.filter((message) => message.text !== text),
+            { type: 'error', text },
+        ]);
+    };
+
+    const clearDateValidationMessage = (text) => {
+        setMessages((previous) => previous.filter((message) => message.text !== text));
+    };
+
     const handleSave = async () => {
         if (!supplierOrder) return;
         if (supplierOrder.inventoryId == null) {
@@ -555,6 +564,10 @@ const SupplierOrder = () => {
                 ...previous.filter((message) => message.type !== 'error'),
                 { type: 'error', text: inventoryRequiredMessage },
             ]);
+            return;
+        }
+        if (!supplierOrder.deliveryDate) {
+            showDateValidationMessage(deliveryDateRequiredMessage);
             return;
         }
 
@@ -609,12 +622,29 @@ const SupplierOrder = () => {
 
     const handleCreateCustomerOrder = async () => {
         if (!canStartSupplierOrderAction()) return;
+        if (supplierOrder.econopackTransportResponsible && !supplierOrder.confirmedDeliveryDate) {
+            showDateValidationMessage(confirmedDeliveryDateRequiredMessage);
+            return;
+        }
+
+        const draftWindow = window.open('', '_blank');
+        if (!draftWindow) {
+            setMessages((prev) => [
+                ...prev.filter((message) => message.type !== 'error'),
+                { type: 'error', text: 'Webbläsaren blockerade den nya fliken. Tillåt popup-fönster och försök igen.' },
+            ]);
+            return;
+        }
 
         try {
             const quotationResponse = supplierOrder.quotationId
                 ? await apiClient.get(`/quotations/${supplierOrder.quotationId}`)
                 : null;
             const quotation = quotationResponse?.data;
+            const customerId = quotation?.customerId ?? supplierOrder.customerId ?? null;
+            const customerResponse = customerId
+                ? await apiClient.get(`/customers/${customerId}`)
+                : null;
             const quotationRow = toArray(quotation?.quotationRows).find(
                 (row) => Number(row?.calculationRowId) === Number(supplierOrder.selectedCalculationRowId),
             );
@@ -624,7 +654,7 @@ const SupplierOrder = () => {
                 supplierOrderId: supplierOrder.id,
                 supplierOrderNr: supplierOrder.supplierOrderNr || '',
                 quotationId: supplierOrder.quotationId ?? null,
-                customerId: quotation?.customerId ?? supplierOrder.customerId ?? null,
+                customerId,
                 customerName: quotation?.customerName ?? supplierOrder.customerName ?? '',
                 deliveryAddressName: quotation?.deliveryAddressName ?? supplierOrder.deliveryAddressName ?? '',
                 deliveryAddress: quotation?.deliveryAddress ?? supplierOrder.deliveryAddress ?? '',
@@ -633,7 +663,7 @@ const SupplierOrder = () => {
                 deliveryCountry: quotation?.deliveryCountry ?? supplierOrder.deliveryCountry ?? '',
                 date: getTodayDate(),
                 yourReference: quotation?.yourReference ?? supplierOrder.yourReference ?? '',
-                ourReference: quotation?.ourReference ?? supplierOrder.ourReference ?? '',
+                ourReference: customerResponse?.data?.customer?.responsibleUserName ?? '',
                 termsOfDelivery: quotation?.termsOfDelivery ?? supplierOrder.termsOfDelivery ?? '',
                 termsOfPayment: quotation?.termsOfPayment ?? supplierOrder.termsOfPayment ?? '',
                 timeOfDelivery: quotation?.timeOfDelivery ?? supplierOrder.timeOfDelivery ?? '',
@@ -660,8 +690,11 @@ const SupplierOrder = () => {
                 })),
             };
 
-            navigate('/order/customerorders/new', { state: { customerOrderDraft } });
+            const draftKey = `customer-order-draft-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+            window.localStorage.setItem(draftKey, JSON.stringify(customerOrderDraft));
+            draftWindow.location.href = `/order/customerorders/new?draftKey=${encodeURIComponent(draftKey)}`;
         } catch (error) {
+            draftWindow.close();
             console.error('Failed to prepare customer order from supplier order:', error);
             setMessages((prev) => [
                 ...prev.filter((message) => message.type !== 'error'),
@@ -890,6 +923,69 @@ const SupplierOrder = () => {
     }, [supplierOrder?.customerId]);
 
     useEffect(() => {
+        const supplierId = parseNullableInt(supplierOrder?.supplierId);
+        if (!supplierId || supplierId <= 0) {
+            setSupplierCurrencyId(null);
+            setSupplierCurrencyLoading(false);
+            setSupplierCurrencyError('');
+            return;
+        }
+
+        let isActive = true;
+        setSupplierCurrencyId(null);
+        setSupplierCurrencyLoading(true);
+        setSupplierCurrencyError('');
+
+        const loadSupplierCurrency = async () => {
+            try {
+                const requestKey = `suppliers:${supplierId}`;
+                const response = await getSharedRequest(requestKey, () => apiClient.get(`/suppliers/${supplierId}`));
+                if (!isActive) return;
+                const currencyId = parseNullableInt(response?.data?.currencyId);
+                setSupplierCurrencyId(currencyId > 0 ? currencyId : null);
+            } catch (error) {
+                console.error('Failed to load supplier currency:', error);
+                if (!isActive) return;
+                setSupplierCurrencyError('Kunde inte läsa leverantörens valuta.');
+            } finally {
+                if (isActive) setSupplierCurrencyLoading(false);
+            }
+        };
+
+        loadSupplierCurrency();
+
+        return () => {
+            isActive = false;
+        };
+    }, [supplierOrder?.supplierId]);
+
+    useEffect(() => {
+        if (supplierCurrencyLoading || supplierCurrencyId == null) return;
+
+        const currentRows = supplierOrder?.orderCosts;
+        if (!Array.isArray(currentRows) || currentRows.length === 0) return;
+
+        let changed = false;
+        const updatedRows = currentRows.map((row) => {
+            if (row.id != null || row.inPriceCurrencyId != null) return row;
+
+            const selectedCost = orderCostOptions.find((option) => String(option.id) === String(row.costId));
+            if (!selectedCost?.isSupplier) return row;
+
+            changed = true;
+            return { ...row, inPriceCurrencyId: supplierCurrencyId };
+        });
+
+        if (changed) updateSupplierOrder({ orderCosts: updatedRows });
+    }, [
+        orderCostOptions,
+        supplierCurrencyId,
+        supplierCurrencyLoading,
+        supplierOrder?.orderCosts,
+        updateSupplierOrder,
+    ]);
+
+    useEffect(() => {
         setSelectedDeliveryAddressOption('');
     }, [supplierOrder?.customerId]);
 
@@ -940,6 +1036,8 @@ const SupplierOrder = () => {
             };
         })
         : [];
+    const customerId = parseNullableInt(supplierOrder?.customerId);
+    const supplierId = parseNullableInt(supplierOrder?.supplierId);
 
     const unitLabel = supplierOrder?.unitName ?? (supplierOrder?.unitId ? `ID ${supplierOrder.unitId}` : '');
     const purchaseCurrencyLabel = supplierOrder?.purchaseCurrencyName ?? (supplierOrder?.purchaseCurrencyId ? `ID ${supplierOrder.purchaseCurrencyId}` : '');
@@ -958,12 +1056,11 @@ const SupplierOrder = () => {
                         aria-modal="true"
                         aria-labelledby="supplier-order-workflow-title"
                         aria-busy={workflowLoading || workflowSaving}
-                        className="relative bg-[#f4f3f2] rounded-sm shadow-xl max-w-xl w-full mx-4 p-6"
-                        
+                        className="relative bg-[#f4f3f2] rounded-sm shadow-xl max-w-4xl w-full mx-4 p-6"
                     >
                         <div className="relative flex items-center justify-center mb-4">
                             <h2 id="supplier-order-workflow-title" className="text-sm font-semibold text-center">
-                                {workflowStep === 'inquiry' ? 'Välj förfrågan och kalkylrad' : 'Välj affärsförslag'}
+                                Skapa beställning
                             </h2>
                             <button
                                 type="button"
@@ -978,123 +1075,101 @@ const SupplierOrder = () => {
                         <div className="mx-2 mt-7 text-xs text-gray-700 sm:mx-10">
                         {workflowLoading ? (
                             <p role="status" className="text-center">Laddar val från kalkylen…</p>
-                        ) : workflowStep === 'inquiry' ? (
-                            <div className="space-y-5">
-                                <fieldset>
-                                    <legend className="mb-2 text-xs font-medium text-gray-700">Förfrågan</legend>
-                                    {toArray(workflowOptions?.inquiries).length === 0 ? (
-                                        <p className="text-xs text-gray-500">Det finns ingen förfrågan kopplad till kalkylen.</p>
-                                    ) : (
-                                        <div className="max-h-48 space-y-1 overflow-y-auto">
-                                            {workflowOptions.inquiries.map((inquiry) => (
-                                                <label key={inquiry.id} className="flex cursor-pointer items-center gap-2 px-2 py-2 text-xs hover:bg-white/60">
-                                                    <input
-                                                        type="radio"
-                                                        name="supplier-order-inquiry"
-                                                        value={inquiry.id}
-                                                        checked={selectedInquiryId === String(inquiry.id)}
-                                                        onChange={(event) => setSelectedInquiryId(event.target.value)}
-                                                    />
-                                                    <span>
-                                                        {inquiry.customerName || `Förfrågan ${inquiry.id}`}
-                                                        <span className="ml-2 text-xs text-gray-500">
-                                                            #{inquiry.id}{inquiry.createdAt ? ` · ${formatDateTime(inquiry.createdAt)}` : ''}
-                                                        </span>
-                                                    </span>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    )}
-                                    <button
-                                        type="button"
-                                        onClick={createWorkflowInquiry}
-                                        disabled={workflowSaving}
-                                        className="mt-2 shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-5 p-[5px] disabled:opacity-50"
-                                    >
-                                        Ny förfrågan
-                                    </button>
-                                </fieldset>
-
-                                <fieldset>
-                                    <legend className="mb-2 text-xs font-medium text-gray-700">Kalkylrad</legend>
-                                    <div className="max-h-48 space-y-1 overflow-y-auto">
-                                        {toArray(workflowOptions?.calculationRows).map((row) => (
-                                            <label key={row.id} className="flex cursor-pointer items-center gap-2 px-2 py-2 text-xs hover:bg-white/60">
-                                                <input
-                                                    type="radio"
-                                                    name="supplier-order-calculation-row"
-                                                    value={row.id}
-                                                    checked={selectedCalculationRowId === String(row.id)}
-                                                    onChange={(event) => setSelectedCalculationRowId(event.target.value)}
-                                                />
-                                                <span>
-                                                    Upplaga {row.edition ?? '-'} · Inköpspris {formatCompactNumber(row.purchasePrice)}
-                                                </span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                </fieldset>
-                                <div className="flex flex-wrap gap-4 mt-6 mb-3 pt-4 justify-end">
-                                    <button
-                                        type="button"
-                                        onClick={cancelSupplierOrderWorkflow}
-                                        disabled={workflowSaving}
-                                        className="shadow-md/30 text-xs text-white bg-orange-400 hover:bg-orange-600 px-5 p-[5px] disabled:opacity-50"
-                                    >
-                                        Avbryt
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setWorkflowStep('quotation')}
-                                        disabled={!selectedInquiryId || !selectedCalculationRowId || workflowSaving}
-                                        className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-5 p-[5px] disabled:opacity-50"
-                                    >
-                                        Nästa
-                                    </button>
-                                </div>
-                            </div>
                         ) : (
-                            <div>
-                                {toArray(workflowOptions?.quotations).length === 0 ? (
-                                    <p className="text-xs text-gray-500">Det finns inget affärsförslag kopplat till kalkylen.</p>
-                                ) : (
-                                    <div className="max-h-64 space-y-1 overflow-y-auto">
-                                        {workflowOptions.quotations.map((quotation) => (
-                                            <label key={quotation.id} className="flex cursor-pointer items-center gap-2 px-2 py-2 text-xs hover:bg-white/60">
-                                                <input
-                                                    type="radio"
-                                                    name="supplier-order-quotation"
-                                                    value={quotation.id}
-                                                    checked={selectedQuotationId === String(quotation.id)}
-                                                    onChange={(event) => setSelectedQuotationId(event.target.value)}
-                                                />
-                                                <span>
-                                                    {quotation.customerName || `Affärsförslag ${quotation.id}`}
-                                                    <span className="ml-2 text-xs text-gray-500">
-                                                        #{quotation.id}{quotation.createdAt ? ` · ${formatDateTime(quotation.createdAt)}` : ''}
-                                                    </span>
-                                                </span>
-                                            </label>
-                                        ))}
+                            <>
+                                <div className="grid gap-6 lg:grid-cols-2">
+                                    <div className="space-y-5">
+                                        <fieldset>
+                                            <legend className="mb-2 text-xs font-medium text-gray-700">Förfrågan</legend>
+                                            {toArray(workflowOptions?.inquiries).length === 0 ? (
+                                                <p className="text-xs text-gray-500">Det finns ingen förfrågan kopplad till kalkylen.</p>
+                                            ) : (
+                                                <div className="max-h-48 space-y-1 overflow-y-auto">
+                                                    {workflowOptions.inquiries.map((inquiry) => (
+                                                        <label key={inquiry.id} className="flex cursor-pointer items-center gap-2 px-2 py-2 text-xs hover:bg-white/60">
+                                                            <input
+                                                                type="radio"
+                                                                name="supplier-order-inquiry"
+                                                                value={inquiry.id}
+                                                                checked={selectedInquiryId === String(inquiry.id)}
+                                                                onChange={(event) => setSelectedInquiryId(event.target.value)}
+                                                            />
+                                                            <span>
+                                                                {inquiry.customerName || `Förfrågan ${inquiry.id}`}
+                                                                <span className="ml-2 text-xs text-gray-500">
+                                                                    #{inquiry.id}{inquiry.createdAt ? ` · ${formatDateTime(inquiry.createdAt)}` : ''}
+                                                                </span>
+                                                        </span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={createWorkflowInquiry}
+                                                disabled={workflowSaving}
+                                                className="mt-2 shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-5 p-[5px] disabled:opacity-50"
+                                            >
+                                                Ny förfrågan
+                                            </button>
+                                        </fieldset>
+
+                                        <fieldset>
+                                            <legend className="mb-2 text-xs font-medium text-gray-700">Kalkylrad</legend>
+                                            <div className="max-h-48 space-y-1 overflow-y-auto">
+                                                {toArray(workflowOptions?.calculationRows).map((row) => (
+                                                    <label key={row.id} className="flex cursor-pointer items-center gap-2 px-2 py-2 text-xs hover:bg-white/60">
+                                                        <input
+                                                            type="radio"
+                                                            name="supplier-order-calculation-row"
+                                                            value={row.id}
+                                                            checked={selectedCalculationRowId === String(row.id)}
+                                                            onChange={(event) => setSelectedCalculationRowId(event.target.value)}
+                                                        />
+                                                        <span>
+                                                            Upplaga {row.edition ?? '-'} · Inköpspris {formatCompactNumber(row.purchasePrice)}
+                                                        </span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </fieldset>
                                     </div>
-                                )}
-                                <button
-                                    type="button"
-                                    onClick={createWorkflowQuotation}
-                                    disabled={workflowSaving}
-                                    className="mt-2 shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-5 p-[5px] disabled:opacity-50"
-                                >
-                                    Nytt affärsförslag
-                                </button>
+                                    <fieldset>
+                                        <legend className="mb-2 text-xs font-medium text-gray-700">Affärsförslag</legend>
+                                        {toArray(workflowOptions?.quotations).length === 0 ? (
+                                            <p className="text-xs text-gray-500">Det finns inget affärsförslag kopplat till kalkylen.</p>
+                                        ) : (
+                                            <div className="max-h-64 space-y-1 overflow-y-auto">
+                                                {workflowOptions.quotations.map((quotation) => (
+                                                    <label key={quotation.id} className="flex cursor-pointer items-center gap-2 px-2 py-2 text-xs hover:bg-white/60">
+                                                        <input
+                                                            type="radio"
+                                                            name="supplier-order-quotation"
+                                                            value={quotation.id}
+                                                            checked={selectedQuotationId === String(quotation.id)}
+                                                            onChange={(event) => setSelectedQuotationId(event.target.value)}
+                                                        />
+                                                        <span>
+                                                            {quotation.customerName || `Affärsförslag ${quotation.id}`}
+                                                            <span className="ml-2 text-xs text-gray-500">
+                                                                #{quotation.id}{quotation.createdAt ? ` · ${formatDateTime(quotation.createdAt)}` : ''}
+                                                            </span>
+                                                        </span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={createWorkflowQuotation}
+                                            disabled={!selectedInquiryId || workflowSaving}
+                                            className="mt-2 shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-5 p-[5px] disabled:opacity-50"
+                                        >
+                                            Nytt affärsförslag
+                                        </button>
+                                    </fieldset>
+                                </div>
                                 <div className="flex flex-wrap gap-4 mt-6 mb-3 pt-4 justify-end">
-                                    <button
-                                        type="button"
-                                        onClick={() => setWorkflowStep('inquiry')}
-                                        disabled={workflowSaving}
-                                        className="shadow-md/30 text-xs text-white bg-orange-400 hover:bg-orange-600 px-5 p-[5px] disabled:opacity-50"
-                                    >
-                                        Tillbaka
-                                    </button>
                                     <button
                                         type="button"
                                         onClick={cancelSupplierOrderWorkflow}
@@ -1106,13 +1181,13 @@ const SupplierOrder = () => {
                                     <button
                                         type="button"
                                         onClick={finishSupplierOrderWorkflow}
-                                        disabled={!selectedQuotationId || workflowSaving}
+                                        disabled={!selectedInquiryId || !selectedCalculationRowId || !selectedQuotationId || workflowSaving}
                                         className="shadow-md/30 text-xs text-white bg-lime-700 hover:bg-lime-900 px-5 p-[5px] disabled:opacity-50"
                                     >
                                         {workflowSaving ? 'Skapar…' : 'Skapa beställning'}
                                     </button>
                                 </div>
-                            </div>
+                            </>
                         )}
                         </div>
                     </section>
@@ -1217,27 +1292,39 @@ const SupplierOrder = () => {
                     </div>
                 </div>
 
-                <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-[#e8eeed] px-5 py-4 shadow-sm">
-                    <div className="grid grid-cols-[3fr_1fr]">
-                        <div className="mt-0 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                            {renderReadOnlyInfoRow('Produkt', supplierOrder?.product)}
-                            {renderReadOnlyInfoRow('Material', supplierOrder?.material)}
-                            {renderReadOnlyInfoRow('Format', supplierOrder?.format)}
-                            {renderReadOnlyInfoRow('Färg', supplierOrder?.color)}
-                            {renderReadOnlyInfoRow('Konstruktion', supplierOrder?.construction)}
-                            {renderReadOnlyInfoRow('FSC', supplierOrder?.isFSC ? 'Ja' : 'Nej')}
-                        </div>
-                        <div>
-                            {renderReadOnlyInfoRow('Packning', supplierOrder?.packagingType || 'Saknas')}
-                        </div>
-                    </div>
-                </div>
+                <OrderProductInfo
+                    calculationId={supplierOrder?.calculationId}
+                    fallbackProduct={{
+                        name: supplierOrder?.product,
+                        material: supplierOrder?.material,
+                        format: supplierOrder?.format,
+                        color: supplierOrder?.color,
+                        construction: supplierOrder?.construction,
+                    }}
+                    additionalInfo={[{ label: 'Packning', value: supplierOrder?.packagingType }]}
+                />
 
                 <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
                     <span>
                         <div className="grid grid-cols-[380px_380px_300px] gap-x-20 gap-y-8">
                             <span>
-                                <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">{supplierOrder?.customerName || ''}</p>
+                                <div className="mb-4 pb-2 text-center border-b border-gray-300">
+                                    <p className="flex items-center justify-center gap-1 text-sm font-semibold text-gray-500">
+                                        {supplierOrder?.customerName || ''}
+                                        {customerId > 0 && (
+                                            <Link
+                                                to={`/order/customers/${customerId}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                aria-label="Öppna kund"
+                                                title="Öppna kund"
+                                                className="ml-2 inline-flex rounded-sm text-sky-700 hover:text-sky-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
+                                            >
+                                                <ExternalLink size={14} aria-hidden="true" />
+                                            </Link>
+                                        )}
+                                    </p>
+                                </div>
                                 <LabeledReactSelect
                                     name="customerDeliveryAddressId"
                                     label="Lev. adress"
@@ -1343,7 +1430,21 @@ const SupplierOrder = () => {
                             </span>
 
                             <span>
-                                <p className="text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300">{supplierOrder?.supplierName ?? 'Saknas'}</p>
+                                <p className="mb-4 flex items-center justify-center gap-1 border-b border-gray-300 pb-2 text-center text-sm font-semibold text-gray-500">
+                                    {supplierOrder?.supplierName ?? 'Saknas'}
+                                    {supplierId > 0 && (
+                                        <Link
+                                            to={`/order/suppliers/${supplierId}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            aria-label="Öppna leverantör"
+                                            title="Öppna leverantör"
+                                            className="inline-flex rounded-sm p-0.5 text-sky-700 hover:text-sky-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
+                                        >
+                                            <ExternalLink size={14} aria-hidden="true" />
+                                        </Link>
+                                    )}
+                                </p>
                                 <LabeledReactSelect
                                     name="supplierFactoryId"
                                     label="Fabrik"
@@ -1440,7 +1541,10 @@ const SupplierOrder = () => {
                                         name="econopackTransportResponsible"
                                         label="Econopac trp.ansv."
                                         value={supplierOrder?.econopackTransportResponsible || false}
-                                        onChange={(rowId, field, checked) => updateSupplierOrder({ [field]: checked })}
+                                        onChange={(_rowId, _field, checked) => {
+                                            updateSupplierOrder({ econopackTransportResponsible: checked });
+                                            if (!checked) clearDateValidationMessage(confirmedDeliveryDateRequiredMessage);
+                                        }}
                                         labelWidth="w-35"
                                         marginTop={2}
                                     />
@@ -1448,7 +1552,10 @@ const SupplierOrder = () => {
                                     <LabeledDatePicker
                                         label="Önskat lev.datum"
                                         value={supplierOrder?.deliveryDate}
-                                        onChange={(nextValue) => updateSupplierOrder({ deliveryDate: nextValue })}
+                                        onChange={(nextValue) => {
+                                            updateSupplierOrder({ deliveryDate: nextValue });
+                                            if (nextValue) clearDateValidationMessage(deliveryDateRequiredMessage);
+                                        }}
                                         weekMode={Boolean(supplierOrder?.deliveryDateWeekMode)}
                                         onWeekModeChange={(nextWeekMode) => updateSupplierOrder({ deliveryDateWeekMode: nextWeekMode })}
                                         enableWeekSelect
@@ -1461,7 +1568,10 @@ const SupplierOrder = () => {
                                     <LabeledDatePicker
                                         label="Bekräftat lev.datum"
                                         value={supplierOrder?.confirmedDeliveryDate}
-                                        onChange={(nextValue) => updateSupplierOrder({ confirmedDeliveryDate: nextValue })}
+                                        onChange={(nextValue) => {
+                                            updateSupplierOrder({ confirmedDeliveryDate: nextValue });
+                                            if (nextValue) clearDateValidationMessage(confirmedDeliveryDateRequiredMessage);
+                                        }}
                                         weekMode={Boolean(supplierOrder?.confirmedDeliveryDateWeekMode)}
                                         onWeekModeChange={(nextWeekMode) => updateSupplierOrder({ confirmedDeliveryDateWeekMode: nextWeekMode })}
                                         enableWeekSelect
@@ -1521,6 +1631,9 @@ const SupplierOrder = () => {
                                     rows={supplierOrder?.orderCosts ?? []}
                                     costOptions={orderCostOptions}
                                     currencyOptions={currencyOptions}
+                                    supplierCurrencyId={supplierCurrencyId}
+                                    supplierCurrencyLoading={supplierCurrencyLoading}
+                                    supplierCurrencyError={supplierCurrencyError}
                                     palletFormatId={supplierOrder?.palletFormatId}
                                     eurPallet={supplierOrder?.eurPallet}
                                     nrOfEurPallet={null}

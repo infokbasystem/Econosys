@@ -9,6 +9,7 @@ namespace Econosys.Api.DTOs
         public bool DoDebit { get; set; }
         public decimal? NrOf { get; set; }
         public decimal? InPrice { get; set; }
+        public int? InPriceCurrencyId { get; set; }
         public decimal? InPriceAttested { get; set; }
         public decimal? OutPrice { get; set; }
         public decimal? OutPriceSEK { get; set; }
@@ -34,6 +35,18 @@ namespace Econosys.Api.DTOs
         public bool DoDebit { get; set; }
         public decimal? NrOf { get; set; }
         public decimal? InPrice { get; set; }
+        private int? _inPriceCurrencyId;
+        public int? InPriceCurrencyId
+        {
+            get => _inPriceCurrencyId;
+            init
+            {
+                _inPriceCurrencyId = value;
+                HasInPriceCurrencyId = true;
+            }
+        }
+
+        internal bool HasInPriceCurrencyId { get; private init; }
         public decimal? InPriceAttested { get; set; }
         public decimal? OutPrice { get; set; }
         public string? Note { get; set; }

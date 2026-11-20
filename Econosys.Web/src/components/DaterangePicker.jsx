@@ -177,6 +177,7 @@ export default function DateRangePicker({
   widthClassName = "",
   triggerRadius = "sm",
   showClearPreset = false,
+  allowClear = true,
 }) {
   const today = new Date(); today.setHours(0,0,0,0);
   const fallbackLeftMonth = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
@@ -354,7 +355,7 @@ export default function DateRangePicker({
             ? `${fmtShort(committed.start)} – ${fmtShort(committed.end)}`
             : placeholder}
         </span>
-        {hasCommitted && (
+        {hasCommitted && allowClear && (
           <span
             onClick={handleClear}
             className="mt-[0px] ml-auto flex items-center justify-center w-4 h-4 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"

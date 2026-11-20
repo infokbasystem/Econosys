@@ -49,7 +49,7 @@ const OrderDetailLayout = ({ title, messages = EMPTY_MESSAGES, isInfoPanelExpand
                     </aside>
                 </div>
 
-                <main className={`min-w-0 flex-grow ps-10 pe-10 py-2 ${mainMaxWidthClass}`}>
+                <main className={`min-w-0 flex-grow ps-8 pe-10 py-2 ${mainMaxWidthClass}`}>
                     <div className="pb-1 flex items-center gap-3">
                         <button
                             type="button"

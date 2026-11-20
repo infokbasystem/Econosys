@@ -16,3 +16,13 @@ public sealed record SendEmailRequest
 
 /// <summary>Confirmation that the SMTP server accepted the email.</summary>
 public sealed record SendEmailResponse(string Message, int? InquiryId, int? QuotationId);
+
+/// <summary>An email contact and its document-specific default selection.</summary>
+public sealed record EmailRecipientResponse(string Email, bool DoSend, string? Title = null);
+
+/// <summary>Legacy recipient, copy-to, subject and message defaults for a document.</summary>
+public sealed record EmailRecipientsResponse(
+    IReadOnlyList<EmailRecipientResponse> Recipients,
+    IReadOnlyList<EmailRecipientResponse> CcRecipients,
+    string Subject = "",
+    string Body = "");

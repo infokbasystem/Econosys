@@ -9,6 +9,7 @@ import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import EntityOrderFlowNavigation from '../../components/EntityOrderFlowNavigation';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
+import OrderProductInfo from '../../components/OrderProductInfo';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 import useDocumentTitle from '../../hooks/useDocumentTitle';
 import LabeledInput from '../../components/LabeledInput';
@@ -18,7 +19,7 @@ import LabeledSwitch from '../../components/LabeledSwitch';
 import apiClient from '../../config/apiClient';
 import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { formatDateTime, fromDateInputToSwedishIso, toSwedishDateInputValue } from '../../helpers/dateUtils';
-import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
+import { resolvePdfFileName } from '../../helpers/pdfFileName';
 import { parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import { buildInquiryPayload } from '../../helpers/inquiryPayload';
@@ -74,17 +75,6 @@ const renderInquiryMetaRow = (label, value, userName) => {
         </div>
     );
 };
-
-const renderReadOnlyInfoRow = (label, value) => (
-    <div className="">
-        <div className="text-tiny tracking-wide text-black font-bold">
-            {label}
-        </div>
-        <div className="mt-1 text-xs text-gray-800 break-words">
-            {value || 'Saknas'}
-        </div>
-    </div>
-);
 
 const Inquiry = () => {
     const navigate = useNavigate();
@@ -196,21 +186,12 @@ const Inquiry = () => {
     }, [selectedCustomerDetails, updateInquiry]);
 
     const syncEmailContext = useCallback((currentInquiry) => {
-        const selectedSupplierEmail = currentInquiry?.selectedSupplierEmail ?? selectedSupplierDetails?.supplier?.email;
-        const selectedCustomerEmail = selectedCustomerDetails?.customer?.email;
-
         setBadges([
             { text: currentInquiry?.isFSC ? 'FSC' : 'Ej FSC', color: currentInquiry?.isFSC ? '#166534' : '#6b7280' },
             { text: currentInquiry?.hideCustomerInfoOnPrint ? 'Döljer kundinfo' : 'Visar kundinfo', color: currentInquiry?.hideCustomerInfoOnPrint ? '#b45309' : '#2563eb' },
         ]);
 
         setEmailInfo({
-            recipients: selectedSupplierEmail
-                ? [{ email: selectedSupplierEmail, doSend: true }]
-                : [{ email: '', doSend: true }],
-            ccRecipients: selectedCustomerEmail
-                ? [{ email: selectedCustomerEmail, doSend: false }]
-                : [{ email: '', doSend: false }],
             subject: `Förfrågan ${currentInquiry?.id || ''}`.trim(),
             body: [
                 'Hej,',
@@ -221,7 +202,7 @@ const Inquiry = () => {
             ].join('\n'),
             inquiryId: Number.isInteger(currentInquiry?.id) ? currentInquiry.id : null,
         });
-    }, [selectedCustomerDetails, selectedSupplierDetails, setBadges, setEmailInfo]);
+    }, [setBadges, setEmailInfo]);
 
     useEffect(() => {
         if (inquiry) {
@@ -242,11 +223,10 @@ const Inquiry = () => {
 
         try {
             const response = await apiClient.get(`/pdf/inquiry/${inquiry.id}`, { responseType: 'blob' });
-            const contentDisposition = response.headers['content-disposition'];
-            const fileName = getFileNameFromContentDisposition(contentDisposition) || 'inquiry.pdf';
+            const fileName = await resolvePdfFileName(response, 'inquiry', inquiry.id, `Förfrågan ${inquiry.id}.pdf`);
             const blob = response.data;
             const url = URL.createObjectURL(blob);
-            openPdfPreview(url, fileName);
+            openPdfPreview(url, fileName, null, null, { itemType: 'INQUIRY', itemId: inquiry.id });
         } catch (error) {
             console.error('Failed to get inquiry PDF:', error);
             setMessages((prev) => [
@@ -632,32 +612,16 @@ const Inquiry = () => {
                         </div>
                     </div>
 
-                    <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-[#e8eeed] px-5 py-4 shadow-sm">
-                        {/* <div className="flex items-center justify-between gap-4">
-                            <div>
-                                <h3 className="text-sm font-semibold text-gray-800">Produktinformation</h3>
-                                <p className="mt-1 text-xs text-gray-500">Översikt över produktdetaljerna. Denna sektion är endast för visning.</p>
-                            </div>
-                            <div className="rounded-full border border-gray-200 bg-white px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">
-                                Read-only
-                            </div>
-                        </div> */}
-
-                        <div className="grid grid-cols-[3fr_1fr]">
-                            <div className="mt-0 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                {renderReadOnlyInfoRow('Produkt', inquiry?.product)}
-                                {renderReadOnlyInfoRow('Material', inquiry?.material)}
-                                {/* {renderReadOnlyInfoRow('Tjocklek', inquiry?.materialThickness)} */}
-                                {renderReadOnlyInfoRow('Format', inquiry?.format)}
-                                {renderReadOnlyInfoRow('Färg', inquiry?.color)}
-                                {renderReadOnlyInfoRow('Konstruktion', inquiry?.construction)}
-                                {renderReadOnlyInfoRow('FSC', inquiry?.isFSC ? 'Ja' : 'Nej')}
-                            </div>
-                            <div>
-                                {renderReadOnlyInfoRow('Packning', 'todo')}
-                            </div>
-                        </div>
-                    </div>
+                    <OrderProductInfo
+                        calculationId={inquiry?.calculationId ?? calculationId}
+                        fallbackProduct={{
+                            name: inquiry?.product,
+                            material: inquiry?.material,
+                            format: inquiry?.format,
+                            color: inquiry?.color,
+                            construction: inquiry?.construction,
+                        }}
+                    />
 
                     <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
                         <span>

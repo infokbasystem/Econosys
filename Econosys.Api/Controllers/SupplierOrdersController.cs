@@ -1132,12 +1132,14 @@ namespace Econosys.Api.Controllers
                     if (entity != null)
                     {
                         ApplyOrderCostRequest(entity, req);
+                        entity.SupplierOrderId = supplierOrderId;
                     }
                 }
                 else if (req.CostId.HasValue)
                 {
                     var entity = new OrderCost { SupplierOrderId = supplierOrderId };
                     ApplyOrderCostRequest(entity, req);
+                    entity.SupplierOrderId = supplierOrderId;
                     _dbContext.OrderCosts.Add(entity);
                 }
             }
@@ -1146,11 +1148,14 @@ namespace Econosys.Api.Controllers
         private static void ApplyOrderCostRequest(OrderCost entity, UpsertSupplierOrderOrderCostRequest req)
         {
             entity.CustomerOrderId = req.CustomerOrderId;
-            entity.SupplierOrderId = req.SupplierOrderId;
             entity.CostId = req.CostId;
             entity.DoDebit = req.DoDebit;
             entity.NrOf = req.NrOf;
             entity.InPrice = req.InPrice;
+            if (req.HasInPriceCurrencyId)
+            {
+                entity.InPriceCurrencyId = req.InPriceCurrencyId;
+            }
             entity.InPriceAttested = req.InPriceAttested;
             entity.OutPrice = req.OutPrice;
             entity.Note = req.Note;
@@ -1179,6 +1184,7 @@ namespace Econosys.Api.Controllers
                 DoDebit = source.DoDebit,
                 NrOf = source.NrOf,
                 InPrice = source.InPrice,
+                InPriceCurrencyId = source.InPriceCurrencyId,
                 InPriceAttested = source.InPriceAttested,
                 OutPrice = source.OutPrice,
                 OutPriceSEK = source.OutPrice.HasValue && source.CustomerOrder?.SalesCurrencyRate is > 0

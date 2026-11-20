@@ -1059,7 +1059,7 @@ const Customer = () => {
                                     <LabeledSwitch
                                         field="mailQuotation"
                                         name="mailQuotation"
-                                        label="Offert"
+                                        label="Affärsförslag"
                                         value={Boolean(selectedContact?.mailQuotation)}
                                         onChange={(_rowId, field, checked) => handleContactChange(getItemIdentity(selectedContact), field, checked)}
                                         labelWidth="w-20"

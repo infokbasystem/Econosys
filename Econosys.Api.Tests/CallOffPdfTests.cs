@@ -113,10 +113,10 @@ public class CallOffPdfTests
         var freightOrder = Assert.IsType<FileContentResult>(await controller.GetCallOffPdfById(1));
         var confirmation = Assert.IsType<FileContentResult>(await controller.GetCallOffConfirmationPdfById(1));
         Assert.Equal("application/pdf", freightOrder.ContentType);
-        Assert.Equal("calloff_1.pdf", freightOrder.FileDownloadName);
+        Assert.Equal("Avrop 1.pdf", freightOrder.FileDownloadName);
         Assert.True(freightOrder.EnableRangeProcessing);
         Assert.Equal("application/pdf", confirmation.ContentType);
-        Assert.Equal("calloffconfirmation_1.pdf", confirmation.FileDownloadName);
+        Assert.Equal("Avropsbekräftelse 1.pdf", confirmation.FileDownloadName);
         Assert.True(confirmation.EnableRangeProcessing);
         Assert.Equal("%PDF-", Encoding.ASCII.GetString(freightOrder.FileContents, 0, 5));
         Assert.Equal("%PDF-", Encoding.ASCII.GetString(confirmation.FileContents, 0, 5));

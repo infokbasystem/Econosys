@@ -88,6 +88,33 @@ public class ProductSearchTests
         Assert.IsType<BadRequestObjectResult>(result.Result);
     }
 
+    [Theory]
+    [InlineData("asc", 1, 4, 5, 2, 3)]
+    [InlineData("desc", 3, 2, 1, 4, 5)]
+    public async Task PpwrColumnSortsByUpdateTimestampIncludingProductsWithoutUpdates(string direction, params int[] expectedIds)
+    {
+        await using var context = await CreateContext();
+        var firstUpdate = new DateTime(2026, 11, 16, 10, 0, 0);
+        context.Products.Single(product => product.Id == 2).InternalInfo = new ProductInternalInfo { PpwrUpdatedAt = firstUpdate };
+        context.Products.Single(product => product.Id == 3).InternalInfo = new ProductInternalInfo { PpwrUpdatedAt = firstUpdate.AddDays(1) };
+        context.Products.Single(product => product.Id == 4).InternalInfo = new ProductInternalInfo();
+        await context.SaveChangesAsync();
+
+        var page = GetPage(await CreateController(context).Search(new SearchProductsRequest
+        {
+            OrderBy =
+            [
+                new SortRequest { Field = "ppwrupdatedat", Direction = direction },
+                new SortRequest { Field = "id", Direction = "asc" },
+            ],
+        }));
+
+        Assert.Equal(expectedIds, page.Items.Select(item => item.Id));
+        Assert.Equal(firstUpdate, page.Items.Single(item => item.Id == 2).PpwrUpdatedAt);
+        Assert.Equal(firstUpdate.AddDays(1), page.Items.Single(item => item.Id == 3).PpwrUpdatedAt);
+        Assert.All(page.Items.Where(item => item.Id is 1 or 4 or 5), item => Assert.Null(item.PpwrUpdatedAt));
+    }
+
     private static FilterConditionDto Condition(string field, object? value, string op = "eq") => new()
     {
         Field = field,

@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Data;
 using System.Globalization;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -49,6 +50,7 @@ namespace Econosys.Api.Controllers
                 .Include(x => x.InvoiceAccountRows)
                 .Include(x => x.CreatedByUser)
                 .Include(x => x.EditedByUser)
+                .Include(x => x.Customer)
                 .FirstOrDefaultAsync(x => x.Id == id);
 
             if (invoice is null)
@@ -75,6 +77,23 @@ namespace Econosys.Api.Controllers
                 return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
             }
 
+            await using var transaction = _dbContext.Database.IsRelational()
+                ? await _dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable)
+                : null;
+            var sourceError = await ValidateInvoiceSourcesAsync(request, 0);
+            if (sourceError is not null)
+                return Conflict(new { message = sourceError });
+            try
+            {
+                if (request.InvoiceRows?.Any(x => x.PriceTypeId == 1 && x.DeliveryFromStockId > 0) == true)
+                    request.InvoiceAccountRows = await InvoiceInventoryAccounting.BuildAsync(_dbContext, request.InvoiceRows);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Invalid inventory valuation while creating an invoice.");
+                return BadRequest(new { message = ex.Message });
+            }
+
             var invoice = new Invoice();
             ApplyRequestToInvoice(invoice, request);
 
@@ -87,8 +106,11 @@ namespace Econosys.Api.Controllers
             invoice.InvoiceRows = BuildInvoiceRows(request.InvoiceRows, invoice.Id, legacyUser.CompanyId);
             invoice.InvoiceAccountRows = BuildInvoiceAccountRows(request.InvoiceAccountRows, invoice.Id, legacyUser.CompanyId);
 
+            await SyncInvoiceSourceFlagsAsync(0, [], invoice.InvoiceRows);
             _dbContext.Invoices.Add(invoice);
             await _dbContext.SaveChangesAsync();
+            if (transaction is not null)
+                await transaction.CommitAsync();
 
             var created = await _dbContext.Invoices
                 .AsNoTracking()
@@ -96,6 +118,7 @@ namespace Econosys.Api.Controllers
                 .Include(x => x.InvoiceAccountRows)
                 .Include(x => x.CreatedByUser)
                 .Include(x => x.EditedByUser)
+                .Include(x => x.Customer)
                 .FirstAsync(x => x.Id == invoice.Id);
 
             return CreatedAtAction(nameof(GetById), new { id = created.Id }, MapToDto(created));
@@ -117,6 +140,9 @@ namespace Econosys.Api.Controllers
                 return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
             }
 
+            await using var transaction = _dbContext.Database.IsRelational()
+                ? await _dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable)
+                : null;
             var invoice = await _dbContext.Invoices
                 .Include(x => x.InvoiceRows)
                 .Include(x => x.InvoiceAccountRows)
@@ -129,6 +155,21 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
+            var sourceError = await ValidateInvoiceSourcesAsync(request, invoice.Id);
+            if (sourceError is not null)
+                return Conflict(new { message = sourceError });
+            try
+            {
+                if (invoice.InvoiceRows.Any(x => x.PriceTypeId == 1 && x.DeliveryFromStockId > 0)
+                    || request.InvoiceRows?.Any(x => x.PriceTypeId == 1 && x.DeliveryFromStockId > 0) == true)
+                    request.InvoiceAccountRows = await InvoiceInventoryAccounting.BuildAsync(_dbContext, request.InvoiceRows ?? []);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Invalid inventory valuation while updating invoice {InvoiceId}.", id);
+                return BadRequest(new { message = ex.Message });
+            }
+            var previousRows = invoice.InvoiceRows.ToList();
             ApplyRequestToInvoice(invoice, request);
             invoice.Edited = SwedishTime.Now;
             invoice.EditedBy = legacyUser.Id;
@@ -139,7 +180,10 @@ namespace Econosys.Api.Controllers
             invoice.InvoiceRows = BuildInvoiceRows(request.InvoiceRows, invoice.Id, legacyUser.CompanyId);
             invoice.InvoiceAccountRows = BuildInvoiceAccountRows(request.InvoiceAccountRows, invoice.Id, legacyUser.CompanyId);
 
+            await SyncInvoiceSourceFlagsAsync(invoice.Id, previousRows, invoice.InvoiceRows);
             await _dbContext.SaveChangesAsync();
+            if (transaction is not null)
+                await transaction.CommitAsync();
 
             var updated = await _dbContext.Invoices
                 .AsNoTracking()
@@ -147,6 +191,7 @@ namespace Econosys.Api.Controllers
                 .Include(x => x.InvoiceAccountRows)
                 .Include(x => x.CreatedByUser)
                 .Include(x => x.EditedByUser)
+                .Include(x => x.Customer)
                 .FirstAsync(x => x.Id == id);
 
             return Ok(MapToDto(updated));
@@ -155,6 +200,9 @@ namespace Econosys.Api.Controllers
         [HttpDelete("{id:int}")]
         public async Task<IActionResult> Delete(int id)
         {
+            await using var transaction = _dbContext.Database.IsRelational()
+                ? await _dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable)
+                : null;
             var invoice = await _dbContext.Invoices
                 .Include(x => x.InvoiceRows)
                 .Include(x => x.InvoiceAccountRows)
@@ -165,12 +213,40 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
+            await SyncInvoiceSourceFlagsAsync(invoice.Id, invoice.InvoiceRows, []);
             _dbContext.InvoiceRows.RemoveRange(invoice.InvoiceRows);
             _dbContext.InvoiceAccountRows.RemoveRange(invoice.InvoiceAccountRows);
             _dbContext.Invoices.Remove(invoice);
             await _dbContext.SaveChangesAsync();
+            if (transaction is not null)
+                await transaction.CommitAsync();
 
             return NoContent();
+        }
+
+        /// <summary>Recalculates the stock valuation entries after invoice quantities or deliveries change.</summary>
+        [HttpPost("accounting-preview")]
+        [ProducesResponseType(typeof(List<InvoiceAccountRowMutationRequest>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        public async Task<ActionResult<List<InvoiceAccountRowMutationRequest>>> PreviewAccounting(
+            [FromBody] InvoiceAccountingPreviewRequest request, CancellationToken cancellationToken = default)
+        {
+            var deliveryIds = request.InvoiceRows.Where(x => x.PriceTypeId == 1 && x.DeliveryFromStockId > 0)
+                .Select(x => x.DeliveryFromStockId!.Value).Distinct().ToList();
+            var matched = await _dbContext.DeliveryFromStocks.AsNoTracking()
+                .CountAsync(x => deliveryIds.Contains(x.Id) && x.CustomerOrder != null
+                    && x.CustomerOrder.CustomerId == request.CustomerId, cancellationToken);
+            if (matched != deliveryIds.Count)
+                return BadRequest(new { message = "Lagerleveranserna tillhör inte den valda kunden." });
+            try
+            {
+                return Ok(await InvoiceInventoryAccounting.BuildAsync(_dbContext, request.InvoiceRows, cancellationToken));
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Invalid inventory valuation preview for customer {CustomerId}.", request.CustomerId);
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         [HttpPost("header-search")]
@@ -494,6 +570,8 @@ namespace Econosys.Api.Controllers
                     CustomerId = group.Key.CustomerId,
                     CustomerName = group.Key.CustomerName,
                     CustomerInvoicingInfo = group.Key.CustomerInvoicingInfo,
+                    Pallets = group.Where(x => x.Type is "PalletsNow" or "PalletsInFuture")
+                        .Select(x => new InvoicePalletSourceDto(x.Type, x.Quantity.GetValueOrDefault())).ToList(),
                     Deliveries = group
                         .Where(x => x.Type == "DeliveryToCustomer" || x.Type == "DeliveryFromStock")
                         .OrderBy(x => x.DeliveryDate)
@@ -631,15 +709,55 @@ namespace Econosys.Api.Controllers
                 return NotFound(new { message = $"Customer {request.CustomerId} was not found." });
             }
 
-            var deliverySelections = (request.Deliveries ?? new List<InvoiceDraftDeliverySelectionRequest>())
+            var mode = request.InvoiceMode?.ToLowerInvariant();
+            if (mode is not ("selection" or "palletsnow" or "palletsfuture"))
+            {
+                return BadRequest(new { message = "Unknown invoice mode." });
+            }
+            var palletsOnly = mode != "selection";
+            var requestedDeliveries = request.Deliveries ?? [];
+            if (palletsOnly)
+            {
+                if (!customer.InvoicePalletsSeparately)
+                {
+                    return BadRequest(new { message = "Kunden är inte inställd för separat pallfakturering." });
+                }
+                if (request.Deliveries?.Count > 0 || request.OrderCostIds?.Count > 0)
+                {
+                    return BadRequest(new { message = "Separata pallfakturor kan inte blandas med andra valda rader." });
+                }
+                var today = SwedishTime.Now.Date;
+                var directPallets = await _dbContext.DeliveryToCustomers.AsNoTracking()
+                    .Where(x => x.CustomerOrder != null && x.CustomerOrder.CustomerId == customer.Id
+                        && x.DeliveryStatus == (int)DeliveryStatus.Delivered && x.NrOfPallets > 0
+                        && !x.IsPalletInvoicedSeparately && !x.InvoiceRows.Any(r => r.PriceTypeId == 107)
+                        && x.DeliveryDate.HasValue
+                        && (mode == "palletsnow" ? x.DeliveryDate.Value < today.AddDays(1) : x.DeliveryDate.Value >= today.AddDays(1)))
+                    .Select(x => new InvoiceDraftDeliverySelectionRequest { Id = x.Id, Type = "DeliveryToCustomer" })
+                    .ToListAsync();
+                var stockPallets = await _dbContext.DeliveryFromStocks.AsNoTracking()
+                    .Where(x => x.CustomerOrder != null && x.CustomerOrder.CustomerId == customer.Id
+                        && x.DeliveryStatus == (int)DeliveryStatus.Delivered && x.NrOfPallets > 0
+                        && !x.IsPalletInvoicedSeparately && !x.InvoiceRows.Any(r => r.PriceTypeId == 107)
+                        && x.DeliveryDate.HasValue
+                        && (mode == "palletsnow" ? x.DeliveryDate.Value < today.AddDays(1) : x.DeliveryDate.Value >= today.AddDays(1)))
+                    .Select(x => new InvoiceDraftDeliverySelectionRequest { Id = x.Id, Type = "DeliveryFromStock" })
+                    .ToListAsync();
+                requestedDeliveries = directPallets.Concat(stockPallets).ToList();
+                if (requestedDeliveries.Count == 0)
+                {
+                    return BadRequest(new { message = "Det finns inga ofakturerade pallar i den valda perioden." });
+                }
+            }
+
+            var deliverySelections = requestedDeliveries
                 .Where(x => x is not null && x.Id > 0 && !string.IsNullOrWhiteSpace(x.Type))
                 .Select(x => new InvoiceDraftDeliverySelectionRequest
                 {
                     Id = x.Id,
                     Type = x.Type.Trim().ToLowerInvariant()
                 })
-                .ToDictionary(x => $"{x.Type}|{x.Id}", x => x)
-                .Values
+                .DistinctBy(x => (x.Type, x.Id))
                 .ToList();
 
             var unsupportedTypes = deliverySelections
@@ -686,6 +804,18 @@ namespace Econosys.Api.Controllers
                         CallOffNr = x.CallOff,
                         CustomerOrderId = x.CustomerOrderId,
                         CustomerOrderNr = x.CustomerOrder != null ? x.CustomerOrder.CustomerOrderNr : null,
+                        ProductText = x.CustomerOrder != null ? x.CustomerOrder.Product : null,
+                        YourOrderNr = x.CustomerOrder != null ? x.CustomerOrder.YourOrderNr : null,
+                        QuotationId = x.CustomerOrder != null ? x.CustomerOrder.QuotationId : null,
+                        IsSlattPallet = x.IsSlattPallet,
+                        ParentDeliveryId = x.ParentDeliveryId,
+                        NrOfPallets = x.NrOfPallets,
+                        PalletsAlreadyInvoiced = x.IsPalletInvoicedSeparately || x.InvoiceRows.Any(r => r.PriceTypeId == 107),
+                        EurPallet = x.CustomerOrder != null && x.CustomerOrder.EurPallet,
+                        PalletPrice = x.CustomerOrder != null ? x.CustomerOrder.EurPalletValue : null,
+                        PalletFormatId = x.CustomerOrder != null ? x.CustomerOrder.PalletFormatId : null,
+                        CostCenter = x.CustomerOrder != null && x.CustomerOrder.SupplierOrder != null
+                            && x.CustomerOrder.SupplierOrder.Supplier != null ? x.CustomerOrder.SupplierOrder.Supplier.CostCenter : null,
                         Quantity = x.NrOfItems,
                         UnitPrice = x.CustomerOrder != null ? x.CustomerOrder.SalesPrice : null,
                         UnitId = x.CustomerOrder != null ? x.CustomerOrder.UnitId : null,
@@ -709,12 +839,21 @@ namespace Econosys.Api.Controllers
                         Type = "DeliveryFromStock",
                         DeliveryId = x.Id,
                         DeliveryDate = x.DeliveryDate,
-                        CallOffNr = x.CallOffDeliveries
-                            .OrderBy(cd => cd.Id)
-                            .Select(cd => cd.CallOffId.HasValue ? cd.CallOffId.Value.ToString() : null)
-                            .FirstOrDefault(),
+                        CallOffNr = x.CallOff,
                         CustomerOrderId = x.CustomerOrderId,
                         CustomerOrderNr = x.CustomerOrder != null ? x.CustomerOrder.CustomerOrderNr : null,
+                        ProductText = x.CustomerOrder != null ? x.CustomerOrder.Product : null,
+                        YourOrderNr = x.CustomerOrder != null ? x.CustomerOrder.YourOrderNr : null,
+                        QuotationId = x.CustomerOrder != null ? x.CustomerOrder.QuotationId : null,
+                        IsSlattPallet = x.IsSlattPallet,
+                        ParentDeliveryId = x.ParentDeliveryId,
+                        NrOfPallets = x.NrOfPallets,
+                        PalletsAlreadyInvoiced = x.IsPalletInvoicedSeparately || x.InvoiceRows.Any(r => r.PriceTypeId == 107),
+                        EurPallet = x.CustomerOrder != null && x.CustomerOrder.EurPallet,
+                        PalletPrice = x.CustomerOrder != null ? x.CustomerOrder.EurPalletValue : null,
+                        PalletFormatId = x.CustomerOrder != null ? x.CustomerOrder.PalletFormatId : null,
+                        CostCenter = x.CustomerOrder != null && x.CustomerOrder.SupplierOrder != null
+                            && x.CustomerOrder.SupplierOrder.Supplier != null ? x.CustomerOrder.SupplierOrder.Supplier.CostCenter : null,
                         Quantity = x.NrOfItems,
                         UnitPrice = x.CustomerOrder != null ? x.CustomerOrder.SalesPrice : null,
                         UnitId = x.CustomerOrder != null ? x.CustomerOrder.UnitId : null,
@@ -732,41 +871,180 @@ namespace Econosys.Api.Controllers
                 return BadRequest(new { message = "One or more selected deliveries were not found or do not belong to the specified customer." });
             }
 
+            var quotationIds = selectedDeliveryRows
+                .Where(x => x.QuotationId.HasValue)
+                .Select(x => x.QuotationId.GetValueOrDefault())
+                .Distinct()
+                .ToList();
+            var quotationProducts = await _dbContext.Quotations
+                .AsNoTracking()
+                .Where(x => quotationIds.Contains(x.Id))
+                .Select(x => new
+                {
+                    x.Id,
+                    HasProduct = x.Calculation != null && x.Calculation.Product != null,
+                    NetWeightPer1000 = x.Calculation != null && x.Calculation.Product != null
+                        ? x.Calculation.Product.NetWeightPer1000 : null,
+                })
+                .ToDictionaryAsync(x => x.Id);
+
+            var transportOrderNumbers = new Dictionary<int, List<string?>>();
+            if (deliveryToCustomerIds.Count > 0)
+            {
+                var transportDeliveries = await _dbContext.TransportOrderDeliveries
+                    .AsNoTracking()
+                    .Where(x => x.DeliveryToCustomerId.HasValue && deliveryToCustomerIds.Contains(x.DeliveryToCustomerId.Value))
+                    .Select(x => new { x.DeliveryToCustomerId, x.CustomerYourOrderNr })
+                    .ToListAsync();
+                transportOrderNumbers = transportDeliveries
+                    .GroupBy(x => x.DeliveryToCustomerId.GetValueOrDefault())
+                    .ToDictionary(x => x.Key, x => x.Select(y => y.CustomerYourOrderNr).ToList());
+            }
+
+            var callOffOrderNumbers = new Dictionary<int, List<string?>>();
+            if (deliveryFromStockIds.Count > 0)
+            {
+                var callOffLinks = await _dbContext.CallOffDeliveries
+                    .AsNoTracking()
+                    .Where(x => x.DeliveryFromStockId.HasValue && deliveryFromStockIds.Contains(x.DeliveryFromStockId.Value)
+                        && x.CallOff != null)
+                    .Select(x => new { x.DeliveryFromStockId, x.CallOffId, Note = x.CallOff != null ? x.CallOff.Note : null })
+                    .ToListAsync();
+                callOffOrderNumbers = callOffLinks
+                    .GroupBy(x => x.DeliveryFromStockId.GetValueOrDefault())
+                    .ToDictionary(x => x.Key, x => x.DistinctBy(y => y.CallOffId).Select(y => y.Note).ToList());
+            }
+
+            var callOffTitle = "Avrop";
+            if (selectedDeliveryRows.Any(x => !string.IsNullOrWhiteSpace(x.CallOffNr)) && customer.LanguageId.HasValue)
+            {
+                var languageCode = await _dbContext.Languages
+                    .AsNoTracking()
+                    .Where(x => x.Id == customer.LanguageId.Value)
+                    .Select(x => x.LanguageCode)
+                    .FirstOrDefaultAsync();
+                if (!string.IsNullOrWhiteSpace(languageCode))
+                {
+                    callOffTitle = await _dbContext.TranslationItems
+                        .AsNoTracking()
+                        .Where(x => x.TranslationCode == -59 && x.LangCode == languageCode)
+                        .Select(x => x.Translation)
+                        .FirstOrDefaultAsync() ?? callOffTitle;
+                }
+            }
+
+            var selectedOrderIds = selectedDeliveryRows.Select(x => x.CustomerOrderId.GetValueOrDefault()).Distinct().ToList();
             var selectedOrderCostRows = new List<DraftOrderCostRowSource>();
-            if (orderCostIds.Count > 0)
+            if (!palletsOnly)
             {
                 selectedOrderCostRows = await _dbContext.OrderCosts
                     .AsNoTracking()
-                    .Where(x => orderCostIds.Contains(x.Id))
+                    .Where(x => orderCostIds.Contains(x.Id)
+                        || (x.CustomerOrderId.HasValue && selectedOrderIds.Contains(x.CustomerOrderId.Value)
+                            && x.DoDebit && !x.DoInvoiceSeparately && !x.DoInvoiceSeparatelyImmediately
+                            && (!x.InvoiceRows.Any() || (x.Cost != null && (x.Cost.DmtPercent != null || x.Cost.DmtFixed != null)))))
                     .Where(x => x.CustomerOrder != null && x.CustomerOrder.CustomerId == customer.Id)
                     .Select(x => new DraftOrderCostRowSource
                     {
                         OrderCostId = x.Id,
                         CustomerOrderId = x.CustomerOrderId,
                         CustomerOrderNr = x.CustomerOrder != null ? x.CustomerOrder.CustomerOrderNr : null,
+                        ProductText = x.CustomerOrder != null ? x.CustomerOrder.Product : null,
+                        YourOrderNr = x.CustomerOrder != null ? x.CustomerOrder.YourOrderNr : null,
+                        CostId = x.CostId,
                         CostName = x.Cost != null ? x.Cost.Name : null,
+                        TranslationCode = x.Cost != null ? x.Cost.TranslationCodeInvoiceRow : 0,
+                        IsNrOf = x.Cost != null && x.Cost.IsNrOf,
+                        DoDebit = x.DoDebit,
+                        Separately = x.DoInvoiceSeparately || x.DoInvoiceSeparatelyImmediately,
+                        AlreadyInvoiced = x.InvoiceRows.Any(),
+                        DmtPercent = x.Cost != null ? x.Cost.DmtPercent : null,
+                        DmtFixed = x.Cost != null ? x.Cost.DmtFixed : null,
+                        HasCalculationRow = x.CustomerOrder != null && x.CustomerOrder.SelectedCalculationRow != null,
+                        Freight = x.CustomerOrder != null && x.CustomerOrder.SelectedCalculationRow != null
+                            ? x.CustomerOrder.SelectedCalculationRow.Freight : null,
+                        Edition = x.CustomerOrder != null && x.CustomerOrder.SelectedCalculationRow != null
+                            ? x.CustomerOrder.SelectedCalculationRow.Edition : null,
+                        CostCenter = x.CustomerOrder != null && x.CustomerOrder.SupplierOrder != null
+                            && x.CustomerOrder.SupplierOrder.Supplier != null ? x.CustomerOrder.SupplierOrder.Supplier.CostCenter : null,
                         AccountNr = x.Cost == null ? null
                             : customer.EU ? x.Cost.AccountEU
                             : customer.Export ? x.Cost.AccountExport
                             : x.Cost.AccountDomestic,
                         Quantity = x.NrOf,
-                        UnitPrice = x.OutPrice ?? x.InPrice,
-                        UnitId = x.CustomerOrder != null ? x.CustomerOrder.UnitId : null,
+                        UnitPrice = x.OutPrice,
                         UnitMultiplicator = x.CustomerOrder != null && x.CustomerOrder.Unit != null
                             ? x.CustomerOrder.Unit.Multiplicator
                             : null,
                     })
                     .ToListAsync();
 
-                if (selectedOrderCostRows.Count != orderCostIds.Count)
+                if (orderCostIds.Except(selectedOrderCostRows.Select(x => x.OrderCostId)).Any())
                 {
                     return BadRequest(new { message = "One or more selected order costs were not found or do not belong to the specified customer." });
                 }
+
+                foreach (var cost in selectedOrderCostRows)
+                {
+                    if (!cost.DoDebit || !cost.CostId.HasValue || cost.CostName is null
+                        || (cost.AlreadyInvoiced && cost.DmtPercent is null && cost.DmtFixed is null))
+                    {
+                        return BadRequest(new { message = $"Orderkostnad {cost.OrderCostId} kan inte faktureras." });
+                    }
+                    if (selectedDeliveryRows.Count > 0 && cost.Separately)
+                    {
+                        return BadRequest(new { message = $"Orderkostnad {cost.OrderCostId} ska faktureras separat från leveranser." });
+                    }
+                    if (cost.DmtPercent.HasValue)
+                    {
+                        if (!cost.HasCalculationRow || cost.UnitMultiplicator.GetValueOrDefault() == 0
+                            || !cost.Freight.HasValue || !cost.Edition.HasValue)
+                        {
+                            return BadRequest(new { message = $"DMT-kostnad {cost.OrderCostId} saknar frakt, upplaga eller en giltig orderenhet i kalkylen." });
+                        }
+                        cost.UnitPrice = (decimal)cost.Freight.Value * cost.Edition.Value
+                            / cost.UnitMultiplicator.Value * cost.DmtPercent.Value / 100m;
+                    }
+                    if (!cost.UnitPrice.HasValue)
+                    {
+                        return BadRequest(new { message = $"Orderkostnad {cost.OrderCostId} ({cost.CostName}) saknar försäljningspris." });
+                    }
+                }
             }
+
+            var palletFormatIds = selectedDeliveryRows.Select(x => x.PalletFormatId).Where(x => x.HasValue).Select(x => x!.Value).Distinct().ToList();
+            var palletTranslations = await _dbContext.PalletFormats.AsNoTracking()
+                .Where(x => palletFormatIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.TranslationCode);
+            var translationCodes = palletTranslations.Values.Where(x => x.HasValue).Select(x => x!.Value)
+                .Concat(selectedOrderCostRows.Select(x => x.TranslationCode)).Distinct().ToList();
+            var invoiceLanguageCode = await _dbContext.Languages.AsNoTracking()
+                .Where(x => x.Id == customer.LanguageId).Select(x => x.LanguageCode).FirstOrDefaultAsync();
+            var translations = await _dbContext.TranslationItems.AsNoTracking()
+                .Where(x => invoiceLanguageCode != null && x.LangCode == invoiceLanguageCode
+                    && x.TranslationCode.HasValue && translationCodes.Contains(x.TranslationCode.Value)
+                    && x.Translation != null && x.Translation != "")
+                .GroupBy(x => x.TranslationCode!.Value)
+                .Select(x => new { Code = x.Key, Text = x.Select(y => y.Translation).First() })
+                .ToDictionaryAsync(x => x.Code, x => x.Text);
+
+            var customerOrderIds = selectedDeliveryRows.Select(x => x.CustomerOrderId)
+                .Concat(selectedOrderCostRows.Select(x => x.CustomerOrderId))
+                .Where(x => x.HasValue)
+                .Distinct()
+                .Take(2)
+                .ToList();
+            var singleCustomerOrder = customerOrderIds.Count == 1
+                ? await _dbContext.CustomerOrders
+                    .AsNoTracking()
+                    .Where(x => x.Id == customerOrderIds[0])
+                    .Select(x => new { x.OurReference, x.YourOrderNr, x.CustomerOrderNr })
+                    .SingleAsync()
+                : null;
 
             var priceTypeAccounts = await _dbContext.PriceTypes
                 .AsNoTracking()
-                .Where(x => x.Id == 1 || x.Id == 12 || x.Id == 13)
+                .Where(x => x.Id == 1 || x.Id == 12 || x.Id == 13 || x.Id == 107 || x.Id == 108)
                 .Include(x => x.Account)
                 .ToDictionaryAsync(x => x.Id, x => x.Account);
             var receivableAccountNr = customer.AccountNrAccountsReceivable
@@ -798,34 +1076,108 @@ namespace Econosys.Api.Controllers
 
             var invoiceRowRequests = new List<InvoiceRowMutationRequest>();
             var sortOrder = 1;
+            var selectedDeliveryKeys = selectedDeliveryRows.Select(x => (x.Type, x.DeliveryId)).ToHashSet();
 
             foreach (var delivery in selectedDeliveryRows.OrderBy(x => x.DeliveryDate).ThenBy(x => x.DeliveryId))
             {
-                var nrOf = delivery.Quantity;
-                var unitPrice = delivery.UnitPrice;
-
-                invoiceRowRequests.Add(new InvoiceRowMutationRequest
+                if (!palletsOnly)
                 {
-                    SortOrder = sortOrder,
-                    DeliveryToCustomerId = delivery.Type == "DeliveryToCustomer" ? delivery.DeliveryId : null,
-                    DeliveryFromStockId = delivery.Type == "DeliveryFromStock" ? delivery.DeliveryId : null,
-                    PriceTypeId = 1,
-                    Text = BuildDraftDeliveryText(delivery),
-                    NrOf = nrOf,
-                    UnitPrice = unitPrice,
-                    Sum = ComputeDraftRowSum(nrOf, unitPrice, delivery.UnitMultiplicator),
-                    VatGround = true,
-                    Calculate = true,
-                    AccountNr = FormatAccountNr(earningsAccountNr, "delivery earnings"),
-                    UnitId = delivery.UnitId,
-                });
+                    var nrOf = delivery.Quantity;
+                    var unitPrice = delivery.UnitPrice;
+                    if (quotationProducts.TryGetValue(delivery.QuotationId.GetValueOrDefault(), out var product))
+                    {
+                        delivery.NetWeightPer1000 = product.NetWeightPer1000;
+                    }
+                    if (product is null || !product.HasProduct || !delivery.NetWeightPer1000.HasValue
+                        || !nrOf.HasValue || string.IsNullOrWhiteSpace(delivery.ProductText))
+                    {
+                        _logger.LogWarning(
+                            "Incomplete product text source for invoice draft {DeliveryType} {DeliveryId}, customer order {CustomerOrderId}. Available fields and zero for missing weight or quantity will be used.",
+                            delivery.Type, delivery.DeliveryId, delivery.CustomerOrderId);
+                    }
 
-                sortOrder++;
+                    var yourOrderNr = delivery.YourOrderNr;
+                    if (delivery.IsSlattPallet && delivery.ParentDeliveryId.HasValue
+                        && selectedDeliveryKeys.Contains((delivery.Type, delivery.ParentDeliveryId.Value)))
+                    {
+                        yourOrderNr = string.Empty;
+                    }
+                    else if (delivery.Type == "DeliveryToCustomer"
+                        && transportOrderNumbers.TryGetValue(delivery.DeliveryId, out var transportNumbers)
+                        && transportNumbers.Count == 1 && !string.IsNullOrWhiteSpace(transportNumbers[0]))
+                    {
+                        yourOrderNr = transportNumbers[0];
+                    }
+                    else if (delivery.Type == "DeliveryFromStock"
+                        && callOffOrderNumbers.TryGetValue(delivery.DeliveryId, out var callOffNumbers)
+                        && callOffNumbers.Count == 1)
+                    {
+                        yourOrderNr = callOffNumbers[0];
+                    }
+
+                    invoiceRowRequests.Add(new InvoiceRowMutationRequest
+                    {
+                        SortOrder = sortOrder,
+                        DeliveryToCustomerId = delivery.Type == "DeliveryToCustomer" ? delivery.DeliveryId : null,
+                        DeliveryFromStockId = delivery.Type == "DeliveryFromStock" ? delivery.DeliveryId : null,
+                        PriceTypeId = 1,
+                        Text = BuildDraftDeliveryText(delivery, yourOrderNr, callOffTitle),
+                        NrOf = nrOf,
+                        UnitPrice = unitPrice,
+                        Sum = ComputeDraftRowSum(nrOf, unitPrice, delivery.UnitMultiplicator),
+                        VatGround = true,
+                        Calculate = true,
+                        CompareWithOrder = true,
+                        CostCenter = delivery.CostCenter,
+                        AccountNr = FormatAccountNr(earningsAccountNr, "delivery earnings"),
+                        UnitId = delivery.UnitId,
+                    });
+
+                    sortOrder++;
+                }
+
+                if (palletsOnly || (delivery.EurPallet && !customer.InvoicePalletsSeparately))
+                {
+                    if (delivery.PalletsAlreadyInvoiced)
+                        continue;
+                    if (!delivery.PalletPrice.HasValue)
+                        return BadRequest(new { message = $"Order {delivery.CustomerOrderNr} saknar försäljningspris för pall." });
+                    var palletText = "EUR-pall";
+                    if (palletTranslations.TryGetValue(delivery.PalletFormatId.GetValueOrDefault(), out var code)
+                        && code.HasValue && translations.TryGetValue(code.Value, out var translation))
+                    {
+                        palletText = translation;
+                    }
+                    if (palletsOnly)
+                        palletText += $" {delivery.YourOrderNr}/{delivery.CustomerOrderNr}";
+                    priceTypeAccounts.TryGetValue(107, out var palletAccount);
+                    var palletAccountNr = customer.AccountNrEarnings ?? (customer.EU ? palletAccount?.AccountNrEu
+                        : customer.Export ? palletAccount?.AccountNrExport : palletAccount?.AccountNr);
+                    invoiceRowRequests.Add(new InvoiceRowMutationRequest
+                    {
+                        SortOrder = sortOrder++,
+                        DeliveryToCustomerId = delivery.Type == "DeliveryToCustomer" ? delivery.DeliveryId : null,
+                        DeliveryFromStockId = delivery.Type == "DeliveryFromStock" ? delivery.DeliveryId : null,
+                        PriceTypeId = 107,
+                        PriceKey = "EURPallet",
+                        Text = palletText,
+                        NrOf = delivery.NrOfPallets.GetValueOrDefault(),
+                        UnitPrice = delivery.PalletPrice.Value,
+                        Sum = delivery.NrOfPallets.GetValueOrDefault() * delivery.PalletPrice.Value,
+                        VatGround = true,
+                        Calculate = true,
+                        CompareWithOrder = true,
+                        AccountNr = FormatAccountNr(palletAccountNr, "pallet earnings"),
+                        CostCenter = delivery.CostCenter,
+                    });
+                }
             }
 
             foreach (var orderCost in selectedOrderCostRows.OrderBy(x => x.OrderCostId))
             {
-                var nrOf = orderCost.Quantity.HasValue ? (double?)orderCost.Quantity.Value : null;
+                if (orderCost.IsNrOf && !orderCost.Quantity.HasValue)
+                    _logger.LogWarning("Order cost {OrderCostId} has no quantity; using the legacy zero quantity.", orderCost.OrderCostId);
+                var nrOf = orderCost.IsNrOf ? (double)orderCost.Quantity.GetValueOrDefault() : -1d;
                 var unitPrice = orderCost.UnitPrice.HasValue ? (double?)orderCost.UnitPrice.Value : null;
 
                 invoiceRowRequests.Add(new InvoiceRowMutationRequest
@@ -833,27 +1185,64 @@ namespace Econosys.Api.Controllers
                     SortOrder = sortOrder,
                     OrderCostId = orderCost.OrderCostId,
                     PriceTypeId = 2,
-                    Text = BuildDraftOrderCostText(orderCost),
+                    PriceKey = orderCost.CostId?.ToString(CultureInfo.InvariantCulture),
+                    Text = BuildDraftOrderCostText(orderCost, selectedDeliveryRows.Count == 0, translations),
                     NrOf = nrOf,
                     UnitPrice = unitPrice,
-                    Sum = ComputeDraftRowSum(nrOf, unitPrice, orderCost.UnitMultiplicator),
+                    Sum = (orderCost.IsNrOf ? nrOf : 1d) * unitPrice.GetValueOrDefault(),
                     VatGround = true,
                     Calculate = true,
+                    CompareWithOrder = true,
+                    CostCenter = orderCost.CostCenter,
                     AccountNr = FormatAccountNr(customer.AccountNrEarnings ?? orderCost.AccountNr, "order cost earnings"),
-                    UnitId = orderCost.UnitId,
                 });
 
                 sortOrder++;
             }
 
+            if (!palletsOnly)
+            {
+                var callOffIds = await _dbContext.CallOffDeliveries.AsNoTracking()
+                    .Where(x => x.DeliveryFromStockId.HasValue && deliveryFromStockIds.Contains(x.DeliveryFromStockId.Value))
+                    .Select(x => x.CallOffId).Distinct().ToListAsync();
+                var freightSources = await _dbContext.CallOffs.AsNoTracking()
+                    .Where(x => callOffIds.Contains(x.Id) && x.DoDebitFreight).ToListAsync();
+                var freightKeys = freightSources.Select(x => $"Freight:{x.Id}").ToList();
+                var invoicedFreightKeys = await _dbContext.InvoiceRows.AsNoTracking()
+                    .Where(x => x.PriceTypeId == 108 && x.PriceKey != null && freightKeys.Contains(x.PriceKey))
+                    .Select(x => x.PriceKey).ToListAsync();
+                priceTypeAccounts.TryGetValue(108, out var freightAccount);
+                var freightAccountNr = customer.AccountNrEarnings ?? (customer.EU ? freightAccount?.AccountNrEu
+                    : customer.Export ? freightAccount?.AccountNrExport : freightAccount?.AccountNr);
+                foreach (var freight in freightSources.Where(x => !invoicedFreightKeys.Contains($"Freight:{x.Id}")).OrderBy(x => x.Id))
+                {
+                    if (!freight.FreightCostToDebit.HasValue)
+                        _logger.LogWarning("Call-off {CallOffId} has no freight amount; using the legacy zero amount.", freight.Id);
+                    invoiceRowRequests.Add(new InvoiceRowMutationRequest
+                    {
+                        SortOrder = sortOrder++,
+                        PriceTypeId = 108,
+                        PriceKey = $"Freight:{freight.Id}",
+                        Text = "Frakt",
+                        NrOf = 1,
+                        UnitPrice = (double)freight.FreightCostToDebit.GetValueOrDefault(),
+                        Sum = (double)freight.FreightCostToDebit.GetValueOrDefault(),
+                        VatGround = true,
+                        Calculate = true,
+                        AccountNr = FormatAccountNr(freightAccountNr, "freight earnings"),
+                    });
+                }
+            }
+
             var vatBase = invoiceRowRequests
                 .Where(x => x.VatGround)
-                .Sum(x => x.Sum ?? 0d);
-            var vatValue = Math.Round(vatBase * 0.25d, 2, MidpointRounding.AwayFromZero);
+                .Sum(x => (decimal)(x.Sum ?? 0d));
+            var vatRate = GetCustomerVatRate(customer);
+            var vatValue = Math.Round(vatBase * (decimal)vatRate, 2, MidpointRounding.ToEven);
 
-            var totalBeforeRounding = invoiceRowRequests.Sum(x => x.Sum ?? 0d) + vatValue;
+            var totalBeforeRounding = invoiceRowRequests.Sum(x => (decimal)(x.Sum ?? 0d)) + vatValue;
             var roundedTotal = Math.Round(totalBeforeRounding, 0, MidpointRounding.AwayFromZero);
-            var roundingValue = Math.Round(roundedTotal - totalBeforeRounding, 2, MidpointRounding.AwayFromZero);
+            var roundingValue = Math.Round(roundedTotal - totalBeforeRounding, 2, MidpointRounding.ToEven);
 
             invoiceRowRequests.Add(new InvoiceRowMutationRequest
             {
@@ -861,7 +1250,7 @@ namespace Econosys.Api.Controllers
                 PriceTypeId = 13,
                 AccountNr = FormatAccountNr(vatAccount?.AccountNr, "VAT"),
                 Text = "Moms",
-                Sum = vatValue,
+                Sum = (double)vatValue,
                 VatGround = false,
                 Calculate = false,
             });
@@ -871,26 +1260,24 @@ namespace Econosys.Api.Controllers
                 SortOrder = sortOrder,
                 PriceTypeId = 12,
                 AccountNr = FormatAccountNr(roundingAccount?.AccountNr, "rounding"),
-                Text = "Öresavrundning",
-                Sum = roundingValue,
+                Text = "Öresutjämning",
+                Sum = (double)roundingValue,
                 VatGround = false,
                 Calculate = false,
             });
 
             var invoiceRows = BuildInvoiceRows(invoiceRowRequests, 0);
 
-            var accountRowRequests = invoiceRows
-                .Where(x => (x.Sum ?? 0d) != 0d)
-                .Select(x => new InvoiceAccountRowMutationRequest
-                {
-                    Text = x.Text,
-                    NrOf = x.NrOf,
-                    UnitPrice = x.UnitPrice,
-                    Sum = x.Sum,
-                    AccountNr = x.AccountNr,
-                    CostCenter = x.CostCenter,
-                })
-                .ToList();
+            List<InvoiceAccountRowMutationRequest> accountRowRequests;
+            try
+            {
+                accountRowRequests = await InvoiceInventoryAccounting.BuildAsync(_dbContext, invoiceRowRequests);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Invalid inventory valuation source for invoice draft customer {CustomerId}.", customer.Id);
+                return BadRequest(new { message = ex.Message });
+            }
 
             var invoice = new Invoice
             {
@@ -898,6 +1285,8 @@ namespace Econosys.Api.Controllers
                 InvoiceTypeCode = InvoiceTypeCode.Normal,
                 InvoiceNumber = await GetNextInvoiceNumberAsync(),
                 CustomerId = customer.Id,
+                Customer = customer,
+                UnitId = palletsOnly ? 2 : null,
                 CustomerName = customer.Name,
                 Address = customer.Address,
                 Address2 = customer.Address2,
@@ -911,6 +1300,9 @@ namespace Econosys.Api.Controllers
                 SalesCurrencyId = customer.CurrencyId,
                 Account = accountNrReceivable,
                 YourReference = customer.Reference,
+                OurReference = singleCustomerOrder?.OurReference,
+                YourOrderNr = singleCustomerOrder?.YourOrderNr,
+                OurOrderNrFreeInvoice = singleCustomerOrder?.CustomerOrderNr,
                 LanguageId = customer.LanguageId,
                 Created = SwedishTime.Now,
                 Edited = SwedishTime.Now,
@@ -961,6 +1353,101 @@ namespace Econosys.Api.Controllers
             return name[index..].Trim();
         }
 
+        private async Task<string?> ValidateInvoiceSourcesAsync(InvoiceMutationRequest request, int invoiceId)
+        {
+            if (request.InvoiceTypeCode == InvoiceTypeCode.Credit)
+                return null;
+            var rows = request.InvoiceRows ?? [];
+            var linkedRows = rows.Where(x => x.PriceTypeId == 1 || x.PriceTypeId == 107).ToList();
+            var directIds = linkedRows.Where(x => x.DeliveryToCustomerId > 0).Select(x => x.DeliveryToCustomerId!.Value).Distinct().ToList();
+            var stockIds = linkedRows.Where(x => x.DeliveryFromStockId > 0).Select(x => x.DeliveryFromStockId!.Value).Distinct().ToList();
+            var direct = await _dbContext.DeliveryToCustomers
+                .Where(x => directIds.Contains(x.Id))
+                .Select(x => new { x.Id, CustomerId = x.CustomerOrder != null ? x.CustomerOrder.CustomerId : null, x.IsPalletInvoicedSeparately })
+                .ToDictionaryAsync(x => x.Id);
+            var stock = await _dbContext.DeliveryFromStocks
+                .Where(x => stockIds.Contains(x.Id))
+                .Select(x => new { x.Id, CustomerId = x.CustomerOrder != null ? x.CustomerOrder.CustomerId : null, x.IsPalletInvoicedSeparately })
+                .ToDictionaryAsync(x => x.Id);
+            foreach (var row in linkedRows)
+            {
+                if (row.DeliveryToCustomerId > 0 && (!direct.TryGetValue(row.DeliveryToCustomerId.Value, out var delivery)
+                    || delivery.CustomerId != request.CustomerId))
+                    return "Direktleveransen saknas eller tillhör inte fakturans kund.";
+                if (row.DeliveryFromStockId > 0 && (!stock.TryGetValue(row.DeliveryFromStockId.Value, out var stockDelivery)
+                    || stockDelivery.CustomerId != request.CustomerId))
+                    return "Lagerleveransen saknas eller tillhör inte fakturans kund.";
+            }
+            if (linkedRows.Where(x => x.DeliveryToCustomerId > 0 || x.DeliveryFromStockId > 0)
+                .GroupBy(x => (x.PriceTypeId, x.DeliveryToCustomerId, x.DeliveryFromStockId)).Any(x => x.Count() > 1))
+                return "Samma leverans eller pallrad förekommer flera gånger i fakturan.";
+
+            var existing = await _dbContext.InvoiceRows.AsNoTracking()
+                .Where(x => x.InvoiceId != invoiceId && (x.PriceTypeId == 1 || x.PriceTypeId == 107)
+                    && ((x.DeliveryToCustomerId.HasValue && directIds.Contains(x.DeliveryToCustomerId.Value))
+                        || (x.DeliveryFromStockId.HasValue && stockIds.Contains(x.DeliveryFromStockId.Value))))
+                .Select(x => new { x.PriceTypeId, x.DeliveryToCustomerId, x.DeliveryFromStockId }).ToListAsync();
+            if (linkedRows.Any(row => existing.Any(x => x.PriceTypeId == row.PriceTypeId
+                && ((row.DeliveryToCustomerId > 0 && row.DeliveryToCustomerId == x.DeliveryToCustomerId)
+                    || (row.DeliveryFromStockId > 0 && row.DeliveryFromStockId == x.DeliveryFromStockId)))))
+                return "En vald leverans eller pallrad har redan fakturerats. Skapa ett nytt utkast.";
+
+            var previousPallets = await _dbContext.InvoiceRows.AsNoTracking()
+                .Where(x => x.InvoiceId == invoiceId && x.PriceTypeId == 107)
+                .Select(x => new { x.DeliveryToCustomerId, x.DeliveryFromStockId }).ToListAsync();
+            foreach (var row in linkedRows.Where(x => x.PriceTypeId == 107))
+            {
+                var previouslyIncluded = previousPallets.Any(x =>
+                    (row.DeliveryToCustomerId > 0 && x.DeliveryToCustomerId == row.DeliveryToCustomerId)
+                    || (row.DeliveryFromStockId > 0 && x.DeliveryFromStockId == row.DeliveryFromStockId));
+                if (!previouslyIncluded && ((row.DeliveryToCustomerId > 0 && direct[row.DeliveryToCustomerId.Value].IsPalletInvoicedSeparately)
+                    || (row.DeliveryFromStockId > 0 && stock[row.DeliveryFromStockId.Value].IsPalletInvoicedSeparately)))
+                    return "Pallarna är redan markerade som fakturerade. Skapa ett nytt utkast.";
+            }
+
+            var costIds = rows.Where(x => x.OrderCostId > 0).Select(x => x.OrderCostId!.Value).ToList();
+            if (costIds.Distinct().Count() != costIds.Count)
+                return "Samma orderkostnad förekommer flera gånger i fakturan.";
+            var costs = await _dbContext.OrderCosts.AsNoTracking().Where(x => costIds.Contains(x.Id))
+                .Select(x => new
+                {
+                    x.Id,
+                    x.DoDebit,
+                    CustomerId = x.CustomerOrder != null ? x.CustomerOrder.CustomerId : null,
+                    Recurring = x.Cost != null && (x.Cost.DmtPercent != null || x.Cost.DmtFixed != null),
+                    InvoicedElsewhere = x.InvoiceRows.Any(r => r.InvoiceId != invoiceId),
+                }).ToListAsync();
+            if (costs.Count != costIds.Count || costs.Any(x => !x.DoDebit || x.CustomerId != request.CustomerId || (!x.Recurring && x.InvoicedElsewhere)))
+                return "En orderkostnad saknas, tillhör fel kund, ska inte debiteras eller är redan fakturerad.";
+
+            var freightKeys = rows.Where(x => x.PriceTypeId == 108 && x.PriceKey?.StartsWith("Freight:", StringComparison.Ordinal) == true)
+                .Select(x => x.PriceKey!).ToList();
+            if (freightKeys.Distinct().Count() != freightKeys.Count || await _dbContext.InvoiceRows
+                .AnyAsync(x => x.InvoiceId != invoiceId && x.PriceTypeId == 108 && x.PriceKey != null && freightKeys.Contains(x.PriceKey)))
+                return "Avropets frakt har redan fakturerats. Skapa ett nytt utkast.";
+            return null;
+        }
+
+        private async Task SyncInvoiceSourceFlagsAsync(int invoiceId, IEnumerable<InvoiceRow> previousRows, IEnumerable<InvoiceRow> currentRows)
+        {
+            var current = currentRows.ToList();
+            var touched = previousRows.Concat(current).ToList();
+            var directIds = touched.Where(x => x.PriceTypeId == 107 && x.DeliveryToCustomerId > 0).Select(x => x.DeliveryToCustomerId!.Value).Distinct().ToList();
+            var stockIds = touched.Where(x => x.PriceTypeId == 107 && x.DeliveryFromStockId > 0).Select(x => x.DeliveryFromStockId!.Value).Distinct().ToList();
+            var costIds = touched.Where(x => x.OrderCostId > 0).Select(x => x.OrderCostId!.Value).Distinct().ToList();
+            var otherRows = await _dbContext.InvoiceRows.AsNoTracking().Where(x => x.InvoiceId != invoiceId
+                && ((x.PriceTypeId == 107 && ((x.DeliveryToCustomerId.HasValue && directIds.Contains(x.DeliveryToCustomerId.Value))
+                    || (x.DeliveryFromStockId.HasValue && stockIds.Contains(x.DeliveryFromStockId.Value))))
+                    || (x.OrderCostId.HasValue && costIds.Contains(x.OrderCostId.Value)))).ToListAsync();
+            var allRows = current.Concat(otherRows).ToList();
+            foreach (var delivery in await _dbContext.DeliveryToCustomers.Where(x => directIds.Contains(x.Id)).ToListAsync())
+                delivery.IsPalletInvoicedSeparately = allRows.Any(x => x.PriceTypeId == 107 && x.DeliveryToCustomerId == delivery.Id);
+            foreach (var delivery in await _dbContext.DeliveryFromStocks.Where(x => stockIds.Contains(x.Id)).ToListAsync())
+                delivery.IsPalletInvoicedSeparately = allRows.Any(x => x.PriceTypeId == 107 && x.DeliveryFromStockId == delivery.Id);
+            foreach (var cost in await _dbContext.OrderCosts.Where(x => costIds.Contains(x.Id)).ToListAsync())
+                cost.IsCostInvoicedSeparately = allRows.Any(x => x.OrderCostId == cost.Id);
+        }
+
         private static bool IsSupportedDraftDeliveryType(string type)
             => IsDeliveryToCustomerType(type) || IsDeliveryFromStockType(type);
 
@@ -970,48 +1457,41 @@ namespace Econosys.Api.Controllers
         private static bool IsDeliveryFromStockType(string type)
             => string.Equals(type, "DeliveryFromStock", StringComparison.OrdinalIgnoreCase);
 
-        private static string BuildDraftDeliveryText(DraftDeliveryRowSource source)
+        private static string BuildDraftDeliveryText(DraftDeliveryRowSource source, string? yourOrderNr, string callOffTitle)
         {
-            var label = source.Type == "DeliveryToCustomer" ? "Direktleverans" : "Lagerleverans";
-            var parts = new List<string> { label };
+            var lines = new List<string>();
 
-            if (source.DeliveryDate.HasValue)
+            if (!string.IsNullOrWhiteSpace(source.ProductText))
             {
-                parts.Add(source.DeliveryDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                lines.Add(source.ProductText);
             }
 
-            if (!string.IsNullOrWhiteSpace(source.CustomerOrderNr))
-            {
-                parts.Add($"Order {source.CustomerOrderNr}");
-            }
-
+            lines.Add($"Ert ordernr: {yourOrderNr}");
+            lines.Add($"Vårt ordernr: {source.CustomerOrderNr}");
             if (!string.IsNullOrWhiteSpace(source.CallOffNr))
             {
-                parts.Add($"Avrop {source.CallOffNr}");
+                lines.Add($"{callOffTitle} {source.CallOffNr}");
             }
 
-            return string.Join(" - ", parts);
+            var weight = source.NetWeightPer1000.GetValueOrDefault() / 1000d * source.Quantity.GetValueOrDefault();
+            lines.Add($"Vikt: {weight.ToString("#,0", CultureInfo.GetCultureInfo("sv-SE"))} kg");
+            return string.Join(Environment.NewLine, lines);
         }
 
-        private static string BuildDraftOrderCostText(DraftOrderCostRowSource source)
+        private static string BuildDraftOrderCostText(DraftOrderCostRowSource source, bool costsOnly, IReadOnlyDictionary<int, string?> translations)
         {
-            if (!string.IsNullOrWhiteSpace(source.CostName) && !string.IsNullOrWhiteSpace(source.CustomerOrderNr))
+            if (costsOnly)
             {
-                return $"{NormalizeOrderCostName(source.CostName)} - Order {source.CustomerOrderNr}";
+                return string.Join(Environment.NewLine, source.CostName,
+                    $"{source.ProductText}, order {source.CustomerOrderNr}", $"Ert onr: {source.YourOrderNr}");
             }
 
-            if (!string.IsNullOrWhiteSpace(source.CostName))
-            {
-                return NormalizeOrderCostName(source.CostName) ?? source.CostName;
-            }
-
-            if (!string.IsNullOrWhiteSpace(source.CustomerOrderNr))
-            {
-                return $"Orderkostnad - Order {source.CustomerOrderNr}";
-            }
-
-            return "Orderkostnad";
+            var name = translations.TryGetValue(source.TranslationCode, out var translation) ? translation : source.CostName;
+            return $"{name}, order {source.CustomerOrderNr}";
         }
+
+        private static double GetCustomerVatRate(Customer? customer) =>
+            customer is null ? 0.25 : customer.VAT ? (customer.VATRate.GetValueOrDefault() == 0 ? 25d : customer.VATRate!.Value) / 100d : 0d;
 
         private static double? ComputeDraftRowSum(double? nrOf, double? unitPrice, short? unitMultiplicator)
         {
@@ -1034,7 +1514,7 @@ namespace Econosys.Api.Controllers
                 .AsNoTracking()
                 .Where(x =>
                     !x.DoNotInvoice &&
-                    !x.InvoiceRows.Any() &&
+                    !x.InvoiceRows.Any(r => r.PriceTypeId == 1) &&
                     x.NrOfItems > 0 &&
                     x.DeliveryDate.HasValue && x.DeliveryDate.Value >= MinFromDate &&
                     x.CustomerOrder != null && !x.CustomerOrder.Completed &&
@@ -1107,7 +1587,7 @@ namespace Econosys.Api.Controllers
                 .AsNoTracking()
                 .Where(x =>
                     !x.DoNotInvoice &&
-                    !x.InvoiceRows.Any() &&
+                    !x.InvoiceRows.Any(r => r.PriceTypeId == 1) &&
                     x.NrOfItems > 0 &&
                     x.DeliveryDate.HasValue && x.DeliveryDate.Value >= MinFromDate &&
                     x.CustomerOrder != null && !x.CustomerOrder.Completed &&
@@ -1173,7 +1653,7 @@ namespace Econosys.Api.Controllers
             var orderCostRowsFromCustomerOrders = await _dbContext.OrderCosts
                 .AsNoTracking()
                 .Where(x =>
-                    !x.InvoiceRows.Any()
+                    (!x.InvoiceRows.Any() || (x.Cost != null && (x.Cost.DmtPercent != null || x.Cost.DmtFixed != null)))
                     && x.DoDebit
                     && x.CreatedDateTime != null && x.CreatedDateTime.Value >= new DateTime(2026, 1, 1, 0, 0, 0)
                     && x.CustomerOrder != null
@@ -1338,12 +1818,56 @@ namespace Econosys.Api.Controllers
             //     })
             //     .ToListAsync();
 
-            return deliveryToCustomerRows
+            var sourceRows = deliveryToCustomerRows
                 .Concat(deliveryFromStockRows)
                 .Concat(orderCostRowsFromCustomerOrders)
                 // .Concat(supplierOrderRows)
                 .Where(x => x.CustomerId.HasValue || !string.IsNullOrWhiteSpace(x.CustomerName))
                 .ToList();
+            var tomorrow = SwedishTime.Now.Date.AddDays(1);
+            var directPallets = await _dbContext.DeliveryToCustomers.AsNoTracking()
+                .Where(x => x.CustomerOrder != null && x.CustomerOrder.Customer != null && x.CustomerOrder.Customer.InvoicePalletsSeparately
+                    && x.DeliveryStatus == (int)DeliveryStatus.Delivered && x.NrOfPallets > 0 && x.DeliveryDate.HasValue
+                    && !x.IsPalletInvoicedSeparately && !x.InvoiceRows.Any(r => r.PriceTypeId == 107))
+                .Select(x => new InvoiceSourceRow
+                {
+                    Type = x.DeliveryDate < tomorrow ? "PalletsNow" : "PalletsInFuture",
+                    CustomerId = x.CustomerOrder!.CustomerId,
+                    CustomerName = x.CustomerOrder.Customer!.Name ?? "",
+                    Quantity = x.NrOfPallets,
+                }).ToListAsync();
+            var stockPallets = await _dbContext.DeliveryFromStocks.AsNoTracking()
+                .Where(x => x.CustomerOrder != null && x.CustomerOrder.Customer != null && x.CustomerOrder.Customer.InvoicePalletsSeparately
+                    && x.DeliveryStatus == (int)DeliveryStatus.Delivered && x.NrOfPallets > 0 && x.DeliveryDate.HasValue
+                    && !x.IsPalletInvoicedSeparately && !x.InvoiceRows.Any(r => r.PriceTypeId == 107))
+                .Select(x => new InvoiceSourceRow
+                {
+                    Type = x.DeliveryDate < tomorrow ? "PalletsNow" : "PalletsInFuture",
+                    CustomerId = x.CustomerOrder!.CustomerId,
+                    CustomerName = x.CustomerOrder.Customer!.Name ?? "",
+                    Quantity = x.NrOfPallets,
+                }).ToListAsync();
+            var palletBuckets = directPallets.Concat(stockPallets)
+                .GroupBy(x => new { x.CustomerId, x.Type, x.CustomerName })
+                .Select(group => new InvoiceSourceRow
+                {
+                    Type = group.Key.Type,
+                    CustomerId = group.Key.CustomerId,
+                    CustomerName = group.Key.CustomerName,
+                    Quantity = group.Sum(x => x.Quantity.GetValueOrDefault()),
+                })
+                .ToList();
+            foreach (var bucket in palletBuckets)
+            {
+                var existingCustomer = sourceRows.FirstOrDefault(x => x.CustomerId == bucket.CustomerId);
+                if (existingCustomer is not null)
+                {
+                    bucket.CustomerName = existingCustomer.CustomerName;
+                    bucket.CustomerInvoicingInfo = existingCustomer.CustomerInvoicingInfo;
+                }
+                sourceRows.Add(bucket);
+            }
+            return sourceRows;
         }
 
         private sealed class InvoiceSourceRow
@@ -1387,10 +1911,22 @@ namespace Econosys.Api.Controllers
             public string? CallOffNr { get; set; }
             public int? CustomerOrderId { get; set; }
             public string? CustomerOrderNr { get; set; }
+            public string? ProductText { get; set; }
+            public string? YourOrderNr { get; set; }
+            public int? QuotationId { get; set; }
+            public int? NetWeightPer1000 { get; set; }
+            public bool IsSlattPallet { get; set; }
+            public int? ParentDeliveryId { get; set; }
             public double? Quantity { get; set; }
             public double? UnitPrice { get; set; }
             public int? UnitId { get; set; }
             public short? UnitMultiplicator { get; set; }
+            public int? NrOfPallets { get; set; }
+            public bool PalletsAlreadyInvoiced { get; set; }
+            public bool EurPallet { get; set; }
+            public double? PalletPrice { get; set; }
+            public int? PalletFormatId { get; set; }
+            public string? CostCenter { get; set; }
         }
 
         private sealed class DraftOrderCostRowSource
@@ -1399,6 +1935,20 @@ namespace Econosys.Api.Controllers
             public int? CustomerOrderId { get; set; }
             public string? CustomerOrderNr { get; set; }
             public string? CostName { get; set; }
+            public int? CostId { get; set; }
+            public int TranslationCode { get; set; }
+            public string? ProductText { get; set; }
+            public string? YourOrderNr { get; set; }
+            public bool IsNrOf { get; set; }
+            public bool DoDebit { get; set; }
+            public bool Separately { get; set; }
+            public bool AlreadyInvoiced { get; set; }
+            public decimal? DmtPercent { get; set; }
+            public decimal? DmtFixed { get; set; }
+            public bool HasCalculationRow { get; set; }
+            public double? Freight { get; set; }
+            public int? Edition { get; set; }
+            public string? CostCenter { get; set; }
             public int? AccountNr { get; set; }
             public decimal? Quantity { get; set; }
             public decimal? UnitPrice { get; set; }
@@ -1473,6 +2023,7 @@ namespace Econosys.Api.Controllers
                 PostalAddress = invoice.PostalAddress,
                 Country = invoice.Country,
                 VatNr = invoice.VatNr,
+                VatRate = GetCustomerVatRate(invoice.Customer),
                 InvoiceDate = invoice.InvoiceDate,
                 YourReference = invoice.YourReference,
                 OurReference = invoice.OurReference,

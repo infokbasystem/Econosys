@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getInvoiceCustomerFields, isInvoiceCustomerLocked } from './invoiceUtils.js';
+import { applyInvoiceDerivedRows, computeInvoiceRowSum, getInvoiceCustomerFields, getInvoiceDraftMode, getInvoiceInventorySource, isInvoiceCustomerLocked, reorderInvoiceRows } from './invoiceUtils.js';
 
 test('standalone invoices allow customer selection', () => {
     assert.equal(isInvoiceCustomerLocked(null), false);
@@ -9,6 +9,59 @@ test('standalone invoices allow customer selection', () => {
         id: 10,
         invoiceRows: [{ deliveryToCustomerId: null, deliveryFromStockId: 0, orderCostId: null }],
     }), false);
+});
+
+test('invoice mode follows the selected legacy source rows without a mode selector', () => {
+    assert.deepEqual(getInvoiceDraftMode(['DeliveryToCustomer', 'OrderCost']), { invoiceMode: 'selection' });
+    assert.deepEqual(getInvoiceDraftMode(['OrderCostSeparately']), { invoiceMode: 'selection' });
+    assert.deepEqual(getInvoiceDraftMode(['PalletsNow']), { invoiceMode: 'palletsNow' });
+    assert.deepEqual(getInvoiceDraftMode(['PALLETSINFUTURE']), { invoiceMode: 'palletsFuture' });
+    for (const types of [['PalletsNow', 'PalletsInFuture'], ['PalletsNow', 'OrderCost'], ['PalletsInFuture', 'DeliveryFromStock']]) {
+        assert.match(getInvoiceDraftMode(types).error, /Välj endast pallrader/);
+    }
+});
+
+test('invoice rows can move both ways while preserving contents and keeping derived rows last', () => {
+    const first = { id: 11, sortOrder: 1, invoiceRowNumber: 50, text: 'Product', priceTypeId: 1, sum: 100, deliveryFromStockId: 30, nrOf: 10 };
+    const second = { tempId: 'new-cost', sortOrder: 2, text: 'Cost', priceTypeId: 2, sum: 20, orderCostId: 40 };
+    const third = { id: 12, sortOrder: 5, text: 'Freight', priceTypeId: 108, sum: 50, priceKey: 'Freight:60' };
+    const vat = { id: 13, priceTypeId: 13, sortOrder: 3, text: 'Moms', sum: 42.5, accountNr: '2611' };
+    const rounding = { id: 14, priceTypeId: 12, sortOrder: 4, text: 'Öresutjämning', sum: 0.5 };
+    const original = [first, second, vat, rounding, third];
+    const snapshot = structuredClone(original);
+
+    const down = reorderInvoiceRows(original, 11, 12);
+    assert.deepEqual(down.map((row) => row.text), ['Cost', 'Freight', 'Product', 'Moms', 'Öresutjämning']);
+    const up = reorderInvoiceRows(down, 11, 'new-cost');
+    assert.deepEqual(up.map((row) => row.text), ['Product', 'Cost', 'Freight', 'Moms', 'Öresutjämning']);
+    for (const rows of [down, up]) {
+        assert.deepEqual(rows.map((row) => row.sortOrder), [1, 2, 3, 4, 5]);
+        assert.deepEqual(rows.map((row) => row.invoiceRowNumber), [1, 2, 3, 4, 5]);
+        for (const row of rows) {
+            const source = original.find((item) => item.text === row.text);
+            assert.deepEqual(row, { ...source, sortOrder: row.sortOrder, invoiceRowNumber: row.invoiceRowNumber });
+        }
+    }
+    assert.deepEqual(original, snapshot);
+    assert.deepEqual(
+        reorderInvoiceRows(original, 'new-cost', 12).map((row) => row.text),
+        ['Product', 'Freight', 'Cost', 'Moms', 'Öresutjämning'],
+    );
+    assert.equal(reorderInvoiceRows(original, 11, 11), original);
+    assert.equal(reorderInvoiceRows(original, 13, 11), original);
+    assert.equal(reorderInvoiceRows(original, 11, 13), original);
+    assert.equal(reorderInvoiceRows(original, 11, 'missing-row'), original);
+});
+
+test('changing stock product row order does not trigger a new inventory valuation', () => {
+    const rows = [
+        { id: 1, priceTypeId: 1, deliveryFromStockId: 31, nrOf: 100 },
+        { id: 2, priceTypeId: 1, deliveryFromStockId: 30, nrOf: 200 },
+    ];
+    assert.equal(
+        getInvoiceInventorySource({ invoiceRows: rows }),
+        getInvoiceInventorySource({ invoiceRows: reorderInvoiceRows(rows, 1, 2) }),
+    );
 });
 
 test('delivery and order cost invoices lock the customer in drafts and saved invoices', () => {
@@ -35,6 +88,7 @@ test('customer selection maps all customer-dependent invoice header fields', () 
         postalAddress: 'City',
         country: 'Sweden',
         vatNr: 'SE123456789001',
+        vatRate: 25,
         reference: 'Contact',
         paymentDays: 45,
         termsOfPayment: '45 days',
@@ -50,6 +104,7 @@ test('customer selection maps all customer-dependent invoice header fields', () 
         postalAddress: 'City',
         country: 'Sweden',
         vatNr: 'SE123456789001',
+        vatRate: 0.25,
         yourReference: 'Contact',
         invoiceDays: 45,
         termsOfPayment: '45 days',
@@ -78,6 +133,7 @@ test('switching to a customer with missing details clears the previous customer 
         postalAddress: '',
         country: '',
         vatNr: '',
+        vatRate: 0.25,
         yourReference: '',
         invoiceDays: 30,
         termsOfPayment: '',
@@ -107,4 +163,69 @@ test('clearing a customer resets related fields without changing other invoice d
 
 test('zero payment days is preserved', () => {
     assert.equal(getInvoiceCustomerFields({ id: 42, paymentDays: 0 }).invoiceDays, 0);
+});
+
+test('VAT settings follow the customer, including exemption and the legacy default rate', () => {
+    assert.equal(getInvoiceCustomerFields({ vat: false, vatRate: 25 }).vatRate, 0);
+    assert.equal(getInvoiceCustomerFields({ vat: true, vatRate: 12 }).vatRate, 0.12);
+    assert.equal(getInvoiceCustomerFields({ vat: true, vatRate: 0 }).vatRate, 0.25);
+    assert.equal(getInvoiceCustomerFields({ vat: true, vatRate: null }).vatRate, 0.25);
+});
+
+test('derived rows use customer VAT and bank rounding without mutating source rows', () => {
+    const source = [{ sum: 12.5, vatGround: true }, { sum: 2, vatGround: false }];
+    for (const [rate, vat, rounding] of [[0.25, 3.12, 0.38], [0.12, 1.5, 0], [0, 0, 0.5]]) {
+        const rows = applyInvoiceDerivedRows(source, rate);
+        assert.equal(rows.find((row) => row.priceTypeId === 13).sum, vat);
+        assert.equal(rows.find((row) => row.priceTypeId === 12).sum, rounding);
+        assert.equal(rows.find((row) => row.priceTypeId === 12).text, 'Öresutjämning');
+    }
+    assert.deepEqual(source, [{ sum: 12.5, vatGround: true }, { sum: 2, vatGround: false }]);
+});
+
+test('negative and VAT-exempt totals round halves away from zero', () => {
+    for (const [sum, expected] of [[2.5, 0.5], [-2.5, -0.5], [-2.6, -0.4], [2.4, -0.4]]) {
+        const rows = applyInvoiceDerivedRows([{ sum, vatGround: false }], 0);
+        assert.equal(rows.find((row) => row.priceTypeId === 12).sum, expected);
+        assert.equal(rows.find((row) => row.priceTypeId === 13).sum, 0);
+    }
+});
+
+test('bank rounding is stable at fractional-cent midpoints for both signs', () => {
+    for (const [sum, vat, rounding] of [[4.06, 1.02, -0.08], [-4.06, -1.02, 0.08]]) {
+        const rows = applyInvoiceDerivedRows([{ sum, vatGround: true }], 0.25);
+        assert.equal(rows.find((row) => row.priceTypeId === 13).sum, vat);
+        assert.equal(rows.find((row) => row.priceTypeId === 12).sum, rounding);
+    }
+});
+
+test('recalculating rows preserves configured accounts and does not duplicate derived rows', () => {
+    const source = [
+        { sum: 100, vatGround: true },
+        { priceTypeId: 13, text: 'Moms', sum: 25, accountNr: '2611' },
+        { priceTypeId: 12, text: 'Existing rounding text', sum: 0, accountNr: '3740' },
+    ];
+    const rows = applyInvoiceDerivedRows(applyInvoiceDerivedRows(source, 0.12), 0);
+    assert.equal(rows.length, 3);
+    assert.equal(rows[1].sum, 0);
+    assert.equal(rows[1].accountNr, '2611');
+    assert.equal(rows[2].accountNr, '3740');
+    assert.equal(rows[2].text, 'Existing rounding text');
+});
+
+test('fixed costs, quantity costs, pallets and freight ignore the product unit divisor', () => {
+    const units = [{ id: 1, multiplicator: 1000 }];
+    for (const [priceTypeId, nrOf, expected] of [[2, -1, 25], [2, 1.5, 37.5], [107, 3, 75], [108, 1, 25], [1, 2000, 50]]) {
+        assert.equal(computeInvoiceRowSum({ priceTypeId, nrOf, unitPrice: 25, unitId: 1 }, units), expected);
+    }
+});
+
+test('inventory preview inputs include only stock product quantities, not pallet or text edits', () => {
+    const product = { priceTypeId: 1, deliveryFromStockId: 30, nrOf: 1000, text: 'Product' };
+    const invoice = { invoiceRows: [product, { priceTypeId: 107, deliveryFromStockId: 30, nrOf: 2 }] };
+    assert.deepEqual(JSON.parse(getInvoiceInventorySource(invoice)), [{ priceTypeId: 1, deliveryFromStockId: 30, nrOf: 1000 }]);
+    product.text = 'Edited';
+    const key = getInvoiceInventorySource(invoice);
+    product.nrOf = 2000;
+    assert.notEqual(getInvoiceInventorySource(invoice), key);
 });

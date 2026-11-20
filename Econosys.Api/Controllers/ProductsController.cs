@@ -288,6 +288,7 @@ namespace Econosys.Api.Controllers
                     "createdby" => ApplyOrder(ordered, query, x => x.CreatedBy, isDescending),
                     "editedby" => ApplyOrder(ordered, query, x => x.EditedBy, isDescending),
                     "productcode" => ApplyOrder(ordered, query, x => x.ProductCode, isDescending),
+                    "ppwrupdatedat" => ApplyOrder(ordered, query, x => x.InternalInfo != null ? x.InternalInfo.PpwrUpdatedAt : null, isDescending),
                     "olddbid" => ApplyOrder(ordered, query, x => x.OldDbId, isDescending),
                     "materialgroup" => ApplyOrder(ordered, query, x => x.MaterialGroup, isDescending),
                     "active" => ApplyOrder(ordered, query, x => x.Active, isDescending),

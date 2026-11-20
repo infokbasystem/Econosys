@@ -110,7 +110,7 @@ public class TransportOrderPdfTests
 
         var file = Assert.IsType<FileContentResult>(
             await controller.GetTransportOrderPdfById(1, "SUPPLIER", null, [10, 20, 10]));
-        Assert.Equal("Transportorder_100_10-20.pdf", file.FileDownloadName);
+        Assert.Equal("Transportorder 100 10-20.pdf", file.FileDownloadName);
         Assert.Equal("%PDF-", Encoding.ASCII.GetString(file.FileContents, 0, 5));
         Assert.IsType<FileContentResult>(await controller.GetTransportOrderPdfById(1, "SUPPLIER", 10));
         Assert.IsType<BadRequestObjectResult>(
@@ -203,7 +203,7 @@ public class TransportOrderPdfTests
 
         var file = Assert.IsType<FileContentResult>(await controller.GetTransportOrderPdfById(1, "TRANSPORTER", null));
         Assert.Equal("application/pdf", file.ContentType);
-        Assert.Equal("Transportorder_260418_2.pdf", file.FileDownloadName);
+        Assert.Equal("Transportorder 260418 2.pdf", file.FileDownloadName);
         Assert.True(file.EnableRangeProcessing);
         Assert.Equal("%PDF-", Encoding.ASCII.GetString(file.FileContents, 0, 5));
     }

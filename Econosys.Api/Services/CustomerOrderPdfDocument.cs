@@ -3,6 +3,7 @@ using Econosys.Api.Models;
 using QuestPDF.Fluent;
 using QuestPDF.Infrastructure;
 using static Econosys.Api.Services.DocumentPdfLayout;
+using PdfUnit = QuestPDF.Infrastructure.Unit;
 
 namespace Econosys.Api.Services;
 
@@ -13,7 +14,7 @@ public static class CustomerOrderPdfDocument
         bool ShowToolRetentionText, IReadOnlyList<CostLine> Costs);
 
     public static Content BuildContent(CustomerOrder order, DocumentPdfTranslations texts,
-        PalletFormat? palletFormat = null, Calculation? calculation = null)
+        PalletFormat? palletFormat = null, Calculation? calculation = null, bool quotationIncludesPallet = false)
     {
         calculation ??= order.SelectedCalculationRow?.Calculation;
         var currency = order.SalesCurrency ?? calculation?.SalesCurrency;
@@ -33,42 +34,64 @@ public static class CustomerOrderPdfDocument
             delivery += " " + texts.Text(DocumentPdfTranslations.CustomerCallOff);
         }
         var costs = new List<CostLine>();
-        if (order.EurPallet)
+        var unitPriceSeparator = $"{texts.Text(-101)}. *";
+        if (order.EurPallet && quotationIncludesPallet)
         {
-            var palletName = texts.Text(palletFormat?.TranslationCode ?? 0, palletFormat?.Name ?? texts.Text(-66));
+            const string fallback = "Exkl. EUR-pall";
+            var palletCode = palletFormat?.TranslationCode ?? 0;
             var known = order.EurPalletValue.HasValue && order.NrOfEurPallet.HasValue;
-            costs.Add(new CostLine($"{texts.Text(-99)} {palletName}" + (known ? "" : $" {texts.Text(-100)}"),
-                known ? texts.Money((decimal)order.EurPalletValue!.Value * order.NrOfEurPallet!.Value, currencyName) : ""));
+            var description = palletCode == 0 ? fallback
+                : $"{texts.Text(-99)} {texts.Text(palletCode, palletFormat?.Name ?? fallback)}"
+                    + (known ? "" : $" {texts.Text(-100)}");
+            var amount = "";
+            if (order.NrOfEurPallet is short count && count != 0
+                && order.EurPalletValue is double unitPrice && unitPrice != 0)
+            {
+                amount = $"{count.ToString(texts.Culture)} {unitPriceSeparator} {unitPrice.ToString(texts.Culture)}"
+                    + $" = {(unitPrice * count).ToString(texts.Culture)} {currencyName}";
+            }
+            costs.Add(new CostLine(description, amount));
         }
 
-        foreach (var cost in order.OrderCosts.Where(cost => cost.DoDebit && cost.DoPrintOnCustomerOrder).OrderBy(cost => cost.Id))
+        foreach (var cost in PrintableCosts(order))
         {
-            var known = cost.OutPrice.HasValue;
-            var code = known ? cost.Cost?.TranslationCodeCustomerOrderKnown : cost.Cost?.TranslationCodeCustomerOrderUnknown;
+            var known = UsesKnownCostText(cost);
             var fallback = $"{texts.Text(-99)} {cost.Cost?.Name}".TrimEnd()
                 + (known ? "" : $" {texts.Text(-100)}");
             var isDmt = cost.Cost?.DmtFixed.HasValue == true || cost.Cost?.DmtPercent.HasValue == true;
-            var amount = isDmt ? "" : texts.Money(cost.OutPrice * (cost.NrOf ?? 1m), currencyName);
-            if (!isDmt && known && cost.Cost?.IsNrOf == true && cost.NrOf.HasValue)
+            var amount = "";
+            if (!isDmt && cost.OutPrice is decimal outPrice)
             {
-                amount = $"{cost.NrOf.Value.ToString("0.#####", texts.Culture)} {texts.Text(-101)}"
-                    + $" \u00d7 {texts.Money(cost.OutPrice, currencyName)} = {amount}";
+                amount = $"{(outPrice * (cost.NrOf ?? 1m)).ToString("0", texts.Culture)} {currencyName}";
+                if (cost.Cost?.IsNrOf == true)
+                {
+                    amount = $"{cost.NrOf.GetValueOrDefault().ToString("0", texts.Culture)} {unitPriceSeparator}"
+                        + $" {outPrice.ToString("0", texts.Culture)} = {amount}";
+                }
             }
-            costs.Add(new CostLine(texts.Text(code ?? 0, fallback), amount));
+            costs.Add(new CostLine(texts.Text(CostTranslationCode(cost) ?? 0, fallback), amount));
         }
 
         return new Content($"{currencyName}/{unitName}", texts.Number(order.Edition), texts.Number(price, decimals), delivery,
             order.OrderCosts.Any(cost => cost.DoDebit && cost.Cost?.DoPrintScrapToolsTextOnCustomerOrder == true), costs);
     }
 
+    internal static IEnumerable<OrderCost> PrintableCosts(CustomerOrder order) =>
+        order.OrderCosts.Where(cost => cost.DoDebit && cost.DoPrintOnCustomerOrder).OrderBy(cost => cost.Id);
+
+    private static bool UsesKnownCostText(OrderCost cost) => cost.OutPrice.GetValueOrDefault() != 0;
+
+    internal static int? CostTranslationCode(OrderCost cost) =>
+        UsesKnownCostText(cost) ? cost.Cost?.TranslationCodeCustomerOrderKnown : cost.Cost?.TranslationCodeCustomerOrderUnknown;
+
     public static byte[] Generate(CustomerOrder order, CompanyInfo? company, DocumentPdfTranslations texts,
-        PalletFormat? palletFormat = null, Calculation? calculation = null) =>
-        CreateDocument(order, company, texts, palletFormat, calculation).GeneratePdf();
+        PalletFormat? palletFormat = null, Calculation? calculation = null, bool quotationIncludesPallet = false) =>
+        CreateDocument(order, company, texts, palletFormat, calculation, quotationIncludesPallet).GeneratePdf();
 
     public static IDocument CreateDocument(CustomerOrder order, CompanyInfo? company, DocumentPdfTranslations texts,
-        PalletFormat? palletFormat = null, Calculation? calculation = null)
+        PalletFormat? palletFormat = null, Calculation? calculation = null, bool quotationIncludesPallet = false)
     {
-        var content = BuildContent(order, texts, palletFormat, calculation);
+        var content = BuildContent(order, texts, palletFormat, calculation, quotationIncludesPallet);
         return Document.Create(document => document.Page(page =>
         {
             Configure(page);
@@ -133,8 +156,8 @@ public static class CustomerOrderPdfDocument
                         });
                         table.Header(header =>
                         {
-                            header.Cell().Element(HeaderCell).Text(texts.Text(-41));
-                            header.Cell().Element(HeaderCell).Text(content.PriceHeading);
+                            header.Cell().Element(LeftPriceHeaderCell).Text(texts.Text(-41));
+                            header.Cell().Element(RightPriceHeaderCell).Text(content.PriceHeading);
                         });
                         table.Cell().Element(BodyCell).Text(content.Quantity);
                         table.Cell().Element(BodyCell).Text(content.Price);
@@ -153,7 +176,6 @@ public static class CustomerOrderPdfDocument
                             row.RelativeItem().AlignRight().Text(cost.Amount);
                         });
                     }
-                    additions.Item().Text(texts.Text(DocumentPdfTranslations.ToolingDisclaimer)).Italic();
                     if (content.ShowToolRetentionText)
                     {
                         additions.Item().Text(texts.Text(-94)).Italic();
@@ -164,8 +186,7 @@ public static class CustomerOrderPdfDocument
                     }
                 });
 
-                column.Item().ExtendVertical().AlignBottom().PaddingTop(24).Width(300)
-                    .BorderTop(0.5f).BorderColor("#dbe4e2").PaddingTop(10).Column(terms =>
+                column.Item().ExtendVertical().AlignBottom().PaddingTop(24).PaddingBottom(2, PdfUnit.Centimetre).Column(terms =>
                 {
                     terms.Spacing(6);
                     terms.Item().Element(container => Field(container, texts.Text(-37), content.Delivery, 95));

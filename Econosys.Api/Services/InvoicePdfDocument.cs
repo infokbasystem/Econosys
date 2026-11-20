@@ -10,9 +10,16 @@ public static class InvoicePdfDocument
     private const int RoundingPriceTypeId = 12;
     private const int VatPriceTypeId = 13;
     private const string DefaultCurrency = "SEK";
+    private const float HeaderCornerRadius = 6;
+    private const string HeaderBackground = "#f1f4f3";
+    private const float AmountRightInset = 6;
 
-    public static byte[] Generate(Invoice invoice, CompanyInfo? company)
+    public static byte[] Generate(Invoice invoice, CompanyInfo? company, string? vatInfo) =>
+        CreateDocument(invoice, company, vatInfo).GeneratePdf();
+
+    public static IDocument CreateDocument(Invoice invoice, CompanyInfo? company, string? vatInfo)
     {
+        var printForScanning = invoice.Customer?.PrintForDocumentScanning == true;
         var invoiceRows = invoice.InvoiceRows
             .OrderBy(row => row.SortOrder ?? int.MaxValue)
             .ThenBy(row => row.Id)
@@ -46,42 +53,42 @@ public static class InvoicePdfDocument
         {
             document.Page(page =>
             {
-                DocumentPdfLayout.Configure(page);
+                DocumentPdfLayout.Configure(page, printForScanning);
 
                 page.Content().Column(column =>
                 {
                     column.Spacing(10);
-                    column.Item().Element(container => ComposeHeader(container, invoice));
+                    column.Item().Element(container => ComposeHeader(container, invoice, printForScanning));
                     column.Item().Element(container => ComposeCustomerSection(container, invoice));
-                    column.Item().Element(container => ComposeLines(container, lines, currency));
+                    column.Item().Element(container => ComposeLines(container, lines, currency, printForScanning));
                     column.Item().Element(container => ComposeTotals(container, subtotal, vat, rounding, total, currency));
                     column.Item().PaddingTop(34).Element(container => ComposeTerms(container, invoice));
                 });
 
                 page.Footer()
                     .PaddingTop(14)
-                    .Element(container => DocumentPdfLayout.InvoiceFooter(container, company));
+                    .Element(container => DocumentPdfLayout.InvoiceFooter(container, company, vatInfo, printForScanning: printForScanning));
             });
-        }).GeneratePdf();
+        });
     }
 
-    private static void ComposeHeader(IContainer container, Invoice invoice)
+    private static void ComposeHeader(IContainer container, Invoice invoice, bool printForScanning)
     {
         container.Row(row =>
         {
             row.RelativeItem().Column(column =>
             {
-                column.Item().Element(DocumentPdfLayout.Logo);
+                column.Item().Element(item => DocumentPdfLayout.Logo(item, printForScanning));
             });
 
-            row.ConstantItem(190).AlignRight().Column(column =>
+            row.ConstantItem(190).Column(column =>
             {
-                column.Item().PaddingTop(14).Text(text =>
+                column.Item().PaddingTop(14).AlignRight().Text(text =>
                 {
                     text.Span("Fakturadatum: ").Bold();
                     text.Span(FormatDate(invoice.InvoiceDate));
                 });
-                column.Item().PaddingTop(5).Text(text =>
+                column.Item().PaddingTop(5).AlignRight().Text(text =>
                 {
                     text.Span("Förfallodag: ").Bold();
                     text.Span(FormatDate(invoice.InvoiceDate?.AddDays(invoice.InvoiceDays ?? 0)));
@@ -109,10 +116,10 @@ public static class InvoicePdfDocument
                     details.Item().Text(text => { text.Span("Er referens      ").Bold(); text.Span(Value(invoice.YourReference)); });
                     details.Item().Text(text => { text.Span("Ert ordernr.     ").Bold(); text.Span(Value(invoice.YourOrderNr)); });
                 });
-                row.ConstantItem(190).AlignRight().Column(title =>
+                row.ConstantItem(190).Column(title =>
                 {
-                    title.Item().Text("Faktura").FontSize(16).SemiBold();
-                    title.Item().Text(Value(invoice.InvoiceNumber?.ToString())).FontSize(16).SemiBold();
+                    title.Item().AlignRight().Text("Faktura").FontSize(16).SemiBold();
+                    title.Item().AlignRight().Text(Value(invoice.InvoiceNumber?.ToString())).FontSize(16).SemiBold();
                 });
             });
         });
@@ -130,8 +137,11 @@ public static class InvoicePdfDocument
         });
     }
 
-    private static void ComposeLines(IContainer container, IReadOnlyList<InvoiceLine> lines, string currency)
+    private static void ComposeLines(IContainer container, IReadOnlyList<InvoiceLine> lines, string currency, bool printForScanning)
     {
+        IContainer StyleHeader(IContainer cell) => HeaderCell(printForScanning ? cell : cell.Background(HeaderBackground));
+        IContainer StyleBody(IContainer cell) => BodyCell(cell, printForScanning);
+
         container.Table(table =>
         {
             table.ColumnsDefinition(columns =>
@@ -146,15 +156,17 @@ public static class InvoicePdfDocument
             table.Header(header =>
             {
                 header.Cell().Element(EmptyHeaderCell).Text("");
-                header.Cell().Element(HeaderCell).AlignRight().Text("Antal");
-                header.Cell().Element(HeaderCell).Text("Enhet");
-                header.Cell().Element(HeaderCell).AlignRight().Text("Pris/Enhet");
-                header.Cell().Element(HeaderCell).AlignRight().Text("Total");
+                header.Cell().CornerRadiusTopLeft(HeaderCornerRadius).CornerRadiusBottomLeft(HeaderCornerRadius)
+                    .Element(StyleHeader).AlignRight().Text("Antal");
+                header.Cell().Element(StyleHeader).Text("Enhet");
+                header.Cell().Element(StyleHeader).AlignRight().Text("Pris/Enhet");
+                header.Cell().CornerRadiusTopRight(HeaderCornerRadius).CornerRadiusBottomRight(HeaderCornerRadius)
+                    .Element(StyleHeader).AlignRight().Text("Total");
             });
 
             foreach (var line in lines)
             {
-                table.Cell().Element(BodyCell).Column(column =>
+                table.Cell().Element(StyleBody).Column(column =>
                 {
                     column.Item().Text(Value(line.Description)).Bold();
                     if (!string.IsNullOrWhiteSpace(line.Description2))
@@ -162,10 +174,10 @@ public static class InvoicePdfDocument
                         column.Item().Text(line.Description2!);
                     }
                 });
-                table.Cell().Element(BodyCell).AlignRight().Text(FormatNumber(line.Quantity));
-                table.Cell().Element(BodyCell).Text(Value(line.Unit));
-                table.Cell().Element(BodyCell).AlignRight().Text(FormatMoney(line.UnitPrice, currency));
-                table.Cell().Element(BodyCell).AlignRight().Text(FormatMoney(line.Total, currency));
+                table.Cell().Element(StyleBody).AlignRight().Text(FormatNumber(line.Quantity));
+                table.Cell().Element(StyleBody).Text(Value(line.Unit));
+                table.Cell().Element(StyleBody).AlignRight().Text(FormatMoney(line.UnitPrice, currency));
+                table.Cell().Element(StyleBody).AlignRight().Text(FormatMoney(line.Total, currency));
             }
         });
     }
@@ -177,25 +189,28 @@ public static class InvoicePdfDocument
             column.Item().Row(row =>
             {
                 row.RelativeItem().Text("Summa exkl. moms").Bold();
-                row.ConstantItem(105).AlignRight().Text(FormatMoney(subtotal, currency)).Bold();
+                SummaryAmount(row.ConstantItem(105)).Text(FormatMoney(subtotal, currency)).Bold();
             });
             column.Item().Row(row =>
             {
                 row.RelativeItem().Text("Moms 25%");
-                row.ConstantItem(105).AlignRight().Text(FormatMoney(vat, currency));
+                SummaryAmount(row.ConstantItem(105)).Text(FormatMoney(vat, currency));
             });
             column.Item().Row(row =>
             {
                 row.RelativeItem().Text("Summa inkl. moms");
-                row.ConstantItem(105).AlignRight().Text(FormatMoney(total, currency));
+                SummaryAmount(row.ConstantItem(105)).Text(FormatMoney(total, currency));
             });
             column.Item().Row(row =>
             {
                 row.RelativeItem().Text("Öresutjämning");
-                row.ConstantItem(105).AlignRight().Text(FormatMoney(rounding, currency));
+                SummaryAmount(row.ConstantItem(105)).Text(FormatMoney(rounding, currency));
             });
         });
     }
+
+    private static IContainer SummaryAmount(IContainer container) =>
+        container.PaddingRight(AmountRightInset).AlignRight();
 
     private static void ComposeTerms(IContainer container, Invoice invoice)
     {
@@ -233,20 +248,20 @@ public static class InvoicePdfDocument
     }
 
     private static IContainer HeaderCell(IContainer container) => container
-        .Background("#f1f4f3")
         .PaddingVertical(7)
-        .PaddingHorizontal(6)
+        .PaddingLeft(6)
+        .PaddingRight(AmountRightInset)
         .DefaultTextStyle(style => style.Bold());
 
     private static IContainer EmptyHeaderCell(IContainer container) => container
         .PaddingVertical(7)
         .PaddingHorizontal(6);
 
-    private static IContainer BodyCell(IContainer container) => container
+    private static IContainer BodyCell(IContainer container, bool printForScanning) => container
         .BorderBottom(0.5f)
-        .BorderColor("#dbe4e2")
+        .BorderColor(printForScanning ? "#000000" : "#dbe4e2")
         .PaddingVertical(6)
-        .PaddingRight(6);
+        .PaddingRight(AmountRightInset);
 
     private static string Value(string? value) => string.IsNullOrWhiteSpace(value) ? "" : value;
 

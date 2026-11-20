@@ -142,6 +142,93 @@ namespace Econosys.Api.Controllers
             return Ok(MapToDto(saved));
         }
 
+        [HttpPut("{id:int}/price-adjustment")]
+        public async Task<ActionResult<CustomerOrderDto>> UpdatePrices(
+            int id,
+            [FromBody] UpdateCustomerOrderPricesRequest request)
+        {
+            var legacyUser = await _legacyUserResolution.ResolveCurrentUserAsync(User);
+            if (legacyUser is null)
+            {
+                return Unauthorized(new { message = "Could not map authenticated user to a legacy user by email." });
+            }
+            if (legacyUser.AuthorizationLevel >= 0 && (legacyUser.AuthorizationLevel & 64) == 64)
+            {
+                return Forbid();
+            }
+
+            var customerOrder = await _dbContext.CustomerOrders.FirstOrDefaultAsync(x => x.Id == id);
+            if (customerOrder is null)
+            {
+                return NotFound();
+            }
+            if (!customerOrder.SupplierOrderId.HasValue || !customerOrder.SelectedCalculationRowId.HasValue)
+            {
+                return BadRequest(new { message = "Ordererkännandet saknar kopplad beställning eller kalkylrad." });
+            }
+
+            var supplierOrder = await _dbContext.SupplierOrders
+                .FirstOrDefaultAsync(x => x.Id == customerOrder.SupplierOrderId.Value);
+            if (supplierOrder is null)
+            {
+                return BadRequest(new { message = "Den kopplade beställningen kunde inte hittas." });
+            }
+
+            var calculationRow = await _dbContext.CalculationRows
+                .FirstOrDefaultAsync(x => x.Id == customerOrder.SelectedCalculationRowId.Value);
+            if (calculationRow is null)
+            {
+                return BadRequest(new { message = "Den kopplade kalkylraden kunde inte hittas." });
+            }
+
+            var purchaseRate = calculationRow.ArchivedPurchaseCurrencyRate;
+            var salesRate = calculationRow.ArchivedSalesCurrencyRate;
+            if (!purchaseRate.HasValue || purchaseRate.Value == 0
+                || !salesRate.HasValue || salesRate.Value == 0)
+            {
+                return BadRequest(new { message = "Kalkylradens valutakurser saknas eller är ogiltiga." });
+            }
+
+            var purchasePriceInSalesCurrency = request.PurchasePrice * purchaseRate.Value / salesRate.Value;
+            var totalCost = (double)purchasePriceInSalesCurrency
+                + calculationRow.Freight.GetValueOrDefault()
+                + calculationRow.Storage.GetValueOrDefault()
+                + calculationRow.Other.GetValueOrDefault();
+            var percentAddition = totalCost == 0
+                ? 0
+                : ((double)request.SalesPrice - totalCost) / totalCost * 100;
+            if (!double.IsFinite(percentAddition))
+            {
+                return BadRequest(new { message = "Påslaget kunde inte beräknas med de valda priserna." });
+            }
+
+            var hasOtherCustomerOrders = await _dbContext.CustomerOrders
+                .AnyAsync(x => x.Id != customerOrder.Id
+                    && x.SelectedCalculationRowId == calculationRow.Id);
+            if (hasOtherCustomerOrders)
+            {
+                var adjustedCalculationRow = new CalculationRow();
+                _dbContext.Entry(adjustedCalculationRow).CurrentValues.SetValues(calculationRow);
+                adjustedCalculationRow.Id = 0;
+                _dbContext.CalculationRows.Add(adjustedCalculationRow);
+                customerOrder.SelectedCalculationRow = adjustedCalculationRow;
+                calculationRow = adjustedCalculationRow;
+            }
+
+            calculationRow.PurchasePrice = (double)request.PurchasePrice;
+            calculationRow.SalesPrice = (double)request.SalesPrice;
+            calculationRow.PercentAddition = percentAddition;
+            supplierOrder.PurchasePrice = (double)request.PurchasePrice;
+            customerOrder.SalesPrice = (double)request.SalesPrice;
+            customerOrder.Edited = SwedishTime.Now;
+            customerOrder.EditedBy = legacyUser.Id;
+
+            await _dbContext.SaveChangesAsync();
+
+            var saved = await BuildDetailsQuery().FirstAsync(x => x.Id == customerOrder.Id);
+            return Ok(MapToDto(saved));
+        }
+
         [HttpPost("search")]
         public async Task<ActionResult<PagedResultDto<CustomerOrderDto>>> Search([FromBody] SearchCustomerOrdersRequest? request)
         {

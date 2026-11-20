@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Printer, Save } from 'lucide-react';
-import { useBlocker, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { ArrowLeft, Pencil, Printer, Save, X } from 'lucide-react';
+import { useBlocker, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
@@ -8,10 +9,12 @@ import ConfirmationModal from '../../components/ConfirmationModal';
 import ActionButton from '../../components/ActionButton';
 import EntityOrderFlowNavigation from '../../components/EntityOrderFlowNavigation';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
+import OrderProductInfo from '../../components/OrderProductInfo';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 import useDocumentTitle from '../../hooks/useDocumentTitle';
 import OrderCost from '../../components/OrderCost';
 import OrderHistory from '../../components/OrderHistory';
+import MailLog from '../../components/MailLog';
 import LabeledDatePicker from '../../components/LabeledDatePicker';
 import LabeledCheckbox from '../../components/LabeledCheckbox';
 import LabeledInput from '../../components/LabeledInput';
@@ -23,11 +26,12 @@ import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { formatDateTime } from '../../helpers/dateUtils';
 import { parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
-import { getFileNameFromContentDisposition } from '../../helpers/fileUtils';
+import { resolvePdfFileName } from '../../helpers/pdfFileName';
 import { usePdf } from '../../contexts/PdfContext';
 
 const toArray = (value) => (Array.isArray(value) ? value : []);
 const toInputValue = (value) => (value == null ? '' : String(value));
+const deliveryDateRequiredMessage = 'Välj ett leveransdatum för att kunna spara ordererkännandet.';
 const parseNullableDecimal = (value) => {
     if (value == null || value === '') return null;
     const normalized = String(value).trim().replace(',', '.');
@@ -140,17 +144,12 @@ const renderMetaRow = (label, value, userName) => {
     );
 };
 
-const renderReadOnlyInfoRow = (label, value) => (
-    <div>
-        <div className="text-tiny tracking-wide text-gray-400">{label}</div>
-        <div className="mt-1 text-xs text-gray-800 break-words">{value || 'Saknas'}</div>
-    </div>
-);
-
 const CustomerOrder = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { id } = useParams();
+    const [searchParams] = useSearchParams();
+    const draftKey = searchParams.get('draftKey');
     const isNewCustomerOrder = id === 'new' || id == null;
 
     const [customerOrder, setCustomerOrder] = useState(null);
@@ -160,6 +159,10 @@ const CustomerOrder = () => {
     const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
     const [showPrintWarning, setShowPrintWarning] = useState(false);
+    const [showPriceAdjustment, setShowPriceAdjustment] = useState(false);
+    const [isSavingPriceAdjustment, setIsSavingPriceAdjustment] = useState(false);
+    const [priceAdjustmentError, setPriceAdjustmentError] = useState('');
+    const [priceAdjustment, setPriceAdjustment] = useState({ purchasePrice: '', salesPrice: '' });
     const [isPrinting, setIsPrinting] = useState(false);
     const { openPdfPreview, closePdfPreview, markStale } = usePdf();
     const pdfRequestRef = useRef(0);
@@ -241,12 +244,13 @@ const CustomerOrder = () => {
         try {
             const response = await apiClient.get(`/pdf/customerorder/${customerOrder.id}`, { responseType: 'blob' });
             if (requestId !== pdfRequestRef.current) return;
-            const fileName = getFileNameFromContentDisposition(response.headers['content-disposition'])
-                || `customerorder_${customerOrder.customerOrderNr || customerOrder.id}.pdf`;
+            const fileName = await resolvePdfFileName(response, 'customerorder', customerOrder.id,
+                `Ordererkännande ${customerOrder.customerOrderNr || customerOrder.id}.pdf`);
+            if (requestId !== pdfRequestRef.current) return;
             if (pdfObjectUrlRef.current) URL.revokeObjectURL(pdfObjectUrlRef.current);
             const url = URL.createObjectURL(response.data);
             pdfObjectUrlRef.current = url;
-            openPdfPreview(url, fileName);
+            openPdfPreview(url, fileName, null, null, { itemType: 'CUSTOMERORDER', itemId: customerOrder.id });
         } catch (error) {
             if (requestId !== pdfRequestRef.current) return;
             console.error('Failed to load customer order PDF:', error);
@@ -332,6 +336,13 @@ const CustomerOrder = () => {
 
     const handleSave = async () => {
         if (!customerOrder) return;
+        if (!customerOrder.deliveryDate) {
+            setMessages((prev) => [
+                ...prev.filter((message) => message.text !== deliveryDateRequiredMessage),
+                { type: 'error', text: deliveryDateRequiredMessage },
+            ]);
+            return;
+        }
 
         try {
             const payload = buildPayload(customerOrder);
@@ -356,6 +367,17 @@ const CustomerOrder = () => {
             ]);
 
             if (isCreatingNew && saved?.id) {
+                if (draftKey) {
+                    try {
+                        window.localStorage.removeItem(draftKey);
+                    } catch (error) {
+                        console.error('Failed to remove customer order draft:', error);
+                        setMessages((prev) => [
+                            ...prev.filter((message) => message.type !== 'warning'),
+                            { type: 'warning', text: 'Ordererkännandet sparades, men utkastet kunde inte rensas.' },
+                        ]);
+                    }
+                }
                 skipUnsavedCheckRef.current = true;
                 navigate(`/order/customerorders/${saved.id}`, { replace: true });
             }
@@ -365,6 +387,62 @@ const CustomerOrder = () => {
                 ...prev.filter((message) => message.type !== 'error'),
                 { type: 'error', text: 'Kunde inte spara ordererkännande.' },
             ]);
+        }
+    };
+
+    const beginPriceAdjustment = () => {
+        if (hasUnsavedChanges()) {
+            setMessages((prev) => [
+                ...prev.filter((message) => message.type !== 'error'),
+                { type: 'error', text: 'Spara ordererkännandet innan priserna ändras.' },
+            ]);
+            return;
+        }
+
+        setPriceAdjustment({
+            purchasePrice: toInputValue(customerOrder.supplierOrderPurchasePrice),
+            salesPrice: toInputValue(customerOrder.salesPrice),
+        });
+        setPriceAdjustmentError('');
+        setShowPriceAdjustment(true);
+    };
+
+    const handlePriceAdjustmentSave = async () => {
+        const purchasePrice = parseNullableDecimal(priceAdjustment.purchasePrice);
+        const salesPrice = parseNullableDecimal(priceAdjustment.salesPrice);
+        if (purchasePrice == null || salesPrice == null) {
+            setPriceAdjustmentError('Ange både inköpspris och försäljningspris.');
+            return;
+        }
+
+        setIsSavingPriceAdjustment(true);
+        setPriceAdjustmentError('');
+        try {
+            const response = await apiClient.put(
+                `/customerorders/${customerOrder.id}/price-adjustment`,
+                { purchasePrice, salesPrice },
+            );
+            const saved = response?.data;
+            if (!saved?.id) {
+                throw new Error('Price adjustment response did not contain a customer order.');
+            }
+
+            const savedWithEditable = {
+                ...saved,
+                orderCosts: toArray(saved.orderCosts).map(mapApiOrderCostToEditable),
+            };
+            updateCustomerOrder(savedWithEditable);
+            setOriginalCustomerOrder(structuredClone(savedWithEditable));
+            setMessages((prev) => [
+                ...prev.filter((message) => message.type !== 'success'),
+                { type: 'success', text: 'Inköps- och försäljningspris uppdaterades.' },
+            ]);
+            setShowPriceAdjustment(false);
+        } catch (error) {
+            console.error('Failed to update customer order prices:', error);
+            setPriceAdjustmentError(error?.response?.data?.message || 'Kunde inte uppdatera inköps- och försäljningspris.');
+        } finally {
+            setIsSavingPriceAdjustment(false);
         }
     };
 
@@ -397,13 +475,18 @@ const CustomerOrder = () => {
             try {
                 if (isNewCustomerOrder) {
                     const empty = createNewCustomerOrderModel();
-                    const draft = location.state?.customerOrderDraft;
+                    const routeDraft = location.state?.customerOrderDraft;
+                    const rawDraft = !routeDraft && draftKey ? window.localStorage.getItem(draftKey) : null;
+                    const draft = routeDraft ?? (rawDraft ? JSON.parse(rawDraft) : null);
                     if (!isActive) return;
                     const initialOrder = draft
                         ? { ...empty, ...draft, id: 0, orderCosts: toArray(draft.orderCosts) }
                         : empty;
                     setCustomerOrder(initialOrder);
                     setOriginalCustomerOrder(structuredClone(initialOrder));
+                    if (draftKey && !routeDraft && !rawDraft) {
+                        setMessages([{ type: 'warning', text: 'Utkastet kunde inte hittas. Ett tomt ordererkännande öppnades i stället.' }]);
+                    }
                 } else {
                     const requestKey = `customerorders:${id}`;
                     const response = await getSharedRequest(requestKey, () => apiClient.get(`/customerorders/${id}`));
@@ -432,7 +515,7 @@ const CustomerOrder = () => {
         return () => {
             isActive = false;
         };
-    }, [id, isNewCustomerOrder, location.state]);
+    }, [draftKey, id, isNewCustomerOrder, location.state, setMessages]);
 
     useEffect(() => {
         let isActive = true;
@@ -592,9 +675,104 @@ const CustomerOrder = () => {
     const purchasePriceLabel = formatCompactNumber(customerOrder?.supplierOrderPurchasePrice, 2);
     const purchaseCurrencyLabel = customerOrder?.supplierOrderPurchaseCurrencyName ?? (customerOrder?.supplierOrderPurchaseCurrencyId ? `ID ${customerOrder.supplierOrderPurchaseCurrencyId}` : '');
     const purchaseCurrencyRateLabel = formatCompactNumber(customerOrder?.supplierOrderPurchaseCurrencyRate, 4);
+    const editPurchasePrice = parseNullableDecimal(priceAdjustment.purchasePrice);
+    const purchasePriceInSalesCurrency = editPurchasePrice != null
+        && Number(customerOrder?.supplierOrderPurchaseCurrencyRate) !== 0
+        && Number(customerOrder?.salesCurrencyRate) !== 0
+        ? editPurchasePrice * Number(customerOrder.supplierOrderPurchaseCurrencyRate) / Number(customerOrder.salesCurrencyRate)
+        : null;
+    const canEditPrices = Number(customerOrder?.supplierOrderId) > 0
+        && Number(customerOrder?.selectedCalculationRowId) > 0;
 
     return (
         <div className="relative flex min-h-full flex-col">
+            {showPriceAdjustment && createPortal(
+                <div
+                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
+                    onMouseDown={(event) => {
+                        if (!isSavingPriceAdjustment && event.target === event.currentTarget) {
+                            setShowPriceAdjustment(false);
+                        }
+                    }}
+                >
+                    <section
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="customer-order-price-adjustment-title"
+                        className="w-full max-w-2xl rounded-sm border-2 border-[#fafad2] bg-[#ffffe0] p-6 shadow-xl"
+                        onKeyDown={(event) => {
+                            if (event.key === 'Escape' && !isSavingPriceAdjustment) {
+                                event.stopPropagation();
+                                setShowPriceAdjustment(false);
+                            }
+                        }}
+                    >
+                        <div className="relative mb-6 flex items-center justify-center">
+                            <h2 id="customer-order-price-adjustment-title" className="text-sm font-semibold">
+                                Redigera inköps- och försäljningspris
+                            </h2>
+                            <button
+                                type="button"
+                                onClick={() => setShowPriceAdjustment(false)}
+                                disabled={isSavingPriceAdjustment}
+                                aria-label="Stäng prisredigering"
+                                className="absolute right-0 rounded p-1 text-gray-500 hover:bg-gray-100 disabled:opacity-50"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            <label className="block text-xs text-gray-700">
+                                <span className="mb-1 block font-medium">Inköpspris ({purchaseCurrencyLabel || 'valuta saknas'})</span>
+                                <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={priceAdjustment.purchasePrice}
+                                    onChange={(event) => setPriceAdjustment((prev) => ({ ...prev, purchasePrice: event.target.value }))}
+                                    className="w-full rounded-sm border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900"
+                                />
+                                <span className="mt-1 block text-gray-500">Kurs: {purchaseCurrencyRateLabel || '-'}</span>
+                            </label>
+                            <label className="block text-xs text-gray-700">
+                                <span className="mb-1 block font-medium">Försäljningspris ({salesCurrencyLabel || 'valuta saknas'})</span>
+                                <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={priceAdjustment.salesPrice}
+                                    onChange={(event) => setPriceAdjustment((prev) => ({ ...prev, salesPrice: event.target.value }))}
+                                    className="w-full rounded-sm border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900"
+                                />
+                                <span className="mt-1 block text-gray-500">Kurs: {salesCurrencyRateLabel || '-'}</span>
+                            </label>
+                        </div>
+                        <p className="mt-4 text-xs text-gray-600">
+                            Inköpspris i försäljningsvaluta: {formatCompactNumber(purchasePriceInSalesCurrency, 2)} {salesCurrencyLabel}
+                        </p>
+                        {priceAdjustmentError && (
+                            <p role="alert" className="mt-4 text-xs text-red-700">{priceAdjustmentError}</p>
+                        )}
+                        <div className="mt-6 flex justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowPriceAdjustment(false)}
+                                disabled={isSavingPriceAdjustment}
+                                className="bg-orange-400 px-6 py-1.5 text-xs text-white shadow-md hover:bg-orange-600 disabled:opacity-50"
+                            >
+                                Avbryt
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void handlePriceAdjustmentSave()}
+                                disabled={isSavingPriceAdjustment}
+                                className="bg-lime-700 px-6 py-1.5 text-xs text-white shadow-md hover:bg-lime-900 disabled:opacity-50"
+                            >
+                                {isSavingPriceAdjustment ? 'Sparar…' : 'Spara'}
+                            </button>
+                        </div>
+                    </section>
+                </div>,
+                document.body,
+            )}
             <ConfirmationModal
                 isOpen={showPrintWarning}
                 onClose={() => setShowPrintWarning(false)}
@@ -660,24 +838,36 @@ const CustomerOrder = () => {
                                 accent="slate"
                             />
                         )}
+                        {customerOrder.id > 0 && (
+                            <div className="flex items-center gap-10 ml-20">
+                                <ActionButton
+                                    label="Ändra ink-/fsg.pris"
+                                    icon={Pencil}
+                                    onClick={beginPriceAdjustment}
+                                    disabled={!canEditPrices || isSavingPriceAdjustment}
+                                    accent="slate"
+                                />
+                                <MailLog
+                                    itemType="customerorder"
+                                    itemId={Number(customerOrder.id)}
+                                    refreshKey={originalCustomerOrder?.edited}
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
 
-                <div className="ml-[-5px] w-200 mb-4 rounded-sm border border-gray-200 bg-[#e8eeed] px-5 py-4 shadow-sm">
-                    <div className="grid grid-cols-[3fr_1fr]">
-                        <div className="mt-0 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                            {renderReadOnlyInfoRow('Produkt', customerOrder?.product)}
-                            {renderReadOnlyInfoRow('Material', customerOrder?.material)}
-                            {renderReadOnlyInfoRow('Format', customerOrder?.format)}
-                            {renderReadOnlyInfoRow('Färg', customerOrder?.color)}
-                            {renderReadOnlyInfoRow('Konstruktion', customerOrder?.construction)}
-                            {renderReadOnlyInfoRow('FSC', customerOrder?.isFSC ? 'Ja' : 'Nej')}
-                        </div>
-                        <div>
-                            {renderReadOnlyInfoRow('Beställning', customerOrder?.supplierOrderNr || 'Saknas')}
-                        </div>
-                    </div>
-                </div>
+                <OrderProductInfo
+                    calculationId={customerOrder?.calculationId}
+                    fallbackProduct={{
+                        name: customerOrder?.product,
+                        material: customerOrder?.material,
+                        format: customerOrder?.format,
+                        color: customerOrder?.color,
+                        construction: customerOrder?.construction,
+                    }}
+                    additionalInfo={[{ label: 'Beställning', value: customerOrder?.supplierOrderNr }]}
+                />
 
                 <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
                     <span>
@@ -805,7 +995,12 @@ const CustomerOrder = () => {
                                 <LabeledDatePicker
                                     label="Leveransdatum"
                                     value={customerOrder?.deliveryDate}
-                                    onChange={(nextValue) => updateCustomerOrder({ deliveryDate: nextValue })}
+                                    onChange={(nextValue) => {
+                                        updateCustomerOrder({ deliveryDate: nextValue });
+                                        if (nextValue) {
+                                            setMessages((prev) => prev.filter((message) => message.text !== deliveryDateRequiredMessage));
+                                        }
+                                    }}
                                     weekMode={Boolean(customerOrder?.deliveryDateWeekMode)}
                                     onWeekModeChange={(nextWeekMode) => updateCustomerOrder({ deliveryDateWeekMode: nextWeekMode })}
                                     enableWeekSelect

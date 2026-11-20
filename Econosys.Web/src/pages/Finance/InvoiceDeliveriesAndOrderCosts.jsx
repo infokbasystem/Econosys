@@ -8,6 +8,7 @@ import SegmentedFilter from '../../components/SegmentedFilter';
 import SelectCircleCheckbox from '../../components/SelectCircleCheckbox';
 import apiClient from '../../config/apiClient';
 import { getSharedRequest } from '../../helpers/sharedRequest';
+import { getInvoiceDraftMode } from '../../helpers/invoiceUtils';
 
 const DRAFT_STORAGE_KEY_PREFIX = 'invoice-draft:';
 const SKELETON_DELAY_MS = 200;
@@ -24,6 +25,7 @@ const isDeliveryType = (type) => {
 };
 
 const isOrderCostType = (type) => String(type ?? '').toLowerCase().startsWith('ordercost');
+const isPalletType = (type) => ['palletsnow', 'palletsinfuture'].includes(String(type ?? '').toLowerCase());
 
 const formatAmount = (value) => {
     if (value == null) return '';
@@ -103,6 +105,11 @@ const normalizeGroupedCustomer = (raw) => {
         customerId: raw?.customerId ?? null,
         customerName: raw?.customerName ?? '',
         invoicingInfo: raw?.customerInvoicingInfo ?? '',
+        pallets: toArray(raw?.pallets).map((pallet) => ({
+            type: pallet.type,
+            quantity: pallet.quantity,
+            selectionKey: buildSelectionKey(pallet.type, raw?.customerId),
+        })),
         deliveries: deliveries.map((d) => {
             const hasMissingWeight = Boolean(d?.hasMissingWeight);
             const isWeightMissingEmailSent = Boolean(d?.isWeightMissingEmailSent);
@@ -183,6 +190,8 @@ const toListTypeLabel = (type) => {
     if (normalized === 'ordercostseparately') return '(faktureras separat)';
     if (normalized === 'ordercostimmediateseparately') return '(faktureras omgående separat)';
     if (normalized === 'supplierorder') return 'Beställning';
+    if (normalized === 'palletsnow') return 'Pallar redan lev';
+    if (normalized === 'palletsinfuture') return 'Pallar ej lev';
     return type ?? '';
 };
 
@@ -279,7 +288,7 @@ const normalizeListRow = (raw, index) => {
     const deliveryId = raw?.deliveryId ?? null;
     const orderCostId = raw?.orderCostId ?? null;
     const supplierOrderId = raw?.supplierOrderId ?? null;
-    const selectionId = deliveryId ?? orderCostId ?? supplierOrderId;
+    const selectionId = isPalletType(type) ? raw?.customerId : deliveryId ?? orderCostId ?? supplierOrderId;
 
     const hasMissingWeight = Boolean(raw?.hasMissingWeight);
     const hasMissingCostSalesPrice = Boolean(raw?.hasMissingCostSalesPrice);
@@ -654,6 +663,7 @@ const InvoiceDeliveriesAndOrderCosts = () => {
             });
 
             customer.orderCosts?.forEach((orderCost) => {
+                if (String(orderCost.leveranstyp).toLowerCase() !== 'ordercost') return;
                 const id = orderCost.selectionKey;
                 const customerOrderId = orderCost.customerOrderId != null ? String(orderCost.customerOrderId) : '';
                 addToSetMap(orderCostIdsByCustomerOrderId, customerOrderId, id);
@@ -674,7 +684,7 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                 addToSetMap(deliveryIdsByCallOffNr, callOffNr, id);
             }
 
-            if (isOrderCost) {
+            if (isOrderCost && normalizedType === 'ordercost') {
                 const id = buildSelectionKey(row.type, row.orderCostId != null ? row.orderCostId : row.id);
                 const customerOrderId = row.customerOrderId != null ? String(row.customerOrderId) : '';
                 addToSetMap(orderCostIdsByCustomerOrderId, customerOrderId, id);
@@ -692,6 +702,9 @@ const InvoiceDeliveriesAndOrderCosts = () => {
         const index = new Map();
 
         groupedCustomers.forEach((customer) => {
+            customer.pallets.forEach((pallet) => {
+                index.set(pallet.selectionKey, { kind: 'pallet', customerId: customer.customerId, type: pallet.type, id: customer.customerId });
+            });
             customer.deliveries?.forEach((delivery) => {
                 if (!delivery.selectionKey) return;
                 index.set(delivery.selectionKey, {
@@ -728,7 +741,7 @@ const InvoiceDeliveriesAndOrderCosts = () => {
             if (!selectionKey) return;
 
             index.set(selectionKey, {
-                kind: isDeliveryType(row.type) ? 'delivery' : isOrderCostType(row.type) ? 'orderCost' : 'other',
+                kind: isPalletType(row.type) ? 'pallet' : isDeliveryType(row.type) ? 'delivery' : isOrderCostType(row.type) ? 'orderCost' : 'other',
                 customerId: row.customerId,
                 type: row.type,
                 id: row.deliveryId ?? row.orderCostId ?? row.id,
@@ -835,6 +848,12 @@ const InvoiceDeliveriesAndOrderCosts = () => {
             return;
         }
 
+        const { invoiceMode, error: modeError } = getInvoiceDraftMode(selectedEntities.map((entity) => entity.type));
+        if (modeError) {
+            setCreateInvoiceError(modeError);
+            return;
+        }
+
         const deliveries = selectedEntities
             .filter((entity) => entity.kind === 'delivery')
             .map((entity) => ({ type: entity.type, id: Number(entity.id) }))
@@ -857,6 +876,7 @@ const InvoiceDeliveriesAndOrderCosts = () => {
         try {
             const response = await apiClient.post('/invoices/draft/from-selection', {
                 customerId: Number(distinctCustomerIds[0]),
+                invoiceMode,
                 deliveries,
                 orderCostIds,
             });
@@ -1076,6 +1096,20 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                                                 </tr>
                                             </thead>
                                             <tbody>
+                                                {customer.pallets.map((pallet) => (
+                                                    <tr key={pallet.selectionKey} className="h-7 border-b border-gray-100">
+                                                        <td className="px-4">
+                                                            <SelectCircleCheckbox
+                                                                checked={!!checkedDeliveries[pallet.selectionKey]}
+                                                                onChange={() => toggleDelivery(pallet.selectionKey)}
+                                                                ariaLabel={`Välj ${toListTypeLabel(pallet.type)} för ${customer.customerName}`}
+                                                            />
+                                                        </td>
+                                                        <td className="px-3 py-2 text-gray-700" colSpan={6}>{toListTypeLabel(pallet.type)}</td>
+                                                        <td className="px-3 py-2 text-right text-gray-700">{pallet.quantity}<span className="text-gray-400 ml-1">st.</span></td>
+                                                        <td colSpan={3}></td>
+                                                    </tr>
+                                                ))}
                                                 {displayDeliveries?.length > 0 && (
                                                     displayDeliveries.map((d, idx) => {
                                                         const deliveryIdsToToggle = d.displaySelectionKeys?.length ? d.displaySelectionKeys : [d.selectionKey];
@@ -1250,7 +1284,7 @@ const InvoiceDeliveriesAndOrderCosts = () => {
 
 
                                     {customer.deliveries.length === 0 &&
-                                        customer.orderCosts.length === 0 && (
+                                        customer.orderCosts.length === 0 && customer.pallets.length === 0 && (
                                             <p className="text-xs text-gray-400 px-4 py-3">
                                                 Inga poster att fakturera.
                                             </p>
@@ -1302,7 +1336,7 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                                             <SelectCircleCheckbox
                                                 checked={rowChecked}
                                                 onChange={() => toggleDeliveryGroup(rowSelectionIds)}
-                                                ariaLabel={`Välj ${row.customerName || 'post'} ${row.avropsnummer || row.ordernr || ''}`.trim() || 'Välj post'}
+                                                ariaLabel={`Välj ${row.customerName || 'post'} ${isPalletType(row.type) ? row.itemType : row.avropsnummer || row.ordernr || ''}`.trim() || 'Välj post'}
                                             />
                                         </td>
                                         <td className="px-3 pt-[6px] pb-[4px] text-gray-700 whitespace-nowrap">{row.customerName}</td>
@@ -1316,7 +1350,7 @@ const InvoiceDeliveriesAndOrderCosts = () => {
                                             {row.antal}<span className="text-gray-400 ml-1">st.</span>
                                         </td>
                                         <td className="px-3 pt-[6px] pb-[4px] text-gray-700 text-right whitespace-nowrap">
-                                            {formatAmount(row.salesprice)}<span className="text-gray-400 ml-1">SEK</span>
+                                            {!isPalletType(row.type) && <>{formatAmount(row.salesprice)}<span className="text-gray-400 ml-1">SEK</span></>}
                                         </td>
                                         <td className="px-3 pt-[6px] pb-[4px] text-gray-700 text-right whitespace-nowrap">
                                             {row.weightPer1000 != null ? <>{row.weightPer1000}<span className="text-gray-400 ml-1">kg</span></> : ''}

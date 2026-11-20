@@ -20,6 +20,7 @@ namespace Econosys.Api.DTOs
         public string? ImportantCalculationInfo { get; set; }
         public string? LoadingInstruction { get; set; }
         public int? ResponsibleUserId { get; set; }
+        public string? ResponsibleUserName { get; set; }
         public bool VAT { get; set; }
         public bool Active { get; set; }
         public string? Country { get; set; }

@@ -520,8 +520,8 @@ const Product = () => {
                     <div>
                         <div className="flex items-center gap-1">
                             <ActionButton
-                                label="PPWR uppdaterad"
-                                icon={Check}
+                                label="PPWR"
+                                icon={product?.ppwrUpdatedAt ? Check : null}
                                 onClick={handleMarkPpwrUpdated}
                                 disabled={!product?.id || isUpdatingPpwr}
                                 accent="teal"

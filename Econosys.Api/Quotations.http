@@ -3,9 +3,15 @@
 @calculationId = 1
 @inquiryId = 1
 @quotationId = 1
+@supplierOrderId = 1
 
 ### Branded PDF in the customer's language (saved quotation only)
+# The closing message is the quotation company's current Kundmeddelande setting.
 GET {{baseUrl}}/api/pdf/quotation/{{quotationId}}
+Authorization: Bearer {{token}}
+
+### Branded PDF using a supplier-order cost version belonging to the quotation
+GET {{baseUrl}}/api/pdf/quotation/{{quotationId}}?supplierOrderId={{supplierOrderId}}
 Authorization: Bearer {{token}}
 
 ### Unknown quotation returns 404

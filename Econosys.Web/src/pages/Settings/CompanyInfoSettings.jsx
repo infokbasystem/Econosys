@@ -278,9 +278,9 @@ const mapFormToPayload = (form) => ({
     defaultCustomerMessage: form.defaultCustomerMessage,
     euText: form.euText,
     exportText: form.exportText,
-    jeevesApiEndpoint: form.jeevesApiEndpoint,
+    jeevesApiEndpoint: form.jeevesApiEndpoint.trim() || null,
     jeevesApiKey: form.jeevesApiKey || null,
-    jeevesTestApiEndpoint: form.jeevesTestApiEndpoint,
+    jeevesTestApiEndpoint: form.jeevesTestApiEndpoint.trim() || null,
     jeevesTestApiKey: form.jeevesTestApiKey || null,
 });
 
