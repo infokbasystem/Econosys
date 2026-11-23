@@ -168,6 +168,7 @@ builder.Services.AddScoped<IMailLogService, MailLogService>();
 builder.Services.AddScoped<CalculationFreightPriceService>();
 builder.Services.AddScoped<DeliveryEditingService>();
 builder.Services.AddScoped<IPalletFormatOptionsService, PalletFormatOptionsService>();
+builder.Services.AddScoped<IPartyPricesService, PartyPricesService>();
 builder.Services.AddScoped<IOrderHistoryService, OrderHistoryService>();
 builder.Services.AddScoped<IOrderFlowNavigationService, OrderFlowNavigationService>();
 builder.Services.AddScoped<ITransportOrderCostCalculationService, TransportOrderCostCalculationService>();

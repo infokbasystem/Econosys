@@ -351,6 +351,23 @@ namespace Econosys.Api.Controllers
             var query = BuildSearchQuery();
             query = ApplySearchFilter(query, request?.SearchTerm);
 
+            if (request?.CreatedFrom is { } createdFrom)
+            {
+                var start = createdFrom.ToDateTime(TimeOnly.MinValue);
+                query = query.Where(x => x.Inquiry.CreatedAt >= start);
+            }
+
+            if (request?.CreatedTo is { } createdTo)
+            {
+                if (createdTo == DateOnly.MaxValue)
+                    query = query.Where(x => x.Inquiry.CreatedAt.HasValue);
+                else
+                {
+                    var endExclusive = createdTo.AddDays(1).ToDateTime(TimeOnly.MinValue);
+                    query = query.Where(x => x.Inquiry.CreatedAt < endExclusive);
+                }
+            }
+
             if (!string.IsNullOrWhiteSpace(request?.Product))
             {
                 var product = request.Product.Trim().ToLower();

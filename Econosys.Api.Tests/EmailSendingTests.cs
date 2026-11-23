@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Net;
 using System.Net.Mail;
 using System.Net.Sockets;
@@ -218,21 +219,32 @@ public class EmailSendingTests
     }
 
     [Fact]
-    public async Task EmailTextUsesSupplierOrderTemplateNumberAndEmbedsLogo()
+    public async Task EmailTextUsesSupplierOrderTemplateNumberAndSendsEmailSizedSignatureLogo()
     {
         await using var db = CreateDb();
         db.Suppliers.Add(new Supplier { Id = 9, SupplierOrderTemplateNr = 1 });
         db.SupplierOrders.Add(new SupplierOrder { Id = 73, SupplierId = 9, CustomerOrderNr = "39697", Product = "Box" });
         AddMailTexts(db, "SupplierOrder", -72, -73,
             (-72, "SW", "Beställning %NR% / %PRODUKTNAMN%", null),
-            (-73, "SW", null, "<p>Beställning %NR%</p>%LOGO%"));
-        await db.SaveChangesAsync();
+            (-73, "SW", null, "<p>Beställning %NR%</p>%SIGNATURE%"),
+            (EmailTextBuilder.SignatureTranslationCode, "SW", null, "%LOGO%"));
+        await AddSettings(db);
 
         var result = await new EmailRecipientService(db).GetAsync("SUPPLIERORDER", 73, null, [], User(), CancellationToken.None);
 
         Assert.NotNull(result);
         Assert.Equal("Beställning 73 / 39697 / Box", result.Subject);
         Assert.StartsWith("<p>Beställning 73 / 39697</p><img src=\"data:image/png;base64,", result.Body);
+
+        var transport = new FakeTransport();
+        await new EmailService(db, transport, NullLogger<EmailService>.Instance)
+            .SendAsync(Request() with { Body = result.Body }, User(), CancellationToken.None);
+
+        Assert.Contains("<img src=\"cid:image1@econosys\" alt=\"Econopack\" width=\"160\" height=\"33\"", transport.HtmlView);
+        var png = Assert.IsType<byte[]>(transport.InlineImageBytes);
+        // The PNG's IHDR dimensions are the fallback when the email client ignores HTML sizing.
+        Assert.Equal(160, BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(16, 4)));
+        Assert.Equal(33, BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20, 4)));
     }
 
     [Fact]

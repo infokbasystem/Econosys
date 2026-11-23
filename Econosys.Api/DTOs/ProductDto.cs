@@ -10,6 +10,7 @@ namespace Econosys.Api.DTOs
         public string? NoteExternal { get; set; }
         public string? NoteExtra { get; set; }
         public int? MaterialId { get; set; }
+        public string? MaterialName { get; set; }
         public string? MaterialThickness { get; set; }
         public int? LengthMm { get; set; }
         public int? WidthMm { get; set; }
@@ -18,6 +19,7 @@ namespace Econosys.Api.DTOs
         public string? NrOfColors { get; set; }
         public int? ConstructionId { get; set; }
         public int? VarnishId { get; set; }
+        public string? VarnishName { get; set; }
         public string? VarnishOther { get; set; }
         public int? NetWeightPer1000 { get; set; }
         public DateTime? CreatedAt { get; set; }

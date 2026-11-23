@@ -614,13 +614,6 @@ const Inquiry = () => {
 
                     <OrderProductInfo
                         calculationId={inquiry?.calculationId ?? calculationId}
-                        fallbackProduct={{
-                            name: inquiry?.product,
-                            material: inquiry?.material,
-                            format: inquiry?.format,
-                            color: inquiry?.color,
-                            construction: inquiry?.construction,
-                        }}
                     />
 
                     <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">

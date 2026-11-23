@@ -36,6 +36,8 @@ namespace Econosys.Api.Controllers
             var entity = await _dbContext.Products
                 .AsNoTracking()
                 .Include(x => x.Construction)
+                .Include(x => x.Material)
+                .Include(x => x.Varnish)
                 .Include(x => x.InternalInfo)
                 .FirstOrDefaultAsync(x => x.Id == id);
 
@@ -194,6 +196,8 @@ namespace Econosys.Api.Controllers
             IQueryable<Product> query = _dbContext.Products
                 .AsNoTracking()
                 .Include(x => x.Construction)
+                .Include(x => x.Material)
+                .Include(x => x.Varnish)
                 .Include(x => x.InternalInfo);
             var pagination = request?.Pagination ?? new PaginationRequest();
 
@@ -782,6 +786,7 @@ namespace Econosys.Api.Controllers
             NoteExternal = entity.NoteExternal,
             NoteExtra = entity.NoteExtra,
             MaterialId = entity.MaterialId,
+            MaterialName = entity.Material?.Name,
             MaterialThickness = entity.MaterialThickness,
             LengthMm = entity.LengthMm,
             WidthMm = entity.WidthMm,
@@ -790,6 +795,7 @@ namespace Econosys.Api.Controllers
             NrOfColors = entity.NrOfColors,
             ConstructionId = entity.ConstructionId,
             VarnishId = entity.VarnishId,
+            VarnishName = entity.Varnish?.Name,
             VarnishOther = entity.VarnishOther,
             NetWeightPer1000 = entity.NetWeightPer1000,
             CreatedAt = entity.CreatedAt,

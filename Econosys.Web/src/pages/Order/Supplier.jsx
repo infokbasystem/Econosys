@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBlocker, useNavigate, useParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
-import { ArrowLeft, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, Coins } from 'lucide-react';
 
 import apiClient from '../../config/apiClient';
 import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
@@ -18,6 +18,7 @@ import { formatDateTime } from '../../helpers/dateUtils';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 import useDocumentTitle from '../../hooks/useDocumentTitle';
+import PartyPricesModal from '../../modals/PartyPricesModal';
 
 const defaultLanguageOptions = [
     { id: 1, name: 'Svenska' },
@@ -76,6 +77,7 @@ const Supplier = () => {
     const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
+    const [showPricesModal, setShowPricesModal] = useState(false);
 
     const [currencyOptions, setCurrencyOptions] = useState([]);
     const [deliveryTermOptions, setDeliveryTermOptions] = useState([]);
@@ -528,6 +530,19 @@ const Supplier = () => {
 
     return (
         <div className="relative flex min-h-full flex-col">
+            {showPricesModal && (
+                <PartyPricesModal
+                    partyType="supplier"
+                    partyId={supplier.id}
+                    partyName={supplier.name}
+                    currency={currencyOptions.find((item) => item.id === supplier.currencyId)?.name}
+                    onClose={() => setShowPricesModal(false)}
+                    onSaved={() => {
+                        setShowPricesModal(false);
+                        showMessage({ type: 'success', text: 'Priserna sparades.' });
+                    }}
+                />
+            )}
             <ConfirmationModal
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
@@ -592,6 +607,15 @@ const Supplier = () => {
                                 onClick={handleSave}
                                 accent="lime"
                             />
+                            <span title={supplier.id ? '' : 'Spara leverantören innan du registrerar priser.'} className="ml-20">
+                                <ActionButton
+                                    label="Pall- och kostnadspriser"
+                                    icon={Coins}
+                                    onClick={() => setShowPricesModal(true)}
+                                    disabled={!supplier.id}
+                                    accent="teal"
+                                />
+                            </span>
                         </div>
                         <div className="flex items-center gap-6">
                             {!isNewSupplier && supplier?.id !== 0 && (

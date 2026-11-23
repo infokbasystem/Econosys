@@ -107,6 +107,10 @@ namespace Econosys.Api.DTOs
         public string? Product { get; set; }
         public string? SupplierName { get; set; }
         public string? CustomerName { get; set; }
+        /// <summary>First creation date to include.</summary>
+        public DateOnly? CreatedFrom { get; set; }
+        /// <summary>Last creation date to include.</summary>
+        public DateOnly? CreatedTo { get; set; }
         public PaginationRequest? Pagination { get; set; }
         public List<SortRequest>? OrderBy { get; set; }
     }

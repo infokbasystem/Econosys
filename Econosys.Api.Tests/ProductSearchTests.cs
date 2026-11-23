@@ -12,6 +12,46 @@ namespace Econosys.Api.Tests;
 
 public class ProductSearchTests
 {
+    [Fact]
+    public async Task GetByIdReturnsCurrentProductInformationAndLookupNames()
+    {
+        await using var context = await CreateContext();
+        var product = await context.Products.SingleAsync(item => item.Id == 1);
+        var material = new Material { Id = 17, Name = "Material" };
+        var construction = new Construction { Id = 1, Name = "Construction" };
+        var varnish = new Varnish { Id = 23, Name = "Varnish" };
+        context.AddRange(material, construction, varnish);
+        product.Material = material;
+        product.Construction = construction;
+        product.Varnish = varnish;
+        product.NrOfColors = "2";
+        product.NoteInternal = "Internal";
+        product.NoteExternal = "External";
+        product.LengthMm = 100;
+        product.WidthMm = 50;
+        product.HeightMm = 20;
+        var internalInfo = new ProductInternalInfo { IsOffset = true, IsFlexo = true };
+        context.Add(internalInfo);
+        product.InternalInfo = internalInfo;
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var response = await CreateController(context).GetById(1);
+        var result = Assert.IsType<ProductDto>(Assert.IsType<OkObjectResult>(response.Result).Value);
+
+        Assert.Equal("Box 1", result.Name);
+        Assert.Equal("Material", result.MaterialName);
+        Assert.Equal("Construction", result.Construction?.Name);
+        Assert.Equal("Varnish", result.VarnishName);
+        Assert.Equal("2", result.NrOfColors);
+        Assert.Equal("Internal", result.NoteInternal);
+        Assert.Equal("External", result.NoteExternal);
+        Assert.Equal((100, 50, 20), (result.LengthMm, result.WidthMm, result.HeightMm));
+        Assert.True(result.IsOffset);
+        Assert.True(result.IsFlexo);
+        Assert.False(result.IsDigital);
+    }
+
     [Theory]
     [InlineData("constructionid", 1, 1, 2, 4)]
     [InlineData("customerid", 10, 1, 3, 4)]

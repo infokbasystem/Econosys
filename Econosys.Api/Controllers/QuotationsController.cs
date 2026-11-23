@@ -341,12 +341,12 @@ namespace Econosys.Api.Controllers
             entity.YourReference = request.YourReference;
             entity.OurReference = request.OurReference;
             entity.Message = request.Message;
+            entity.Material = request.Material;
             entity.PalletFormatId = request.PalletFormatId;
             entity.EurPallet = request.EurPallet;
             entity.NrOfEurPallet = request.NrOfEurPallet;
             entity.EurPalletValue = request.EurPalletValue;
             entity.CustomerDeliveryAddressId = request.CustomerDeliveryAddressId;
-
 
             entity.EditedAt = SwedishTime.Now;
             entity.EditedBy = legacyUser.Id;
@@ -435,6 +435,23 @@ namespace Econosys.Api.Controllers
 
             var query = BuildSearchQuery();
             query = ApplySearchFilter(query, request?.SearchTerm);
+
+            if (request?.CreatedFrom is { } createdFrom)
+            {
+                var start = createdFrom.ToDateTime(TimeOnly.MinValue);
+                query = query.Where(x => x.CreatedAt >= start);
+            }
+
+            if (request?.CreatedTo is { } createdTo)
+            {
+                if (createdTo == DateOnly.MaxValue)
+                    query = query.Where(x => x.CreatedAt.HasValue);
+                else
+                {
+                    var endExclusive = createdTo.AddDays(1).ToDateTime(TimeOnly.MinValue);
+                    query = query.Where(x => x.CreatedAt < endExclusive);
+                }
+            }
 
             if (!string.IsNullOrWhiteSpace(request?.Product))
             {

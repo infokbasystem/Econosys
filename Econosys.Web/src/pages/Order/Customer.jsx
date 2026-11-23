@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { useNavigate, useParams, useBlocker } from 'react-router-dom';
-import { ArrowLeft, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, Coins } from 'lucide-react';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
 
@@ -17,6 +17,7 @@ import { parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import LabeledTextArea from '../../components/LabeledTextArea';
 import InventorySelectModal from '../../modals/InventorySelectModal';
+import PartyPricesModal from '../../modals/PartyPricesModal';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 import useDocumentTitle from '../../hooks/useDocumentTitle';
@@ -136,6 +137,7 @@ const Customer = () => {
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
     const [showInventorySelectModal, setShowInventorySelectModal] = useState(false);
+    const [showPricesModal, setShowPricesModal] = useState(false);
     const [isLoadingInventoryOptions, setIsLoadingInventoryOptions] = useState(false);
     const [inventoryOptions, setInventoryOptions] = useState([]);
 
@@ -777,6 +779,19 @@ const Customer = () => {
 
     return (
         <div className="relative flex min-h-full flex-col">
+            {showPricesModal && (
+                <PartyPricesModal
+                    partyType="customer"
+                    partyId={customer.id}
+                    partyName={customer.name}
+                    currency={currencyOptions.find((item) => item.id === customer.currencyId)?.name}
+                    onClose={() => setShowPricesModal(false)}
+                    onSaved={() => {
+                        setShowPricesModal(false);
+                        showMessage({ type: 'success', text: 'Priserna sparades.' });
+                    }}
+                />
+            )}
             <ConfirmationModal
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
@@ -839,6 +854,15 @@ const Customer = () => {
                                 accent="lime"
                             >
                             </ActionButton>
+                            <span title={customer.id ? '' : 'Spara kunden innan du registrerar priser.'} className="ml-20">
+                                <ActionButton
+                                    label="Pall- och kostnadspriser"
+                                    icon={Coins}
+                                    onClick={() => setShowPricesModal(true)}
+                                    disabled={!customer.id}
+                                    accent="teal"
+                                />
+                            </span>
                         </div>
                         <div className="flex items-center gap-6">
                             {customer?.id !== 0 && (

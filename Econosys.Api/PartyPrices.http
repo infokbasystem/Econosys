@@ -1,0 +1,44 @@
+@baseUrl = http://localhost:5000
+@token = replace-with-access-token
+
+### Customer selling prices and available items
+GET {{baseUrl}}/api/party-prices/customer/1
+Authorization: Bearer {{token}}
+
+### Supplier purchase prices and available items
+GET {{baseUrl}}/api/party-prices/supplier/1
+Authorization: Bearer {{token}}
+
+### Replace customer prices (omitted rows are removed; use IDs returned by GET)
+PUT {{baseUrl}}/api/party-prices/customer/1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "palletPrices": [{ "id": 0, "itemId": 1, "price": 175.00 }],
+  "costPrices": [{ "id": 0, "itemId": 30, "price": null }]
+}
+
+### Replace supplier prices (only purchase prices are changed)
+PUT {{baseUrl}}/api/party-prices/supplier/1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "palletPrices": [{ "id": 0, "itemId": 1, "price": 125.00 }],
+  "costPrices": []
+}
+
+### Missing party: 404
+GET {{baseUrl}}/api/party-prices/customer/2147483647
+Authorization: Bearer {{token}}
+
+### Invalid price precision or unknown item: 400, with no prices changed
+PUT {{baseUrl}}/api/party-prices/supplier/1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "palletPrices": [{ "id": 0, "itemId": 2147483647, "price": 1.234 }],
+  "costPrices": []
+}

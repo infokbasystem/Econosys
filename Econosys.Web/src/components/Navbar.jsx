@@ -7,7 +7,7 @@ const menuItems = [
     { path: 'order', to: '/order', label: 'ORDER', icon: ClipboardList },
     { path: 'logistics', to: '/logistics', label: 'LOGISTIK', icon: Truck },
     { path: 'finance', to: '/finance', label: 'EKONOMI', icon: ChartNoAxesCombined },
-    { path: 'budget', to: '/budget', label: 'BUDGET', icon: PiggyBank },
+    { path: 'budget', to: '/budget', label: 'FÖRSÄLJNING', icon: PiggyBank },
     { path: 'management', to: '/management', label: 'AVVIKELSER', icon: CircleAlert },
     { path: 'reporting', to: '/reporting', label: 'RAPPORTER', icon: BarChart3 },
     { path: 'settings', to: '/settings', label: 'INSTÄLLNINGAR', icon: Settings },

@@ -7,6 +7,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 import apiClient from '../../config/apiClient';
 import MultiSelectCheckboxFilter from '../../components/MultiSelectCheckboxFilter';
 import OrderSearchInputs from '../../components/OrderSearchInputs';
+import OrderSearchPeriod from '../../components/OrderSearchPeriod';
 import { buildOrderTextFilters } from '../../helpers/orderSearchFilters';
 import { formatDateShort } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
@@ -60,6 +61,7 @@ const CustomerOrderSearch = () => {
     const [searchLoaded, setSearchLoaded] = useState(false);
     const [searchInput, setSearchInput] = useState({ searchTerm: '', product: '', supplierName: '', customerName: '', yourOrderNr: '' });
     const [searchFilters, setSearchFilters] = useState(() => buildOrderTextFilters(searchInput));
+    const [period, setPeriod] = useState({});
     const [pagination, setPagination] = useState(initialPagination);
     const [sortConfig, setSortConfig] = useState({ key: 'created', direction: 'desc' });
     const [selectedRowId, setSelectedRowId] = useState(null);
@@ -82,6 +84,7 @@ const CustomerOrderSearch = () => {
             try {
                 const requestBody = {
                     ...searchFilters,
+                    ...period,
                     ...personFilters,
                     pagination: {
                         pageNumber: pagination.pageNumber,
@@ -131,7 +134,7 @@ const CustomerOrderSearch = () => {
         return () => {
             isActive = false;
         };
-    }, [searchFilters, pagination.pageNumber, pagination.pageSize, sortConfig, personFilters]);
+    }, [searchFilters, period, pagination.pageNumber, pagination.pageSize, sortConfig, personFilters]);
 
     const showSkeleton = loading && !searchLoaded;
 
@@ -171,29 +174,35 @@ const CustomerOrderSearch = () => {
 
     return (
         <div className="flex h-full flex-col pt-3 pb-4 ps-10 pe-0">
-            <div className="mt-2 flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-2">
-                <OrderSearchInputs values={searchInput} onChange={setSearchInput} extraFields={extraSearchFields} />
+            <div className="relative z-20 mt-2 flex items-center gap-4 whitespace-nowrap pb-2">
+                <OrderSearchPeriod onChange={(value) => {
+                    setPeriod(value);
+                    setPagination((prev) => ({ ...prev, pageNumber: 1 }));
+                }} />
+                <div className="flex min-w-0 flex-1 items-center gap-4 overflow-x-auto">
+                    <OrderSearchInputs values={searchInput} onChange={setSearchInput} extraFields={extraSearchFields} />
 
-                <div className="ml-auto flex items-center gap-4 text-xs text-gray-600" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
-                    <span>Rader <strong>{pagination.totalCount}</strong></span>
-                    <span>Sida {pagination.pageNumber} av {Math.max(1, pagination.totalPages)}</span>
-                    <div className="flex gap-1">
-                        <button
-                            type="button"
-                            onClick={() => handlePageChange(pagination.pageNumber - 1)}
-                            disabled={loading || !pagination.hasPreviousPage}
-                            className="disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                            <ArrowLeftCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => handlePageChange(pagination.pageNumber + 1)}
-                            disabled={loading || !pagination.hasNextPage}
-                            className="disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                            <ArrowRightCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
-                        </button>
+                    <div className="ml-auto flex items-center gap-4 text-xs text-gray-600" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                        <span>Rader <strong>{pagination.totalCount}</strong></span>
+                        <span>Sida {pagination.pageNumber} av {Math.max(1, pagination.totalPages)}</span>
+                        <div className="flex gap-1">
+                            <button
+                                type="button"
+                                onClick={() => handlePageChange(pagination.pageNumber - 1)}
+                                disabled={loading || !pagination.hasPreviousPage}
+                                className="disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                <ArrowLeftCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handlePageChange(pagination.pageNumber + 1)}
+                                disabled={loading || !pagination.hasNextPage}
+                                className="disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                <ArrowRightCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -90,6 +90,27 @@ public class OrderSearchTextTests
         Assert.Equal(new[] { 2 }, page.Ids);
     }
 
+    [Theory]
+    [InlineData("inquiry")]
+    [InlineData("quotation")]
+    [InlineData("customer")]
+    [InlineData("supplier")]
+    public async Task CreationPeriodIncludesBothDaysAndCombinesBeforePagination(string kind)
+    {
+        await using var db = await CreateContext();
+        var day = new DateOnly(2026, 3, 29);
+
+        var page = await Search(db, kind, product: "box", createdFrom: day, createdTo: day,
+            pageNumber: 2, pageSize: 1);
+        Assert.Equal(2, page.TotalCount);
+        Assert.Equal(new[] { 3 }, page.Ids);
+
+        Assert.Equal(new[] { 2, 3, 4 }, (await Search(db, kind, createdFrom: day)).Ids);
+        Assert.Equal(new[] { 1, 2, 3 }, (await Search(db, kind, createdTo: day)).Ids);
+        Assert.Equal(new[] { 1, 2, 3, 4 }, (await Search(db, kind, createdTo: DateOnly.MaxValue)).Ids);
+        Assert.Equal(5, (await Search(db, kind)).TotalCount);
+    }
+
     private static async Task<ApplicationDbContext> CreateContext()
     {
         var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -106,13 +127,21 @@ public class OrderSearchTextTests
         {
             var id = index + 1;
             var (product, supplierName, customerName) = fields[index];
+            DateTime? created = id switch
+            {
+                1 => new DateTime(2026, 3, 28, 23, 59, 59),
+                2 => new DateTime(2026, 3, 29),
+                3 => new DateTime(2026, 3, 29, 23, 59, 59).AddTicks(9999999),
+                4 => new DateTime(2026, 3, 30),
+                _ => null,
+            };
             var customer = customerName != null ? new Customer { Id = id, Name = customerName } : null;
             if (customer != null) db.Customers.Add(customer);
             var supplier = supplierName != null ? new Supplier { Id = id, Name = supplierName } : null;
             if (supplier != null) db.Suppliers.Add(supplier);
             var inquiry = new Inquiry
             {
-                Id = id, Product = product, CustomerName = customerName,
+                Id = id, Product = product, CustomerName = customerName, CreatedAt = created,
                 CustomerId = id < 4 ? customer?.Id : null,
             };
             db.Inquiries.Add(inquiry);
@@ -123,18 +152,18 @@ public class OrderSearchTextTests
             }
             db.Quotations.Add(new Quotation
             {
-                Id = id, InquiryId = id, Product = product, CustomerName = customerName,
+                Id = id, InquiryId = id, Product = product, CustomerName = customerName, CreatedAt = created,
                 CustomerId = inquiry.CustomerId,
             });
             db.SupplierOrders.Add(new SupplierOrder
             {
-                Id = id, Product = product, SupplierName = supplierName, CustomerId = customer?.Id,
+                Id = id, Product = product, SupplierName = supplierName, CustomerId = customer?.Id, Created = created,
                 SupplierOrderNr = id == 4 ? "PO%_ wrong column" : $"SO-{id}",
                 CustomerOrderNr = id switch { 1 => "PO%_ first", 2 => "po%_ second", 3 or 4 => "Other", _ => null },
             });
             db.CustomerOrders.Add(new CustomerOrder
             {
-                Id = id, Product = product, SupplierOrderId = id, CustomerName = customerName,
+                Id = id, Product = product, SupplierOrderId = id, CustomerName = customerName, Created = created,
                 CustomerId = inquiry.CustomerId,
                 CustomerOrderNr = id == 4 ? "PO%_ wrong column" : $"CO-{id}",
                 YourOrderNr = id switch { 1 => "PO%_ first", 2 => "po%_ second", 3 or 4 => "Other", _ => null },
@@ -147,7 +176,8 @@ public class OrderSearchTextTests
 
     private static async Task<(int TotalCount, int[] Ids)> Search(
         ApplicationDbContext db, string kind, string? product = null, string? supplier = null,
-        string? customer = null, string? customerReference = null, int pageNumber = 1, int pageSize = 25)
+        string? customer = null, string? customerReference = null, int pageNumber = 1, int pageSize = 25,
+        DateOnly? createdFrom = null, DateOnly? createdTo = null)
     {
         var pagination = new PaginationRequest { PageNumber = pageNumber, PageSize = pageSize };
         var orderBy = new List<SortRequest> { new() { Field = "id", Direction = "asc" } };
@@ -158,6 +188,7 @@ public class OrderSearchTextTests
                     .Search(new SearchInquiriesRequest
                     {
                         Product = product, SupplierName = supplier, CustomerName = customer,
+                        CreatedFrom = createdFrom, CreatedTo = createdTo,
                         Pagination = pagination, OrderBy = orderBy,
                     }), x => x.Id);
             case "quotation":
@@ -165,6 +196,7 @@ public class OrderSearchTextTests
                     .Search(new SearchQuotationsRequest
                     {
                         Product = product, SupplierName = supplier, CustomerName = customer,
+                        CreatedFrom = createdFrom, CreatedTo = createdTo,
                         Pagination = pagination, OrderBy = orderBy,
                     }), x => x.Id);
             case "customer":
@@ -172,6 +204,7 @@ public class OrderSearchTextTests
                     .Search(new SearchCustomerOrdersRequest
                     {
                         Product = product, SupplierName = supplier, CustomerName = customer,
+                        CreatedFrom = createdFrom, CreatedTo = createdTo,
                         YourOrderNr = customerReference,
                         Pagination = pagination, OrderBy = orderBy,
                     }), x => x.Id);
@@ -180,6 +213,7 @@ public class OrderSearchTextTests
                     .Search(new SearchSupplierOrdersRequest
                     {
                         Product = product, SupplierName = supplier, CustomerName = customer,
+                        CreatedFrom = createdFrom, CreatedTo = createdTo,
                         CustomerOrderNr = customerReference,
                         Pagination = pagination, OrderBy = orderBy,
                     }), x => x.Id);

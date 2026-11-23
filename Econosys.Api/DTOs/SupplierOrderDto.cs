@@ -165,6 +165,10 @@ namespace Econosys.Api.DTOs
         public string? Product { get; set; }
         public string? SupplierName { get; set; }
         public string? CustomerName { get; set; }
+        /// <summary>First creation date to include.</summary>
+        public DateOnly? CreatedFrom { get; set; }
+        /// <summary>Last creation date to include.</summary>
+        public DateOnly? CreatedTo { get; set; }
         /// <summary>Customer salespeople to include; null disables filtering, an empty list matches no orders.</summary>
         public int[]? CustomerResponsibleUserIds { get; set; }
         /// <summary>Order creators to include; null disables filtering, an empty list matches no orders.</summary>

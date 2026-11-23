@@ -24,9 +24,9 @@ public static class EmailTextBuilder
 
     private static readonly Lazy<string> LogoHtml = new(() =>
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "Assets", "Econopack_Logo_Sage.png");
+        var path = Path.Combine(AppContext.BaseDirectory, "Assets", "Econopack_Email_Logo.png");
         return File.Exists(path)
-            ? $"<img src=\"data:image/png;base64,{Convert.ToBase64String(File.ReadAllBytes(path))}\" alt=\"Econopack\" style=\"width: 160px; height: auto;\">"
+            ? $"<img src=\"data:image/png;base64,{Convert.ToBase64String(File.ReadAllBytes(path))}\" alt=\"Econopack\" width=\"160\" height=\"33\" style=\"width: 160px; height: auto;\">"
             : string.Empty;
     });
 

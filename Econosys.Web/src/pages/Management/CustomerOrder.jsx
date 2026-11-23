@@ -859,14 +859,8 @@ const CustomerOrder = () => {
 
                 <OrderProductInfo
                     calculationId={customerOrder?.calculationId}
-                    fallbackProduct={{
-                        name: customerOrder?.product,
-                        material: customerOrder?.material,
-                        format: customerOrder?.format,
-                        color: customerOrder?.color,
-                        construction: customerOrder?.construction,
-                    }}
-                    additionalInfo={[{ label: 'Beställning', value: customerOrder?.supplierOrderNr }]}
+                    quotationId={customerOrder?.quotationId}
+                    linkedSupplierOrderId={customerOrder?.supplierOrderId}
                 />
 
                 <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
@@ -926,11 +920,19 @@ const CustomerOrder = () => {
                                     margintop="0"
                                 />
                                 <LabeledInput
+                                    name="material"
+                                    label="Material"
+                                    value={customerOrder?.material || ''}
+                                    onChange={(value) => updateCustomerOrder({ material: value })}
+                                    labelWidth="w-20"
+                                    margintop="3"
+                                />
+                                <LabeledInput
                                     label="Kunds onr"
                                     value={customerOrder?.yourOrderNr || ''}
                                     onChange={(value) => updateCustomerOrder({ yourOrderNr: value })}
                                     labelWidth="w-20"
-                                    margintop="3"
+                                    margintop="0"
                                 />
                                 <LabeledTextArea
                                     name="logisticsInfoInternal"

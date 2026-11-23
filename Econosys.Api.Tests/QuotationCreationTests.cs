@@ -274,8 +274,10 @@ public class QuotationCreationTests
         update.CustomerDeliveryAddressId = 31;
         update.DeliveryAddress = "Updated address";
         update.EurPalletValue = 123;
+        update.Material = "Edited material text";
         var updated = Assert.IsType<QuotationDto>(Assert.IsType<OkObjectResult>(
             (await controller.Update(saved.Id, update)).Result).Value);
+        Assert.Equal("Edited material text", updated.Material);
         Assert.Equal(31, updated.CustomerDeliveryAddressId);
         Assert.Equal("Updated address", updated.DeliveryAddress);
         Assert.Equal(123d, updated.EurPalletValue);

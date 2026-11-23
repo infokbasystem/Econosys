@@ -62,6 +62,31 @@ public class SupplierOrderWorkflowTests
         Assert.Equal(palletType == 2, reloaded.OneWayPallet);
     }
 
+    [Fact]
+    public async Task AutomaticQuotationCopiesProductMaterialToEditableMaterialField()
+    {
+        await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options);
+        db.Settings.Add(new Setting { CompanyId = 1 });
+        db.Calculations.Add(new Calculation
+        {
+            Id = 10,
+            Customer = new Customer { Id = 1, Name = "Customer" },
+            Supplier = new Supplier { Id = 2, Name = "Supplier" },
+            Product = new Product { Id = 3, Name = "Box", Material = new Material { Id = 4, Name = "Kraft 300" } },
+        });
+        db.Inquiries.Add(new Inquiry { Id = 30, CalculationId = 10 });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+
+        var workflow = new SupplierOrderWorkflowController(db, new UserResolution(), new PalletFormatOptionsService(db));
+        var created = Assert.IsType<SupplierOrderWorkflowDocumentDto>(Assert.IsType<OkObjectResult>(
+            (await workflow.CreateQuotationFromCalculation(10, 30)).Result).Value);
+
+        Assert.Equal("Kraft 300", (await db.Quotations.SingleAsync(x => x.Id == created.Id)).Material);
+    }
+
     private sealed class UserResolution : ILegacyUserResolutionService
     {
         public Task<LegacyUser?> ResolveCurrentUserAsync(ClaimsPrincipal principal) =>

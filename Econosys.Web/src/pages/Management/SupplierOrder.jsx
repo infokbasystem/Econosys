@@ -669,7 +669,7 @@ const SupplierOrder = () => {
                 timeOfDelivery: quotation?.timeOfDelivery ?? supplierOrder.timeOfDelivery ?? '',
                 message: quotation?.message ?? supplierOrder.message ?? '',
                 product: quotation?.product ?? supplierOrder.product ?? '',
-                material: quotation?.material ?? supplierOrder.material ?? '',
+                material: quotation?.material || supplierOrder.material || '',
                 format: quotation?.format ?? supplierOrder.format ?? '',
                 color: quotation?.color ?? supplierOrder.color ?? '',
                 construction: quotation?.construction ?? supplierOrder.construction ?? '',
@@ -1294,14 +1294,10 @@ const SupplierOrder = () => {
 
                 <OrderProductInfo
                     calculationId={supplierOrder?.calculationId}
-                    fallbackProduct={{
-                        name: supplierOrder?.product,
-                        material: supplierOrder?.material,
-                        format: supplierOrder?.format,
-                        color: supplierOrder?.color,
-                        construction: supplierOrder?.construction,
-                    }}
-                    additionalInfo={[{ label: 'Packning', value: supplierOrder?.packagingType }]}
+                    inquiryId={supplierOrder?.inquiryId}
+                    quotationId={supplierOrder?.quotationId}
+                    supplierOrderId={supplierOrder?.id}
+                    selectedCalculationRowId={supplierOrder?.selectedCalculationRowId}
                 />
 
                 <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
@@ -1531,6 +1527,10 @@ const SupplierOrder = () => {
                                     margintop="0"
                                     height="h-15"
                                 />
+                                <div className="mt-2 flex gap-3 text-xs">
+                                    <span className="w-20 shrink-0 text-gray-500">Packning</span>
+                                    <span>{supplierOrder?.packagingType || '-'}</span>
+                                </div>
                             </span>
 
                             <span>

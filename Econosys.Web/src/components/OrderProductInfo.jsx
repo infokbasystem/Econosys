@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import apiClient from '../config/apiClient';
+import { positiveId, resolveSupplierOrderCalculationId } from './supplierOrderCalculation';
 
 const formatDimensions = (product) => {
     const dimensions = [product?.lengthMm, product?.widthMm, product?.heightMm];
@@ -17,73 +18,53 @@ const InfoRow = ({ label, value }) => (
     </div>
 );
 
-const CompactInfoRow = ({ label, value }) => (
-    <div className="min-w-0">
-        <dt className="truncate text-tiny tracking-wide font-bold text-black">{label}</dt>
-        <dd
-            title={value == null || value === '' ? '-' : String(value)}
-            className="mt-1 truncate text-xs text-black"
-        >
-            {value == null || value === '' ? '-' : value}
-        </dd>
-    </div>
-);
-
-const OrderProductInfo = ({ calculationId, productId, fallbackProduct, additionalInfo = [] }) => {
+const OrderProductInfo = ({
+    calculationId, productId, inquiryId, quotationId, supplierOrderId, selectedCalculationRowId, linkedSupplierOrderId,
+}) => {
     const [loadedInfo, setLoadedInfo] = useState(null);
 
-    useEffect(() => {
-        const calculationNumber = Number(calculationId);
-        const productNumber = Number(productId);
-        const hasCalculationId = Number.isInteger(calculationNumber) && calculationNumber > 0;
-        const hasProductId = Number.isInteger(productNumber) && productNumber > 0;
-        const requestKey = hasCalculationId
-            ? `calculation:${calculationNumber}`
-            : hasProductId
-                ? `product:${productNumber}`
+    const calculationNumber = positiveId(calculationId);
+    const productNumber = positiveId(productId);
+    const inquiryNumber = positiveId(inquiryId);
+    const quotationNumber = positiveId(quotationId);
+    const supplierOrderNumber = positiveId(supplierOrderId);
+    const calculationRowNumber = positiveId(selectedCalculationRowId);
+    const linkedSupplierOrderNumber = positiveId(linkedSupplierOrderId);
+    const hasSupplierOrderSource = inquiryNumber || quotationNumber || linkedSupplierOrderNumber || (supplierOrderNumber && calculationRowNumber);
+    const requestKey = calculationNumber
+        ? `calculation:${calculationNumber}`
+        : productNumber
+            ? `product:${productNumber}`
+            : hasSupplierOrderSource
+                ? `supplier-order:${supplierOrderNumber}:${calculationRowNumber}:${inquiryNumber}:${quotationNumber}:${linkedSupplierOrderNumber}`
                 : null;
+
+    useEffect(() => {
         if (!requestKey) return undefined;
 
         let isActive = true;
         const loadProductInfo = async () => {
             try {
-                if (!hasCalculationId) {
-                    const response = await apiClient.get(`/products/${productNumber}`);
-                    if (isActive) {
-                        setLoadedInfo({
-                            key: requestKey,
-                            product: {
-                                id: productNumber,
-                                isOffset: Boolean(response.data?.isOffset),
-                                isDigital: Boolean(response.data?.isDigital),
-                                isFlexo: Boolean(response.data?.isFlexo),
-                            },
-                            error: '',
-                            useFallbackProduct: true,
-                        });
-                    }
-                    return;
+                let resolvedProductId = productNumber;
+                if (!resolvedProductId || calculationNumber) {
+                    const resolvedCalculationId = calculationNumber || await resolveSupplierOrderCalculationId(apiClient, {
+                        inquiryId: inquiryNumber,
+                        quotationId: quotationNumber,
+                        supplierOrderId: supplierOrderNumber,
+                        selectedCalculationRowId: calculationRowNumber,
+                        linkedSupplierOrderId: linkedSupplierOrderNumber,
+                    });
+                    const response = await apiClient.get(`/calculations/${resolvedCalculationId}/aggregate`);
+                    resolvedProductId = response.data?.product?.id;
                 }
-
-                const response = await apiClient.get(`/calculations/${calculationNumber}/aggregate`);
-                const summary = response.data?.product ?? null;
-                if (!summary?.id) {
-                    if (isActive) {
-                        setLoadedInfo({ key: requestKey, product: summary, error: '' });
-                    }
-                    return;
+                if (!resolvedProductId) {
+                    throw new Error('Ingen produkt är kopplad till kalkylen.');
                 }
-
-                const productResponse = await apiClient.get(`/products/${summary.id}`);
+                const productResponse = await apiClient.get(`/products/${resolvedProductId}`);
                 if (isActive) {
                     setLoadedInfo({
                         key: requestKey,
-                        product: {
-                            ...summary,
-                            isOffset: Boolean(productResponse.data?.isOffset),
-                            isDigital: Boolean(productResponse.data?.isDigital),
-                            isFlexo: Boolean(productResponse.data?.isFlexo),
-                        },
+                        product: productResponse.data,
                         error: '',
                     });
                 }
@@ -103,34 +84,23 @@ const OrderProductInfo = ({ calculationId, productId, fallbackProduct, additiona
         return () => {
             isActive = false;
         };
-    }, [calculationId, productId]);
+    }, [requestKey, calculationNumber, productNumber, inquiryNumber, quotationNumber, supplierOrderNumber, calculationRowNumber, linkedSupplierOrderNumber]);
 
-    const calculationNumber = Number(calculationId);
-    const productNumber = Number(productId);
-    const hasCalculationId = Number.isInteger(calculationNumber) && calculationNumber > 0;
-    const hasProductId = Number.isInteger(productNumber) && productNumber > 0;
-    const requestKey = hasCalculationId
-        ? `calculation:${calculationNumber}`
-        : hasProductId
-            ? `product:${productNumber}`
-            : null;
     const hasCurrentInfo = requestKey != null && loadedInfo?.key === requestKey;
     const product = hasCurrentInfo ? loadedInfo.product : null;
     const loading = requestKey != null && !hasCurrentInfo;
     const error = hasCurrentInfo ? loadedInfo.error : '';
-    const info = hasCurrentInfo && loadedInfo.useFallbackProduct
-        ? { ...(fallbackProduct || {}), ...product }
-        : product || fallbackProduct || {};
+    const info = product || {};
     const printingMethods = [
         info.isOffset && 'Offset',
         info.isDigital && 'Digital',
         info.isFlexo && 'Flexo',
     ].filter(Boolean).join(', ');
     const varnish = info.varnishOther
-        ? `${info.varnish || 'Övrig'}: ${info.varnishOther}`
-        : info.varnish;
+        ? `${info.varnishName || 'Övrig'}: ${info.varnishOther}`
+        : info.varnishName;
     const format = formatDimensions(info) || info.format;
-    const linkedProductId = product?.id || (hasProductId ? productNumber : null);
+    const linkedProductId = product?.id || productNumber;
     const productLink = linkedProductId
         ? { href: `/order/products/${linkedProductId}`, label: 'Öppna produkt i ny flik' }
         : { href: '/order/products', label: 'Visa produkter i ny flik' };
@@ -142,15 +112,15 @@ const OrderProductInfo = ({ calculationId, productId, fallbackProduct, additiona
         >
             <dl className="min-w-0 flex flex-row gap-5">
                 <div className="w-60 space-y-2">
-                    <InfoRow label="Produkt" value={info.name || info.product} />
-                    <InfoRow label="Material" value={info.material} />
+                    <InfoRow label="Produkt" value={info.name} />
+                    <InfoRow label="Material" value={info.materialName} />
                 </div>
                 <div className="w-60 space-y-2">
-                    <InfoRow label="Konstruktion" value={info.construction} />
+                    <InfoRow label="Konstruktion" value={info.construction?.name} />
                     <InfoRow label="Format" value={format} />
                 </div>
                 <div className="w-30 space-y-2">
-                    <InfoRow label="Färger" value={info.colors ?? info.color} />
+                    <InfoRow label="Färger" value={info.nrOfColors} />
                     <InfoRow label="Lack" value={varnish} />
                 </div>
                 <div className="w-40 space-y-2">
@@ -160,13 +130,6 @@ const OrderProductInfo = ({ calculationId, productId, fallbackProduct, additiona
                 <div className="min-w-0 flex-1 space-y-2">
                     <InfoRow label="Tryckmetod (intern)" value={printingMethods} />
                     <div className="mt-4 flex min-w-0 items-end justify-between gap-2">
-                        {additionalInfo.length > 0 ? (
-                            <div className="min-w-0 flex-1 space-y-2">
-                                {additionalInfo.map(({ label, value }) => (
-                                    <CompactInfoRow key={label} label={label} value={value} />
-                                ))}
-                            </div>
-                        ) : null}
                         <a
                             href={productLink.href}
                             target="_blank"
@@ -184,6 +147,9 @@ const OrderProductInfo = ({ calculationId, productId, fallbackProduct, additiona
             {loading ? <span role="status" className="sr-only">Laddar produktinformation...</span> : null}
             {error ? (
                 <p role="alert" className="mt-2 text-xs text-red-700">{error}</p>
+            ) : null}
+            {!requestKey ? (
+                <p className="mt-2 text-xs text-gray-700">Ingen produkt är kopplad till dokumentet.</p>
             ) : null}
         </div>
     );

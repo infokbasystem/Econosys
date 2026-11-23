@@ -6,6 +6,7 @@ import 'react-loading-skeleton/dist/skeleton.css';
 
 import apiClient from '../../config/apiClient';
 import OrderSearchInputs from '../../components/OrderSearchInputs';
+import OrderSearchPeriod from '../../components/OrderSearchPeriod';
 import { buildOrderTextFilters } from '../../helpers/orderSearchFilters';
 import { formatDateShort } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
@@ -46,6 +47,7 @@ const QuotationSearch = () => {
     const [searchLoaded, setSearchLoaded] = useState(false);
     const [searchInput, setSearchInput] = useState({ searchTerm: '', product: '', supplierName: '', customerName: '' });
     const [searchFilters, setSearchFilters] = useState(() => buildOrderTextFilters(searchInput));
+    const [period, setPeriod] = useState({});
     const [pagination, setPagination] = useState(initialPagination);
     const [sortConfig, setSortConfig] = useState({ key: 'createdAt', direction: 'desc' });
     const [selectedRowId, setSelectedRowId] = useState(null);
@@ -68,6 +70,7 @@ const QuotationSearch = () => {
             try {
                 const requestBody = {
                     ...searchFilters,
+                    ...period,
                     pagination: {
                         pageNumber: pagination.pageNumber,
                         pageSize: pagination.pageSize,
@@ -116,7 +119,7 @@ const QuotationSearch = () => {
         return () => {
             isActive = false;
         };
-    }, [searchFilters, pagination.pageNumber, pagination.pageSize, sortConfig]);
+    }, [searchFilters, period, pagination.pageNumber, pagination.pageSize, sortConfig]);
 
     const showSkeleton = loading && !searchLoaded;
 
@@ -151,37 +154,43 @@ const QuotationSearch = () => {
 
     return (
         <div className="flex h-full flex-col pt-3 pb-4 ps-10 pe-0">
-            <div className="flex items-center gap-4 overflow-x-auto whitespace-nowrap pb-2 mt-2">
-                {/* <button
-                    type="button"
-                    onClick={() => navigate('/order/quotations/new')}
-                    className="w-40 shadow-md/30 text-xs text-white bg-lime-600 hover:bg-lime-700 px-4 py-[5px]"
-                >
-                    Skapa nytt affarsforslag
-                </button>
- */}
-                <OrderSearchInputs values={searchInput} onChange={setSearchInput} />
+            <div className="relative z-20 flex items-center gap-4 whitespace-nowrap pb-2 mt-2">
+                <OrderSearchPeriod onChange={(value) => {
+                    setPeriod(value);
+                    setPagination((prev) => ({ ...prev, pageNumber: 1 }));
+                }} />
+                <div className="flex min-w-0 flex-1 items-center gap-4 overflow-x-auto">
+                    {/* <button
+                        type="button"
+                        onClick={() => navigate('/order/quotations/new')}
+                        className="w-40 shadow-md/30 text-xs text-white bg-lime-600 hover:bg-lime-700 px-4 py-[5px]"
+                    >
+                        Skapa nytt affarsforslag
+                    </button>
+     */}
+                    <OrderSearchInputs values={searchInput} onChange={setSearchInput} />
 
-                <div className="ml-auto flex items-center gap-4 text-xs text-gray-600" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
-                    <span>Rader <strong>{pagination.totalCount}</strong></span>
-                    <span>Sida {pagination.pageNumber} av {Math.max(1, pagination.totalPages)}</span>
-                    <div className="flex gap-1">
-                        <button
-                            type="button"
-                            onClick={() => handlePageChange(pagination.pageNumber - 1)}
-                            disabled={loading || !pagination.hasPreviousPage}
-                            className="disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                            <ArrowLeftCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => handlePageChange(pagination.pageNumber + 1)}
-                            disabled={loading || !pagination.hasNextPage}
-                            className="disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                            <ArrowRightCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
-                        </button>
+                    <div className="ml-auto flex items-center gap-4 text-xs text-gray-600" style={{ fontFamily: "'Neue Haas Unica', 'Helvetica Neue', Arial, sans-serif" }}>
+                        <span>Rader <strong>{pagination.totalCount}</strong></span>
+                        <span>Sida {pagination.pageNumber} av {Math.max(1, pagination.totalPages)}</span>
+                        <div className="flex gap-1">
+                            <button
+                                type="button"
+                                onClick={() => handlePageChange(pagination.pageNumber - 1)}
+                                disabled={loading || !pagination.hasPreviousPage}
+                                className="disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                <ArrowLeftCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handlePageChange(pagination.pageNumber + 1)}
+                                disabled={loading || !pagination.hasNextPage}
+                                className="disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                                <ArrowRightCircle className="h-5 w-5 text-red-400 hover:text-red-500" />
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

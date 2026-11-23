@@ -42,6 +42,7 @@ Detta kommer att:
 
 ### E-postmottagare
 - Maildialogen hämtar nya mottagarlistor för varje dokument via `/api/email/recipients/{itemType}/{itemId}`. Kontaktpersonernas dokumentflaggor styr vilka som är förvalda; övriga kontakter visas omarkerade med befattning.
+- `%LOGO%` i e-postsignaturen använder en separat PNG på 160 × 33 pixlar så att logotypen får rätt storlek även i e-postklienter som ignorerar bildens HTML-mått. PDF-dokument använder originalbilden.
 - Förfrågan och beställning använder leverantörskontakter; affärsförslag, ordererkännande och faktura använder kundkontakter. Transportorder följer vald transportör, leverantör eller lager; avropsbekräftelse använder kundkontakter.
 - Kopia till följer legacy: inloggad användare för förfrågan/affärsförslag/beställning/ordererkännande, `transport@econopack.se` för avrop/transportorder, och `customerinvoice@econopack.se` samt `skickadepdffakturor@econopack.se` för faktura. Kopior och nya tomma rader är markerade som standard.
 - Om mottagarlistorna inte kan laddas visas ett fel och sändning blockeras; stäng och öppna dialogen för att försöka igen.

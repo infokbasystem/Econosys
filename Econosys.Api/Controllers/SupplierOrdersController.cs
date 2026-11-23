@@ -409,6 +409,23 @@ namespace Econosys.Api.Controllers
                 .Include(x => x.Customer);
             var pagination = request?.Pagination ?? new PaginationRequest();
 
+            if (request?.CreatedFrom is { } createdFrom)
+            {
+                var start = createdFrom.ToDateTime(TimeOnly.MinValue);
+                query = query.Where(x => x.Created >= start);
+            }
+
+            if (request?.CreatedTo is { } createdTo)
+            {
+                if (createdTo == DateOnly.MaxValue)
+                    query = query.Where(x => x.Created.HasValue);
+                else
+                {
+                    var endExclusive = createdTo.AddDays(1).ToDateTime(TimeOnly.MinValue);
+                    query = query.Where(x => x.Created < endExclusive);
+                }
+            }
+
             if (request?.CustomerResponsibleUserIds is { } sellerIds)
             {
                 query = query.Where(x => x.Customer != null && x.Customer.ResponsibleUserId.HasValue

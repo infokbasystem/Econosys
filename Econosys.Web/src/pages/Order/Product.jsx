@@ -270,10 +270,6 @@ const Product = () => {
         const widthMm = parseNullableInt(source.widthMm);
         const heightMm = parseNullableInt(source.heightMm);
 
-        const formattedDimensions = [lengthMm, widthMm, heightMm].every((x) => x !== null)
-            ? `${lengthMm}x${widthMm}x${heightMm}`
-            : source.format || null;
-
         return {
             name: source.name ?? '',
             noteInternal: source.noteInternal ?? '',
@@ -284,7 +280,7 @@ const Product = () => {
             lengthMm,
             widthMm,
             heightMm,
-            format: formattedDimensions,
+            format: source.format || null,
             nrOfColors: source.nrOfColors ?? '',
             constructionId: parseNullableInt(source.constructionId),
             varnishId: parseNullableInt(source.varnishId),

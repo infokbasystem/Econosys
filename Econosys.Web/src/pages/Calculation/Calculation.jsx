@@ -23,6 +23,7 @@ import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { formatDateTime } from '../../helpers/dateUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import { calculatePackagesPerPallet, updateAutomaticLoadingInstruction } from './calculationPackaging';
+import { applyPalletPrices } from './calculationPalletPrices';
 import { applyApprovalRows, calculatePackagingCost, getApprovalText, getFreightForApproval, updateAndApproveAllSections } from './calculationApprovals';
 import { applySupplierFreightSettings, changeFreightMode, getAutomaticFreightGeometry, getFreightEditState, getFreightMode, getFreightWarningMessage, parseFreightFactors } from './calculationFreight';
 import CalculationNavigation from './CalculationNavigation';
@@ -1532,6 +1533,8 @@ const CalculationPage = ({ id, productId }) => {
     const [supplierCurrencyId, setSupplierCurrencyId] = useState(null);
     const [isCustomerSelectionPending, setIsCustomerSelectionPending] = useState(false);
     const [isSupplierSelectionPending, setIsSupplierSelectionPending] = useState(false);
+    const [isLoadingPalletPrices, setIsLoadingPalletPrices] = useState(false);
+    const palletPriceRefreshRef = useRef({ sequence: 0, forceDebit: false });
     const [customerPickerReset, setCustomerPickerReset] = useState(0);
     const [messages, setMessages] = useState([]);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
@@ -1589,10 +1592,6 @@ const CalculationPage = ({ id, productId }) => {
     useAppUpdateGuard(() => hasUnsavedChanges() || isSaving);
     const allRows = formDraft?.rows ?? EMPTY_ROWS;
     const rows = allRows.filter((row) => rowView === 'all' || row.archived === (rowView === 'archived'));
-    const productDimensions = [data?.product?.length, data?.product?.width, data?.product?.height]
-        .filter((value) => value != null && value !== '')
-        .join(' x ');
-
     const flashInfoPanel = useCallback((hasIssue = false) => {
         const wasAlreadyExpanded = isInfoPanelExpandedRef.current;
         if (infoPanelAutoCloseRef.current) {
@@ -1655,7 +1654,7 @@ const CalculationPage = ({ id, productId }) => {
         setIsSupplierSelectionPending(pending);
     };
 
-    const hasPendingPartySelection = isCustomerSelectionPending || isSupplierSelectionPending;
+    const hasPendingPartySelection = isCustomerSelectionPending || isSupplierSelectionPending || isLoadingPalletPrices;
 
     const purchaseCurrency = currencyOptions.find((currency) => currency.id === formDraft?.purchaseCurrencyId);
     const salesCurrency = currencyOptions.find((currency) => currency.id === formDraft?.salesCurrencyId);
@@ -1693,6 +1692,7 @@ const CalculationPage = ({ id, productId }) => {
         if (!validRequest) return;
         let active = true;
         const currencyRefreshSequence = currencyRefreshSequenceRef.current;
+        const palletPriceRefresh = palletPriceRefreshRef.current;
         getSharedRequest(requestKey, () => apiClient.get(isNew
             ? `/calculations/from-product/${productId}/draft`
             : `/calculations/${id}/aggregate`))
@@ -1702,6 +1702,7 @@ const CalculationPage = ({ id, productId }) => {
                     setDraft(createCalculationDraft(response.data));
                     setIsCustomerSelectionPending(false);
                     setIsSupplierSelectionPending(false);
+                    setIsLoadingPalletPrices(false);
                 }
             })
             .catch((loadError) => {
@@ -1720,6 +1721,8 @@ const CalculationPage = ({ id, productId }) => {
             active = false;
             ++currencyRefreshSequence.purchase;
             ++currencyRefreshSequence.sales;
+            ++palletPriceRefresh.sequence;
+            palletPriceRefresh.forceDebit = false;
         };
     }, [id, isNew, productId, replaceMessages, requestKey, validRequest]);
 
@@ -1959,6 +1962,58 @@ const CalculationPage = ({ id, productId }) => {
             : previous);
     }, [customerDeliveryAddressOptions, freightEditState.selectDefaultAddress, formDraft?.autoFreightPrice, formDraft?.deactivateFreightCalculation, formDraft?.customerDeliveryAddressId]);
 
+    const refreshPalletPrices = async (calculation, forceDebit) => {
+        const refresh = palletPriceRefreshRef.current;
+        const sequence = ++refresh.sequence;
+        // A supplier lookup must retain a still-pending customer/format debit reset.
+        refresh.forceDebit ||= forceDebit;
+        const shouldForceDebit = refresh.forceDebit;
+        const apply = (supplierPrices, customerPrices) => setDraft((previous) => {
+            if (!previous || sequence !== refresh.sequence
+                || previous.customer?.id !== calculation.customer?.id
+                || previous.supplier?.id !== calculation.supplier?.id
+                || previous.palletFormatId !== calculation.palletFormatId) return previous;
+            return applyPalletPrices(previous, supplierPrices, customerPrices, shouldForceDebit);
+        });
+
+        apply([], []);
+        if (!calculation.palletFormatId || (!calculation.customer?.id && !calculation.supplier?.id)) {
+            refresh.forceDebit = false;
+            setIsLoadingPalletPrices(false);
+            return;
+        }
+
+        setIsLoadingPalletPrices(true);
+        try {
+            const loadPrices = async (partyType, partyId) => {
+                if (!partyId) return [];
+                const response = await getSharedRequest(`party-prices:${partyType}:${partyId}`,
+                    () => apiClient.get(`/party-prices/${partyType}/${partyId}`));
+                if (!Array.isArray(response.data?.palletPrices)) throw new Error('Invalid pallet price response.');
+                return response.data.palletPrices;
+            };
+            const [supplierPrices, customerPrices] = await Promise.all([
+                loadPrices('supplier', calculation.supplier?.id),
+                loadPrices('customer', calculation.customer?.id),
+            ]);
+            if (sequence !== refresh.sequence) return;
+            apply(supplierPrices, customerPrices);
+            const updated = applyPalletPrices(calculation, supplierPrices, customerPrices, shouldForceDebit);
+            if (!shouldForceDebit && calculation.doDebitPalletPrice && !updated.doDebitPalletPrice) {
+                appendMessage('warning', 'Pallpriset är 0 i registret. Kontrollera kundens pallpris.');
+            }
+        } catch (priceError) {
+            if (sequence !== refresh.sequence) return;
+            console.error('Failed to refresh calculation pallet prices:', priceError);
+            appendMessage('error', 'Kunde inte hämta pallpriser för vald kund och leverantör. Kontrollera pallpriserna innan du sparar.');
+        } finally {
+            if (sequence === refresh.sequence) {
+                refresh.forceDebit = false;
+                setIsLoadingPalletPrices(false);
+            }
+        }
+    };
+
     const handlePalletFormatChange = (value) => {
         const palletFormatId = value === '' ? null : Number(value);
 
@@ -1985,17 +2040,13 @@ const CalculationPage = ({ id, productId }) => {
             if (selectedPalletFormat) {
                 const length = selectedPalletFormat.width == null ? null : Number(selectedPalletFormat.width);
                 const width = selectedPalletFormat.height == null ? null : Number(selectedPalletFormat.height);
-                const inPrice = selectedPalletFormat.supplierPrice == null ? null : Number(selectedPalletFormat.supplierPrice);
-                const outPrice = selectedPalletFormat.customerPrice == null ? null : Number(selectedPalletFormat.customerPrice);
-
                 if (Number.isFinite(length)) next.palletLength = length;
                 if (Number.isFinite(width)) next.palletWidth = width;
-                if (Number.isFinite(inPrice)) next.palletPriceIn = inPrice;
-                if (Number.isFinite(outPrice)) next.palletPriceOut = outPrice;
             }
 
             return updateAutomaticLoadingInstruction(previous, next);
         });
+        void refreshPalletPrices({ ...formDraft, palletFormatId }, true);
     };
 
     useEffect(() => {
@@ -2196,6 +2247,9 @@ const CalculationPage = ({ id, productId }) => {
         if (customer?.currencyId != null) {
             void handleCurrencyChange('sales', customer.currencyId);
         }
+        if (formDraft?.customer?.id !== customer?.id) {
+            void refreshPalletPrices({ ...formDraft, customer }, true);
+        }
     };
 
     const handleCalculationSupplierSelect = (supplier) => {
@@ -2227,6 +2281,9 @@ const CalculationPage = ({ id, productId }) => {
         });
         if (supplier?.currencyId != null) {
             void handleCurrencyChange('purchase', supplier.currencyId);
+        }
+        if (supplierChanged) {
+            void refreshPalletPrices({ ...formDraft, supplier }, false);
         }
     };
 
@@ -3025,20 +3082,7 @@ const CalculationPage = ({ id, productId }) => {
                         </p>
                     ) : data ? (
                         <>
-                            <OrderProductInfo
-                                productId={data.product?.id}
-                                fallbackProduct={{
-                                    name: data.product?.name,
-                                    material: data.product?.material,
-                                    construction: data.product?.construction,
-                                    format: productDimensions || data.product?.format,
-                                    colors: data.product?.colors,
-                                    varnish: data.product?.varnish,
-                                    varnishOther: data.product?.varnishOther,
-                                    noteInternal: data.product?.noteInternal,
-                                    noteExternal: data.product?.noteExternal,
-                                }}
-                            />
+                            <OrderProductInfo productId={data.product?.id} />
 
                             <CalculationSection title="Kalkylrader" initiallyOpen>
                                 <div className="mb-5 flex flex-wrap gap-x-15 gap-y-10">
@@ -3404,13 +3448,17 @@ const CalculationPage = ({ id, productId }) => {
 
                                         <div className="min-w-0 w-50">
                                             <div className="flex items-center justify-between">
-                                                <label className="text-xs text-gray-700">Pallpriser</label>
+                                                <label className="text-xs text-gray-700">{isLoadingPalletPrices ? 'Hämtar pallpriser...' : 'Pallpriser'}</label>
                                                 <div className="flex items-center gap-2 pt-1">
                                                     <span className="text-xs text-gray-700">Deb</span>
                                                     <LabeledCheckbox
                                                         label=""
                                                         checked={Boolean(formDraft?.doDebitPalletPrice)}
-                                                        onChange={updateField('doDebitPalletPrice')}
+                                                        onChange={(value) => {
+                                                            palletPriceRefreshRef.current.forceDebit = false;
+                                                            updateDraft('doDebitPalletPrice', value);
+                                                            void refreshPalletPrices({ ...formDraft, doDebitPalletPrice: value }, false);
+                                                        }}
                                                         ariaLabel="Debitera pall"
                                                         color="cyan"
                                                     />
@@ -3422,6 +3470,7 @@ const CalculationPage = ({ id, productId }) => {
                                                     ariaLabel="Pallpris in"
                                                     value={formDraft?.palletPriceIn}
                                                     onChange={updateField('palletPriceIn')}
+                                                    disabled={isLoadingPalletPrices}
                                                     suffix={purchaseCurrency?.name ?? ''}
                                                 />
                                                 {/* <span className="text-xs text-gray-600">{purchaseCurrency?.name ?? ''}</span> */}
@@ -3433,6 +3482,7 @@ const CalculationPage = ({ id, productId }) => {
                                                     ariaLabel="Pallpris ut"
                                                     value={formDraft?.palletPriceOut}
                                                     onChange={updateField('palletPriceOut')}
+                                                    disabled={isLoadingPalletPrices}
                                                     className=""
                                                     suffix={salesCurrency?.name ?? ''}
                                                 />

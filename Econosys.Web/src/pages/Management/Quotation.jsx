@@ -910,13 +910,6 @@ const Quotation = () => {
 
                     <OrderProductInfo
                         calculationId={quotation?.calculationId ?? calculationId}
-                        fallbackProduct={{
-                            name: quotation?.product,
-                            material: quotation?.material,
-                            format: quotation?.format,
-                            color: quotation?.color,
-                            construction: quotation?.construction,
-                        }}
                     />
 
                     <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
@@ -987,6 +980,14 @@ const Quotation = () => {
                                             marginTop={1}
                                         />
                                     </div>
+                                    <LabeledInput
+                                        name='material'
+                                        label='Material'
+                                        value={quotation?.material || ''}
+                                        onChange={(value) => updateQuotation({ material: value })}
+                                        labelWidth="w-20"
+                                        margintop="3"
+                                    />
                                     <LabeledInput
                                         label='Leveranstid'
                                         value={quotation?.timeOfDelivery || ''}
