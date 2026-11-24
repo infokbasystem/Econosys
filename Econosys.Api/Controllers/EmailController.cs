@@ -47,7 +47,7 @@ public sealed class EmailController(
         }
     }
 
-    /// <summary>Gets sent-email history for a customer order, call-off, or transport order.</summary>
+    /// <summary>Gets sent-email history for an invoice, customer order, call-off, or transport order.</summary>
     [HttpGet("log/{itemType}/{itemId:int:min(1)}")]
     [ProducesResponseType(typeof(IReadOnlyList<MailLogEntryResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -62,6 +62,7 @@ public sealed class EmailController(
             "CALLOFF" => MailLogService.CallOffItem,
             "TRANSPORTORDER" => MailLogService.TransportOrderItem,
             "CUSTOMERORDER" => MailLogService.CustomerOrderItem,
+            "INVOICE" => MailLogService.InvoiceItem,
             _ => null,
         };
         if (item is null)

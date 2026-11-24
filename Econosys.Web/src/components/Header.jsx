@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from '../contexts/AuthContext';
 import { getApiBaseUrl } from '../config/backend';
 import { formatApiDateToSwedish } from '../helpers/dateUtils';
@@ -185,15 +185,18 @@ const Header = () => {
                                                     const isActive = resultIndex === activeResultIndex;
 
                                                     return (
-                                                        <button
+                                                        <Link
+                                                            to={result.path}
                                                             id={`header-search-option-${resultIndex}`}
-                                                            type="button"
                                                             role="option"
                                                             aria-selected={isActive}
                                                             className={`text-tiny py-1 px-3 header-search-result${isActive ? ' is-active' : ''}`}
                                                             key={`${group.key}-${result.id}`}
                                                             onMouseEnter={() => setActiveResultIndex(resultIndex)}
-                                                            onClick={() => openSearchResult(result)}
+                                                            onClick={() => {
+                                                                setSearchOpen(false);
+                                                                setSearchText('');
+                                                            }}
                                                         >
                                                             {/* <span className="header-search-action">VISA</span> */}
                                                             <span className="">{result.number}</span>
@@ -206,7 +209,7 @@ const Header = () => {
                                                             <time className="text-right" dateTime={result.date || undefined}>
                                                                 {formatApiDateToSwedish(result.date)}
                                                             </time>
-                                                        </button>
+                                                        </Link>
                                                     );
                                                 })}
                                             </div>

@@ -19,17 +19,20 @@ namespace Econosys.Api.Controllers
 
         private readonly ILegacyUserResolutionService _legacyUserResolution;
         private readonly IPalletFormatOptionsService _palletFormatOptionsService;
+        private readonly IDocumentProductSnapshotService _productSnapshots;
 
         public QuotationsController(
             ApplicationDbContext dbContext,
             ILogger<QuotationsController> logger,
             ILegacyUserResolutionService legacyUserResolution,
-            IPalletFormatOptionsService palletFormatOptionsService)
+            IPalletFormatOptionsService palletFormatOptionsService,
+            IDocumentProductSnapshotService? productSnapshots = null)
         {
             _dbContext = dbContext;
             _logger = logger;
             _legacyUserResolution = legacyUserResolution;
             _palletFormatOptionsService = palletFormatOptionsService;
+            _productSnapshots = productSnapshots ?? new DocumentProductSnapshotService(dbContext);
         }
 
         [HttpGet("{id:int}")]
@@ -215,7 +218,7 @@ namespace Econosys.Api.Controllers
                 : null;
             var languageCode = calculation.Customer.Language?.LanguageCode;
             var codes = new[] { calculation.Product.Material?.TranslationCode,
-                calculation.Product.Construction?.TranslationCode };
+                calculation.Product.Construction?.TranslationCode, calculation.Product.Varnish?.TranslationCode };
             var translations = string.IsNullOrWhiteSpace(languageCode) ? new List<TranslationItem>()
                 : await _dbContext.TranslationItems.AsNoTracking()
                     .Where(x => x.LangCode == languageCode && codes.Contains(x.TranslationCode))
@@ -228,7 +231,7 @@ namespace Econosys.Api.Controllers
         }
 
         [HttpPost]
-        public async Task<ActionResult<QuotationDto>> Create([FromBody] CreateQuotationRequest request)
+        public async Task<ActionResult<QuotationDto>> Create([FromBody] CreateQuotationRequest request, CancellationToken cancellationToken = default)
         {
             if (!ModelState.IsValid)
             {
@@ -266,6 +269,11 @@ namespace Econosys.Api.Controllers
             {
                 return BadRequest(new { message = "Affärsförslagets rader måste vara aktiva rader från kalkylen." });
             }
+            if (request.HiddenCalculationRowInfoIds?.Any(rowId => !requestedRowIds.Contains(rowId)) == true)
+            {
+                return BadRequest(new { message = "Dold radinfo måste tillhöra en rad i affärsförslaget." });
+            }
+            var hiddenCalculationRowInfoIds = request.HiddenCalculationRowInfoIds?.ToHashSet();
             if (rows.Any(x => x.PercentAddition == null || x.PercentAddition == 0))
             {
                 return BadRequest(new { message = "Det finns kalkylrader utan påslag." });
@@ -274,12 +282,23 @@ namespace Econosys.Api.Controllers
             ApplyCreateRequestToEntity(entity, request);
             if (calculation is not null)
             {
+                try
+                {
+                    var snapshot = await _productSnapshots.FromCalculationAsync(
+                        calculation.Id, legacyUser.CompanyId, request.CustomerId, null, null, cancellationToken);
+                    DocumentProductSnapshotService.ApplyValues(entity, snapshot);
+                }
+                catch (DocumentProductSourceException error)
+                {
+                    return BadRequest(new { message = error.Message });
+                }
                 entity.QuotationRows = rows.Select(row => new QuotationRow
                 {
                     CompanyId = entity.CompanyId,
                     CalculationRowId = row.Id,
                     Edition = row.Edition,
                     Price = QuotationDraftMapper.MapRow(calculation, row).Price,
+                    PrintInfo = hiddenCalculationRowInfoIds?.Contains(row.Id) != true,
                 }).ToList();
             }
 
@@ -328,6 +347,21 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
+            var retainedRowIds = (request.QuotationRowIds ?? []).ToHashSet();
+            if (request.HiddenQuotationRowInfoIds?.Any(rowId => !retainedRowIds.Contains(rowId)
+                || !entity.QuotationRows.Any(row => row.Id == rowId)) == true)
+            {
+                return BadRequest(new { message = "Dold radinfo måste tillhöra en rad i affärsförslaget." });
+            }
+            if (request.HiddenQuotationRowInfoIds is not null)
+            {
+                var hiddenIds = request.HiddenQuotationRowInfoIds.ToHashSet();
+                foreach (var row in entity.QuotationRows.Where(row => retainedRowIds.Contains(row.Id)))
+                {
+                    row.PrintInfo = !hiddenIds.Contains(row.Id);
+                }
+            }
+
             entity.Date = request.Date;
             entity.DeliveryAddress = request.DeliveryAddress;
             entity.DeliveryAddressName = request.DeliveryAddressName;
@@ -335,6 +369,7 @@ namespace Econosys.Api.Controllers
             entity.DeliveryPostalAddress = request.DeliveryPostalAddress;
             entity.DeliveryPostalNr = request.DeliveryPostalNr;
             entity.HideDeliveryAddressOnPrint = request.HideDeliveryAddressOnPrint;
+            entity.HideExtraCostsOnPrint = request.HideExtraCostsOnPrint ?? entity.HideExtraCostsOnPrint;
             entity.TermsOfDelivery = request.TermsOfDelivery;
             entity.TermsOfPayment = request.TermsOfPayment;
             entity.TimeOfDelivery = request.TimeOfDelivery;
@@ -664,6 +699,7 @@ namespace Econosys.Api.Controllers
                 .Include(x => x.Product).ThenInclude(x => x!.Material)
                 .Include(x => x.Product).ThenInclude(x => x!.Construction)
                 .Include(x => x.Product).ThenInclude(x => x!.Varnish)
+                .Include(x => x.Product).ThenInclude(x => x!.InternalInfo)
                 .Include(x => x.Customer).ThenInclude(x => x!.Language)
                 .Include(x => x.SalesCurrency)
                 .Include(x => x.Unit)
@@ -695,6 +731,9 @@ namespace Econosys.Api.Controllers
             entity.MaterialThickness = request.MaterialThickness;
             entity.Format = request.Format;
             entity.Color = request.Color;
+            entity.Varnish = request.Varnish;
+            entity.PrintMethod = request.PrintMethod;
+            entity.ProductNoteInternal = request.ProductNoteInternal;
             entity.Construction = request.Construction;
             entity.TimeOfDelivery = request.TimeOfDelivery;
             entity.TermsOfDelivery = request.TermsOfDelivery;
@@ -729,6 +768,7 @@ namespace Econosys.Api.Controllers
             entity.OtherCostValue = request.OtherCostValue;
             entity.Printed = request.Printed;
             entity.HideDeliveryAddressOnPrint = request.HideDeliveryAddressOnPrint;
+            entity.HideExtraCostsOnPrint = request.HideExtraCostsOnPrint ?? false;
             entity.ProductMessage = request.ProductMessage;
             entity.NoteInternal = request.NoteInternal;
             entity.AutoGenerated = request.AutoGenerated;
@@ -858,6 +898,8 @@ namespace Econosys.Api.Controllers
             entity.DoDebit = req.DoDebit;
             entity.NrOf = req.NrOf;
             entity.InPrice = req.InPrice;
+            if (req.HasInPriceCurrencyId)
+                entity.InPriceCurrencyId = req.InPriceCurrencyId;
             entity.InPriceAttested = req.InPriceAttested;
             entity.OutPrice = req.OutPrice;
             entity.Note = req.Note;
@@ -886,6 +928,7 @@ namespace Econosys.Api.Controllers
                 DoDebit = source.DoDebit,
                 NrOf = source.NrOf,
                 InPrice = source.InPrice,
+                InPriceCurrencyId = source.InPriceCurrencyId,
                 InPriceAttested = source.InPriceAttested,
                 OutPrice = source.OutPrice,
                 OutPriceSEK = source.OutPrice.HasValue && source.CustomerOrder?.SalesCurrencyRate is > 0
@@ -934,6 +977,9 @@ namespace Econosys.Api.Controllers
                 MaterialThickness = quotation.MaterialThickness,
                 Format = quotation.Format,
                 Color = quotation.Color,
+                Varnish = quotation.Varnish,
+                PrintMethod = quotation.PrintMethod,
+                ProductNoteInternal = quotation.ProductNoteInternal,
                 Construction = quotation.Construction,
                 TimeOfDelivery = quotation.TimeOfDelivery,
                 TermsOfDelivery = quotation.TermsOfDelivery,
@@ -971,6 +1017,7 @@ namespace Econosys.Api.Controllers
                 EditedByUserName = quotation.EditedByUser?.Name,
                 Printed = quotation.Printed,
                 HideDeliveryAddressOnPrint = quotation.HideDeliveryAddressOnPrint,
+                HideExtraCostsOnPrint = quotation.HideExtraCostsOnPrint,
                 ProductMessage = quotation.ProductMessage,
                 NoteInternal = quotation.NoteInternal,
                 SalesCurrencyRate = quotation.SalesCurrencyRate,
@@ -993,6 +1040,8 @@ namespace Econosys.Api.Controllers
                         CalculationRowId = row.CalculationRowId,
                         Edition = row.Edition,
                         Price = row.Price,
+                        Info = row.CalculationRow?.Info,
+                        PrintInfo = row.PrintInfo,
                         SalesCurrencyName = row.CalculationRow?.Calculation?.SalesCurrency?.Name,
                         UnitName = row.CalculationRow?.Calculation?.Unit?.Name,
                         UnitMultiplicator = row.CalculationRow?.Calculation?.Unit?.Multiplicator,

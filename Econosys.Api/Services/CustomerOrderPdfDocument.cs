@@ -144,7 +144,7 @@ public static class CustomerOrderPdfDocument
                             material += "\n" + texts.Text(-96);
                         }
                         product.Item().Element(container => Field(container, texts.Text(-3), material));
-                        product.Item().Element(container => Field(container, texts.Text(-5), order.Color));
+                        product.Item().Element(container => Field(container, texts.Text(-5), DocumentProductText.ColorWithVarnish(order.Color, order.Varnish)));
                         product.Item().Element(container => Field(container, texts.Text(DocumentPdfTranslations.Note), order.ProductMessage));
                     });
                     row.RelativeItem().Table(table =>

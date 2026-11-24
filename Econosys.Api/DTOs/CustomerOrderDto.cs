@@ -86,6 +86,9 @@ namespace Econosys.Api.DTOs
         public string? MaterialThickness { get; set; }
         public string? Format { get; set; }
         public string? Color { get; set; }
+        public string? Varnish { get; set; }
+        public string? PrintMethod { get; set; }
+        public string? ProductNoteInternal { get; set; }
         public string? Construction { get; set; }
         public string? TimeOfDelivery { get; set; }
         public string? TermsOfDelivery { get; set; }
@@ -179,6 +182,7 @@ namespace Econosys.Api.DTOs
 
     public class CreateCustomerOrderRequest
     {
+        public int? CalculationId { get; set; }
         public int? QuotationId { get; set; }
         public int? SupplierOrderId { get; set; }
         public string? CustomerOrderNr { get; set; }
@@ -205,8 +209,13 @@ namespace Econosys.Api.DTOs
         public string? Message { get; set; }
         public string? Product { get; set; }
         public string? Material { get; set; }
+        public string? MaterialThickness { get; set; }
         public string? Format { get; set; }
         public string? Color { get; set; }
+        public string? Varnish { get; set; }
+        public string? PrintMethod { get; set; }
+        public string? ProductNoteInternal { get; set; }
+        public string? ProductMessage { get; set; }
         public string? Construction { get; set; }
         public bool IsFSC { get; set; }
         public int? SalesCurrencyId { get; set; }

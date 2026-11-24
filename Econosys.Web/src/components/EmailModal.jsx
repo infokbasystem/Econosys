@@ -122,6 +122,7 @@ export default function EmailModal({
     quotationId = null,
     callOffId = null,
     transportOrderId = null,
+    invoiceId = null,
     onSent,
 }) {
     const [subject, setSubject] = useState(recipientSource ? '' : initialSubject);
@@ -306,6 +307,7 @@ export default function EmailModal({
             quotationId,
             callOffId,
             transportOrderId,
+            invoiceId,
             extraFiles,
         };
 
@@ -326,6 +328,9 @@ export default function EmailModal({
             }
             if (Number.isInteger(payload.transportOrderId)) {
                 formData.append('transportOrderId', String(payload.transportOrderId));
+            }
+            if (Number.isInteger(payload.invoiceId)) {
+                formData.append('invoiceId', String(payload.invoiceId));
             }
 
             if (payload.sourceAttachmentUrl) {
@@ -387,7 +392,7 @@ export default function EmailModal({
 
             <div className="relative z-50 flex min-h-screen items-start justify-center pt-20">
 
-                <div className="rounded-sm shadow-xl py-6 w-[92%] max-w-5xl max-h-[92vh] overflow-y-auto bg-[#f4f3f2]">
+                <div className="rounded-sm shadow-xl py-6 w-[92%] max-w-5xl max-h-[min(92vh,calc(100vh-6rem))] overflow-y-auto bg-[#f4f3f2]">
 
                     <div className="relative flex items-center justify-center mb-4">
                         <h2 className="text-sm font-semibold text-center">Skicka e-post</h2>
@@ -504,7 +509,7 @@ export default function EmailModal({
                             type="button"
                             disabled={isSending}
                             onClick={onClose}
-                            className="shadow-md/30 text-xs text-white bg-orange-400 hover:bg-orange-600 px-10 p-[5px] hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="shadow-md/30 text-xs text-white bg-orange-400 hover:bg-orange-600 px-10 p-[5px] disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {emailSent ? 'Stäng' : 'Avbryt'}
                         </button>

@@ -20,12 +20,15 @@ namespace Econosys.Api.Controllers
         private readonly ILogger<InquiriesController> _logger;
 
         private readonly ILegacyUserResolutionService _legacyUserResolution;
+        private readonly IDocumentProductSnapshotService _productSnapshots;
 
-        public InquiriesController(ApplicationDbContext dbContext, ILogger<InquiriesController> logger, ILegacyUserResolutionService legacyUserResolution)
+        public InquiriesController(ApplicationDbContext dbContext, ILogger<InquiriesController> logger, ILegacyUserResolutionService legacyUserResolution,
+            IDocumentProductSnapshotService? productSnapshots = null)
         {
             _dbContext = dbContext;
             _logger = logger;
             _legacyUserResolution = legacyUserResolution;
+            _productSnapshots = productSnapshots ?? new DocumentProductSnapshotService(dbContext);
         }
 
         [HttpGet("{id:int}")]
@@ -71,6 +74,7 @@ namespace Econosys.Api.Controllers
                 .Include(x => x.Product).ThenInclude(x => x!.Material)
                 .Include(x => x.Product).ThenInclude(x => x!.Construction)
                 .Include(x => x.Product).ThenInclude(x => x!.Varnish)
+                .Include(x => x.Product).ThenInclude(x => x!.InternalInfo)
                 .Include(x => x.Supplier).ThenInclude(x => x!.Language)
                 .Include(x => x.Customer)
                 .Include(x => x.PurchaseCurrency)
@@ -109,7 +113,7 @@ namespace Econosys.Api.Controllers
         }
 
         [HttpPost]
-        public async Task<ActionResult<InquiryDto>> Create([FromBody] CreateInquiryRequest request)
+        public async Task<ActionResult<InquiryDto>> Create([FromBody] CreateInquiryRequest request, CancellationToken cancellationToken = default)
         {
             if (!ModelState.IsValid)
             {
@@ -131,6 +135,11 @@ namespace Econosys.Api.Controllers
             {
                 return BadRequest(new { message = "Inquiry rows must belong to the calculation and must not be archived." });
             }
+            if (request.HiddenCalculationRowInfoIds?.Any(rowId => !requestedRowIds.Contains(rowId)) == true)
+            {
+                return BadRequest(new { message = "Hidden calculation row info must refer to an inquiry row." });
+            }
+            var hiddenCalculationRowInfoIds = request.HiddenCalculationRowInfoIds?.ToHashSet();
 
             InquiryRecipient? newRecipient = null;
             if (!request.SelectedInquiryRecipientId.HasValue && request.SelectedSupplierId.HasValue)
@@ -165,6 +174,10 @@ namespace Econosys.Api.Controllers
                 MaterialThickness = request.MaterialThickness,
                 Format = request.Format,
                 Color = request.Color,
+                Varnish = request.Varnish,
+                PrintMethod = request.PrintMethod,
+                ProductNoteInternal = request.ProductNoteInternal,
+                ProductNoteExternal = request.ProductNoteExternal,
                 Construction = request.Construction,
                 CustomerName = request.CustomerName,
                 DeliveryAddressName = request.DeliveryAddressName,
@@ -174,6 +187,7 @@ namespace Econosys.Api.Controllers
                 DeliveryCountry = request.DeliveryCountry,
                 OurRef = request.OurRef,
                 Preparation = request.Preparation,
+                Notes = request.Notes,
                 TimeOfDelivery = request.TimeOfDelivery,
                 SelectedInquiryRecipientId = request.SelectedInquiryRecipientId,
                 AnswerDueDate = request.AnswerDueDate,
@@ -184,8 +198,31 @@ namespace Econosys.Api.Controllers
                 {
                     CalculationRowId = row.Id,
                     Edition = row.Edition,
+                    PrintInfo = hiddenCalculationRowInfoIds?.Contains(row.Id) != true,
                 }).ToList(),
             };
+
+            if (request.CalculationId.HasValue)
+            {
+                try
+                {
+                    var supplierId = request.SelectedSupplierId;
+                    if (!supplierId.HasValue && request.SelectedInquiryRecipientId.HasValue)
+                    {
+                        supplierId = await _dbContext.InquiryRecipients.AsNoTracking()
+                            .Where(x => x.Id == request.SelectedInquiryRecipientId && x.CompanyId == legacyUser.CompanyId)
+                            .Select(x => x.SupplierId).FirstOrDefaultAsync(cancellationToken);
+                    }
+                    var snapshot = await _productSnapshots.FromCalculationAsync(
+                        request.CalculationId.Value, legacyUser.CompanyId, null, supplierId,
+                        request.SelectedRecipientLanguageId, cancellationToken);
+                    DocumentProductSnapshotService.ApplyValues(entity, snapshot);
+                }
+                catch (DocumentProductSourceException error)
+                {
+                    return BadRequest(new { message = error.Message });
+                }
+            }
 
             entity.CreatedAt = SwedishTime.Now;
             entity.CreatedBy = legacyUser.Id;
@@ -250,6 +287,15 @@ namespace Econosys.Api.Controllers
                 return NotFound();
             }
 
+            var requestedRowIds = request.InquiryRowIds
+                .Where(x => x > 0)
+                .ToHashSet();
+            if (request.HiddenInquiryRowInfoIds?.Any(rowId =>
+                !requestedRowIds.Contains(rowId) || !entity.InquiryRows.Any(row => row.Id == rowId)) == true)
+            {
+                return BadRequest(new { message = "Hidden inquiry row info must refer to a retained inquiry row." });
+            }
+
             entity.CompanyId = request.CompanyId;
             entity.CalculationId = request.CalculationId;
             entity.AutoGenerated = request.AutoGenerated;
@@ -268,6 +314,7 @@ namespace Econosys.Api.Controllers
             entity.DeliveryCountry = request.DeliveryCountry;
             entity.OurRef = request.OurRef;
             entity.Preparation = request.Preparation;
+            entity.Notes = request.Notes;
             entity.TimeOfDelivery = request.TimeOfDelivery;
             entity.SelectedInquiryRecipientId = request.SelectedInquiryRecipientId;
             entity.AnswerDueDate = request.AnswerDueDate;
@@ -278,13 +325,18 @@ namespace Econosys.Api.Controllers
             entity.EditedAt = SwedishTime.Now;
             entity.EditedBy = legacyUser.Id;
 
-            var requestedRowIds = request.InquiryRowIds
-                .Where(x => x > 0)
-                .ToHashSet();
-
             var rowsToDelete = entity.InquiryRows
                 .Where(x => !requestedRowIds.Contains(x.Id))
                 .ToList();
+
+            if (request.HiddenInquiryRowInfoIds is not null)
+            {
+                var hiddenIds = request.HiddenInquiryRowInfoIds.ToHashSet();
+                foreach (var row in entity.InquiryRows.Where(row => requestedRowIds.Contains(row.Id)))
+                {
+                    row.PrintInfo = !hiddenIds.Contains(row.Id);
+                }
+            }
 
             if (rowsToDelete.Count > 0)
             {
@@ -621,6 +673,10 @@ namespace Econosys.Api.Controllers
                 MaterialThickness = inquiry.MaterialThickness,
                 Format = inquiry.Format,
                 Color = inquiry.Color,
+                Varnish = inquiry.Varnish,
+                PrintMethod = inquiry.PrintMethod,
+                ProductNoteInternal = inquiry.ProductNoteInternal,
+                ProductNoteExternal = inquiry.ProductNoteExternal,
                 Construction = inquiry.Construction,
                 CustomerName = inquiry.CustomerName,
                 DeliveryAddressName = inquiry.DeliveryAddressName,
@@ -630,6 +686,7 @@ namespace Econosys.Api.Controllers
                 DeliveryCountry = inquiry.DeliveryCountry,
                 OurRef = inquiry.OurRef,
                 Preparation = inquiry.Preparation,
+                Notes = inquiry.Notes,
                 TimeOfDelivery = inquiry.TimeOfDelivery,
                 SelectedInquiryRecipientId = inquiry.SelectedInquiryRecipientId,
                 SelectedSupplierId = inquiry.SelectedInquiryRecipient?.SupplierId,
@@ -660,6 +717,8 @@ namespace Econosys.Api.Controllers
                         Edition = r.Edition,
                         PurchasePrice = r.CalculationRow?.PurchasePrice,
                         Freight = r.CalculationRow?.Freight,
+                        Info = r.CalculationRow?.Info,
+                        PrintInfo = r.PrintInfo,
                     })
                     .ToList(),
             };

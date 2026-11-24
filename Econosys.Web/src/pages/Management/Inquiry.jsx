@@ -9,13 +9,16 @@ import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import EntityOrderFlowNavigation from '../../components/EntityOrderFlowNavigation';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
-import OrderProductInfo from '../../components/OrderProductInfo';
+import DocumentProductInfo from '../../components/DocumentProductInfo';
+import { mergeDocumentProductSnapshot } from '../../helpers/documentProductSnapshot';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 import useDocumentTitle from '../../hooks/useDocumentTitle';
 import LabeledInput from '../../components/LabeledInput';
+import LabeledTextArea from '../../components/LabeledTextArea';
 import LabeledSelect from '../../components/LabeledSelect';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import LabeledSwitch from '../../components/LabeledSwitch';
+import SmallSwitch from '../../components/SmallSwitch';
 import apiClient from '../../config/apiClient';
 import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { formatDateTime, fromDateInputToSwedishIso, toSwedishDateInputValue } from '../../helpers/dateUtils';
@@ -46,6 +49,7 @@ const createNewInquiryModel = (initialValues = {}) => ({
     deliveryCountry: '',
     ourRef: '',
     preparation: '',
+    notes: '',
     timeOfDelivery: '',
     selectedInquiryRecipientId: null,
     answerDueDate: null,
@@ -255,6 +259,12 @@ const Inquiry = () => {
 
     const handleDeleteRow = (rowId) => {
         updateInquiry({ inquiryRows: (inquiry?.inquiryRows ?? []).filter((row) => row.id !== rowId) });
+    };
+
+    const handlePrintInfoChange = (rowId, _field, checked) => {
+        updateInquiry({
+            inquiryRows: (inquiry?.inquiryRows ?? []).map((row) => row.id === rowId ? { ...row, printInfo: checked } : row),
+        });
     };
 
     const handleSave = async () => {
@@ -574,6 +584,7 @@ const Inquiry = () => {
                     <EntityOrderFlowNavigation
                         entityType="inquiry"
                         entityId={Number.isInteger(inquiry?.id) && inquiry.id > 0 ? inquiry.id : null}
+                        relatedCalculationId={parseNullableInt(inquiry?.calculationId)}
                     />
                 )}
             >
@@ -612,8 +623,15 @@ const Inquiry = () => {
                         </div>
                     </div>
 
-                    <OrderProductInfo
-                        calculationId={inquiry?.calculationId ?? calculationId}
+                    <DocumentProductInfo
+                        type="inquiries"
+                        document={inquiry}
+                        dirty={hasUnsavedChanges()}
+                        onRefreshed={(response) => {
+                            setInquiry((current) => mergeDocumentProductSnapshot(current, 'inquiries', response));
+                            setOriginalInquiry((current) => mergeDocumentProductSnapshot(current, 'inquiries', response));
+                            clearStale();
+                        }}
                     />
 
                     <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
@@ -755,6 +773,16 @@ const Inquiry = () => {
                                         labelWidth="w-20"
                                         margintop="0"
                                     />
+                                    <LabeledTextArea
+                                        name="notes"
+                                        label="Notering"
+                                        value={inquiry?.notes || ''}
+                                        onChange={(value) => updateInquiry({ notes: value })}
+                                        labelWidth="w-20"
+                                        margintop="4"
+                                        height="h-20"
+                                        aria-label="Notering"
+                                    />
 
                                 </span>
                             </div>
@@ -762,7 +790,7 @@ const Inquiry = () => {
                         </span>
                     </div>
 
-                    <div className="mt-10 w-[700px]">
+                    <div className="mt-10 w-full max-w-[950px]">
                         <p className="text-sm font-semibold text-gray-500 mb-1 pb-2 text-center border-b border-gray-300">Förfråganrader</p>
                         {Array.isArray(inquiry?.inquiryRows) && inquiry.inquiryRows.length > 0 && (
                             <table className="w-full text-xs border-collapse">
@@ -771,10 +799,12 @@ const Inquiry = () => {
                                         <th className="text-left font-medium text-gray-500 tracking-wide py-1 pr-6">Upplaga</th>
                                         <th className="text-left font-medium text-gray-500 tracking-wide py-1 pr-6">{`Inköpspris ${inquiry?.purchaseCurrencyName || ''}`.trim()}</th>
                                         <th className="text-left font-medium text-gray-500 tracking-wide py-1 pr-6">{`Frakt ${inquiry?.salesCurrencyName || ''}`.trim()}</th>
+                                        <th className="text-left font-medium text-gray-500 tracking-wide py-1 pr-6">Info</th>
+                                        <th className="text-left font-medium text-gray-500 tracking-wide py-1 pr-6">Skriv ut info</th>
                                         <th className="text-left font-medium text-gray-500 tracking-wide py-1">Ta bort</th>
                                     </tr>
                                     <tr>
-                                        <td colSpan={4}><div className="border-t border-gray-300" /></td>
+                                        <td colSpan={6}><div className="border-t border-gray-300" /></td>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -783,6 +813,14 @@ const Inquiry = () => {
                                             <td className="py-1 pr-6 font-bold">{row.edition ?? ''}</td>
                                             <td className="py-1 pr-6 font-bold">{row.purchasePrice ?? ''}</td>
                                             <td className="py-1 pr-6 font-bold">{row.freight ?? ''}</td>
+                                            <td className="py-1 pr-6 whitespace-pre-wrap">{row.info ?? ''}</td>
+                                            <td className="py-1 pr-6">
+                                                <SmallSwitch
+                                                    checked={row.printInfo !== false}
+                                                    label={`Skriv ut info för upplaga ${row.edition ?? row.id}`}
+                                                    onChange={(checked) => handlePrintInfoChange(row.id, 'printInfo', checked)}
+                                                />
+                                            </td>
                                             <td className="py-1">
                                                 <ActionButton
                                                     label="Ta bort"

@@ -153,6 +153,10 @@ namespace Econosys.Api.Models
         [MaxLength(50)]
         public string? TimeOfDelivery { get; set; }
 
+        [Column("strTermsOfDelivery")]
+        [MaxLength(255)]
+        public string? TermsOfDelivery { get; set; }
+
         [Column("strAddress2")]
         [MaxLength(50)]
         public string? Address2 { get; set; }

@@ -18,6 +18,8 @@ namespace Econosys.Api.Models
         [Column("Edition")]
         public int? Edition { get; set; }
 
+        public bool PrintInfo { get; set; } = true;
+
         public virtual Inquiry? Inquiry { get; set; }
         public virtual CalculationRow? CalculationRow { get; set; }
     }

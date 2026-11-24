@@ -2,6 +2,47 @@
 @token = replace-with-access-token
 @customerId = 1
 @stockDeliveryId = 1
+@invoiceId = 1
+@customerOrderId = 1
+
+### Review a saved credit invoice's proposed stock delivery adjustments
+GET {{baseUrl}}/api/invoices/{{invoiceId}}/stock-delivery-adjustments
+Authorization: Bearer {{token}}
+
+### Apply exactly the reviewed quantities (replace with the GET response)
+PUT {{baseUrl}}/api/invoices/{{invoiceId}}/stock-delivery-adjustments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "deliveries": [{"deliveryId": 1, "currentQuantity": 100, "creditedQuantity": 30, "newQuantity": 70}]
+}
+
+### Related original and credit invoices
+GET {{baseUrl}}/api/invoices/{{invoiceId}}/credit-relations
+Authorization: Bearer {{token}}
+
+### Customer orders linked to an invoice, with completion and delivery quantities
+GET {{baseUrl}}/api/invoices/{{invoiceId}}/customer-orders
+Authorization: Bearer {{token}}
+
+### Update only the selected linked customer order
+PUT {{baseUrl}}/api/invoices/{{invoiceId}}/customer-orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "orders": [{"id": {{customerOrderId}}, "completed": true, "completedDate": "2026-11-23"}]
+}
+
+### An order unrelated to the invoice is rejected
+PUT {{baseUrl}}/api/invoices/{{invoiceId}}/customer-orders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "orders": [{"id": 2147483647, "completed": true, "completedDate": "2026-11-23"}]
+}
 
 ### Unsaved draft: regular costs, recurring DMT, pallets and call-off freight follow the selected deliveries
 POST {{baseUrl}}/api/invoices/draft/from-selection

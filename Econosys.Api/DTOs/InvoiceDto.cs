@@ -2,6 +2,14 @@ using Econosys.Api.Models;
 
 namespace Econosys.Api.DTOs
 {
+    /// <summary>An invoice number and its navigation identifier.</summary>
+    public sealed record InvoiceReferenceResponse(int Id, int InvoiceNumber);
+
+    /// <summary>The original invoice and any credit invoices related to an invoice.</summary>
+    public sealed record InvoiceCreditRelationsResponse(
+        InvoiceReferenceResponse? CreditedInvoice,
+        IReadOnlyList<InvoiceReferenceResponse> CreditInvoices);
+
     public class InvoiceDto
     {
         public int Id { get; set; }
@@ -30,6 +38,7 @@ namespace Econosys.Api.DTOs
         public string? Construction { get; set; }
         public short? InvoiceDays { get; set; }
         public string? TermsOfPayment { get; set; }
+        public string? TermsOfDelivery { get; set; }
         public int? SalesCurrencyId { get; set; }
         public int? UnitId { get; set; }
         public DateTime? AccountDate { get; set; }
@@ -126,6 +135,7 @@ namespace Econosys.Api.DTOs
         public string? Construction { get; set; }
         public short? InvoiceDays { get; set; }
         public string? TermsOfPayment { get; set; }
+        public string? TermsOfDelivery { get; set; }
         public int? SalesCurrencyId { get; set; }
         public int? UnitId { get; set; }
         public DateTime? AccountDate { get; set; }
@@ -217,7 +227,7 @@ namespace Econosys.Api.DTOs
     }
 
     /// <summary>Source rows for recalculating the inventory entries shown in the invoice editor.</summary>
-    public sealed record InvoiceAccountingPreviewRequest(int? CustomerId, List<InvoiceRowMutationRequest> InvoiceRows);
+    public sealed record InvoiceAccountingPreviewRequest(int? CustomerId, List<InvoiceRowMutationRequest> InvoiceRows, InvoiceTypeCode? InvoiceTypeCode = null);
 
     public class InvoiceDraftDeliverySelectionRequest
     {

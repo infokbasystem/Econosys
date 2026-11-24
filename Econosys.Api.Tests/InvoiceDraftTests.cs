@@ -15,6 +15,40 @@ namespace Econosys.Api.Tests;
 public class InvoiceDraftTests
 {
     [Fact]
+    public async Task CreditRelationsResolveBothDirectionsAndExcludeUnrelatedInvoices()
+    {
+        using var context = CreateContext();
+        context.Invoices.AddRange(
+            new Invoice { Id = 1, InvoiceNumber = 100, InvoiceTypeCode = InvoiceTypeCode.Normal },
+            new Invoice { Id = 2, InvoiceNumber = 102, InvoiceTypeCode = InvoiceTypeCode.Credit, CreditingInvoiceNumber = 100 },
+            new Invoice { Id = 3, InvoiceNumber = 101, InvoiceTypeCode = InvoiceTypeCode.Credit, CreditingInvoiceNumber = 100 },
+            new Invoice { Id = 4, InvoiceNumber = 103, InvoiceTypeCode = InvoiceTypeCode.Normal, CreditingInvoiceNumber = 100 },
+            new Invoice { Id = 5, InvoiceTypeCode = InvoiceTypeCode.Credit, CreditingInvoiceNumber = 100 },
+            new Invoice { Id = 6, InvoiceNumber = 104, InvoiceTypeCode = InvoiceTypeCode.Credit, CreditingInvoiceNumber = 999 },
+            new Invoice { Id = 7 });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context);
+
+        var original = Assert.IsType<InvoiceCreditRelationsResponse>(
+            Assert.IsType<OkObjectResult>((await controller.GetCreditRelations(1, CancellationToken.None)).Result).Value);
+        Assert.Null(original.CreditedInvoice);
+        Assert.Equal([new InvoiceReferenceResponse(3, 101), new InvoiceReferenceResponse(2, 102)], original.CreditInvoices);
+
+        var credit = Assert.IsType<InvoiceCreditRelationsResponse>(
+            Assert.IsType<OkObjectResult>((await controller.GetCreditRelations(2, CancellationToken.None)).Result).Value);
+        Assert.Equal(new InvoiceReferenceResponse(1, 100), credit.CreditedInvoice);
+        Assert.Empty(credit.CreditInvoices);
+
+        var missingOriginal = Assert.IsType<InvoiceCreditRelationsResponse>(
+            Assert.IsType<OkObjectResult>((await controller.GetCreditRelations(6, CancellationToken.None)).Result).Value);
+        Assert.Null(missingOriginal.CreditedInvoice);
+        var noNumber = Assert.IsType<InvoiceCreditRelationsResponse>(
+            Assert.IsType<OkObjectResult>((await controller.GetCreditRelations(7, CancellationToken.None)).Result).Value);
+        Assert.Empty(noNumber.CreditInvoices);
+        Assert.IsType<NotFoundResult>((await controller.GetCreditRelations(999, CancellationToken.None)).Result);
+    }
+
+    [Fact]
     public void AccountingRowsMapRequiredLegacyCompanyColumn()
     {
         using var context = CreateContext();
@@ -46,6 +80,8 @@ public class InvoiceDraftTests
         InvoiceMutationRequest request = update
             ? new UpdateInvoiceRequest()
             : new CreateInvoiceRequest();
+        request.TimeOfDelivery = "2026-11-23";
+        request.TermsOfDelivery = "DAP";
         request.InvoiceRows = [new() { AccountNr = "3001", Sum = 100 }];
         request.InvoiceAccountRows = [new() { AccountNr = "3001", Sum = 100 }];
         if (update)
@@ -60,10 +96,55 @@ public class InvoiceDraftTests
         context.ChangeTracker.Clear();
         var row = Assert.Single(await context.InvoiceRows.ToListAsync());
         var accountRow = Assert.Single(await context.InvoiceAccountRows.ToListAsync());
+        var savedInvoice = Assert.Single(await context.Invoices.ToListAsync());
         Assert.Equal(7, row.CompanyId);
         Assert.Equal(7, accountRow.CompanyId);
         Assert.Equal("3001", accountRow.AccountNr);
         Assert.Equal(100d, accountRow.Sum);
+        Assert.Equal("2026-11-23", savedInvoice.TimeOfDelivery);
+        Assert.Equal("DAP", savedInvoice.TermsOfDelivery);
+    }
+
+    [Theory]
+    [InlineData(0, true, "2026-11-30", " DAP ", "dap", "DAP")]
+    [InlineData(1, true, null, "DAP", "DAP", "DAP")]
+    [InlineData(0, false, null, "DAP", "DAP", "DAP")]
+    [InlineData(0, true, "2026-11-30", "DAP", "EXW", null)]
+    [InlineData(0, true, "2026-11-30", null, "DAP", null)]
+    public async Task DraftDefaultsDeliveryDateAndTermsOnlyWhenCustomerOrdersAgree(
+        int secondOrderDayOffset, bool secondOrderHasDate, string? expectedTimeOfDelivery,
+        string? firstTerms, string? secondTerms, string? expectedTerms)
+    {
+        using var context = CreateContext();
+        SeedSelection(context, new Customer { Id = 1 });
+        var firstOrderDate = new DateTime(2026, 11, 30, 8, 0, 0);
+        context.CustomerOrders.Local.Single().DeliveryDate = firstOrderDate;
+        context.CustomerOrders.Local.Single().TermsOfDelivery = firstTerms;
+        context.CustomerOrders.Add(new CustomerOrder
+        {
+            Id = 11,
+            CustomerId = 1,
+            SalesPrice = 10,
+            DeliveryDate = secondOrderHasDate
+                ? firstOrderDate.Date.AddDays(secondOrderDayOffset).AddHours(17)
+                : null,
+            TermsOfDelivery = secondTerms,
+        });
+        context.DeliveryToCustomers.Add(new DeliveryToCustomer { Id = 31, CustomerOrderId = 11, NrOfItems = 1 });
+        await context.SaveChangesAsync();
+
+        var draft = GetDraft(await CreateController(context).CreateDraftFromSelection(new CreateInvoiceDraftFromSelectionRequest
+        {
+            CustomerId = 1,
+            Deliveries =
+            [
+                new() { Id = 30, Type = "DeliveryToCustomer" },
+                new() { Id = 31, Type = "DeliveryToCustomer" },
+            ],
+        }));
+
+        Assert.Equal(expectedTimeOfDelivery, draft.TimeOfDelivery);
+        Assert.Equal(expectedTerms, draft.TermsOfDelivery);
     }
 
     [Theory]

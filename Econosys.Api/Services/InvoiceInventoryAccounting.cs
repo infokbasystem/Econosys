@@ -10,7 +10,8 @@ public static class InvoiceInventoryAccounting
     public static async Task<List<InvoiceAccountRowMutationRequest>> BuildAsync(
         ApplicationDbContext dbContext,
         IReadOnlyCollection<InvoiceRowMutationRequest> invoiceRows,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool isCredit = false)
     {
         var stockRows = invoiceRows
             .Where(row => row.PriceTypeId == 1 && row.DeliveryFromStockId > 0)
@@ -71,7 +72,7 @@ public static class InvoiceInventoryAccounting
                 inventoryAccount = GetRequiredAccount(accounts, 18);
 
             var multiplicator = unit.Multiplicator.GetValueOrDefault();
-            var value = quantity * purchasePrice * stockRate / (multiplicator == 0 ? 1 : multiplicator);
+            var value = quantity * purchasePrice * stockRate / (multiplicator == 0 ? 1 : multiplicator) * (isCredit ? -1 : 1);
             // Round each line using the legacy double calculation; sum the rounded amounts in decimal.
             var rounded = (decimal)Math.Round(value, 2, MidpointRounding.ToEven);
             AddPosting(inventoryAccount, "Lager ut", rounded);

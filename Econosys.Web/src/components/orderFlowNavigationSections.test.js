@@ -1,6 +1,44 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getOrderFlowSections, getVisibleOrderFlowItems } from './orderFlowNavigationSections.js';
+import { filterOrderFlowItems, getOrderFlowSections, getVisibleOrderFlowItems } from './orderFlowNavigationSections.js';
+
+test('filters inquiry order flow to its related calculation only', () => {
+    const items = [
+        { type: 'calculation', id: 1 },
+        { type: 'inquiry', id: 10 },
+        { type: 'calculation', id: 2 },
+        { type: 'quotation', id: 20 },
+    ];
+
+    assert.deepEqual(filterOrderFlowItems(items, 'inquiry', 2), [
+        { type: 'inquiry', id: 10 },
+        { type: 'calculation', id: 2 },
+        { type: 'quotation', id: 20 },
+    ]);
+    assert.deepEqual(filterOrderFlowItems(items, 'inquiry', null), [
+        { type: 'inquiry', id: 10 },
+        { type: 'quotation', id: 20 },
+    ]);
+    assert.equal(filterOrderFlowItems(items, 'product', 2), items);
+});
+
+test('filters quotation order flow to its related calculation without changing other sections', () => {
+    const items = [
+        { type: 'product', id: 1 },
+        { type: 'calculation', id: 24186 },
+        { type: 'calculation', id: 24192 },
+        { type: 'inquiry', id: 28532 },
+        { type: 'quotation', id: 24632 },
+    ];
+
+    assert.deepEqual(filterOrderFlowItems(items, 'quotation', 24186), [
+        items[0], items[1], items[3], items[4],
+    ]);
+    assert.deepEqual(filterOrderFlowItems(items, 'quotation', null), [
+        items[0], items[3], items[4],
+    ]);
+    assert.equal(filterOrderFlowItems(items, 'customerOrder', 24186), items);
+});
 
 test('groups in legacy order, hides empty groups and uses calculation-specific headings', () => {
     const sections = getOrderFlowSections([

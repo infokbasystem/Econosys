@@ -16,6 +16,7 @@ public sealed class MailLogService(ApplicationDbContext dbContext) : IMailLogSer
     public const string CallOffItem = "CALLOFF";
     public const string TransportOrderItem = "TRANSPORTORDER";
     public const string CustomerOrderItem = "CUSTOMERORDER";
+    public const string InvoiceItem = "INVOICE";
     public const string SendMailAction = "SENDMAIL";
 
     public async Task<IReadOnlyList<MailLogEntryResponse>> GetAsync(

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
 import apiClient from '../config/apiClient';
 import { formatDateTime } from '../helpers/dateUtils';
 
@@ -78,7 +77,7 @@ export default function MailLog({ itemType, itemId, refreshKey }) {
 
             {isOpen && createPortal(
                 <div
-                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
+                    className="fixed inset-0 z-[70] flex items-start justify-center bg-black/50 p-4 pt-20"
                     onMouseDown={(event) => {
                         if (event.target === event.currentTarget) closeModal();
                     }}
@@ -87,7 +86,7 @@ export default function MailLog({ itemType, itemId, refreshKey }) {
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="mail-log-title"
-                        className="flex max-h-[85vh] min-h-[350px] w-full max-w-4xl flex-col rounded-sm border-2 border-[#fafad2] bg-[#ffffe0] p-6 shadow-xl"
+                        className="flex max-h-[min(85vh,calc(100vh-6rem))] min-h-[min(350px,calc(100vh-6rem))] w-full max-w-4xl flex-col rounded-sm bg-[#f4f3f2] p-6 shadow-xl"
                         onKeyDown={(event) => {
                             if (event.key === 'Escape') {
                                 event.stopPropagation();
@@ -113,9 +112,9 @@ export default function MailLog({ itemType, itemId, refreshKey }) {
                                 autoFocus
                                 onClick={closeModal}
                                 aria-label="Stäng mail-logg"
-                                className="absolute right-0 rounded p-1 text-red-700 hover:bg-red-100"
+                                className="absolute right-0 mb-1 text-l leading-none text-gray-400 hover:text-gray-600"
                             >
-                                <X size={16} />
+                                ×
                             </button>
                         </div>
                         {error && <p role="alert" className="mb-3 text-xs text-red-700">{error}</p>}
@@ -147,7 +146,7 @@ export default function MailLog({ itemType, itemId, refreshKey }) {
                             <button
                                 type="button"
                                 onClick={closeModal}
-                                className="bg-orange-400 px-10 py-1.5 text-xs text-white shadow-md hover:bg-orange-600"
+                                className="shadow-md/30 bg-orange-400 px-10 p-[5px] text-xs text-white hover:bg-orange-600"
                             >
                                 Stäng
                             </button>

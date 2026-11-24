@@ -15,6 +15,28 @@ namespace Econosys.Api.Tests;
 
 public class InquiryCreationTests
 {
+    [Fact]
+    public async Task CreateUsesCurrentProductAndTheSelectedRecipientLanguage()
+    {
+        await using var db = CreateContext();
+        await Seed(db);
+        db.Languages.Add(new Language { Id = 6, LanguageCode = "de" });
+        db.TranslationItems.Add(new TranslationItem { LangCode = "de", TranslationCode = 100, Translation = "German material" });
+        var product = await db.Products.SingleAsync();
+        product.Name = "New product";
+        await db.SaveChangesAsync();
+
+        var result = await Controller(db).Create(new CreateInquiryRequest
+        {
+            CompanyId = 7, CalculationId = 10, CustomerId = 25,
+            SelectedSupplierId = 20, SelectedRecipientLanguageId = 6,
+            Product = "Outdated product", Material = "Outdated material",
+        });
+        var saved = Assert.IsType<InquiryDto>(Assert.IsType<CreatedAtActionResult>(result.Result).Value);
+        Assert.Equal("New product", saved.Product);
+        Assert.Equal("German material", saved.Material);
+    }
+
     [Theory]
     [InlineData(false, 30)]
     [InlineData(true, 31)]
@@ -53,7 +75,8 @@ public class InquiryCreationTests
         Assert.Equal("Translated material", draft.Material);
         Assert.Equal("Translated construction", draft.Construction);
         Assert.Equal("Custom format", draft.Format);
-        Assert.Equal("4 + Translated varnish, Extra varnish", draft.Color);
+        Assert.Equal("4", draft.Color);
+        Assert.Equal("Translated varnish, Extra varnish", draft.Varnish);
         Assert.Equal("EUR", draft.PurchaseCurrencyName);
         Assert.Equal("SEK", draft.SalesCurrencyName);
         var row = Assert.Single(draft.InquiryRows);
@@ -62,6 +85,8 @@ public class InquiryCreationTests
         Assert.Equal(1000, row.Edition);
         Assert.Equal(12d, row.PurchasePrice);
         Assert.Equal(3d, row.Freight);
+        Assert.Equal("Calculation row info", row.Info);
+        Assert.True(row.PrintInfo);
         Assert.Empty(await db.Inquiries.ToListAsync());
         Assert.Empty(await db.InquiryRecipients.ToListAsync());
         Assert.Empty(await db.InquiryRows.ToListAsync());
@@ -86,6 +111,9 @@ public class InquiryCreationTests
             SelectedSupplierId = 20, SelectedRecipientYourRef = "Edited reference",
             SelectedRecipientTermsOfDelivery = "EXW", SelectedRecipientTermsOfPayment = "60 days",
             SelectedRecipientLanguageId = 5,
+            Color = "4", Varnish = "Translated varnish", PrintMethod = "Offset",
+            ProductNoteInternal = "Internal", ProductNoteExternal = "External",
+            Notes = "First line\nSecond line",
             CalculationRowIds = removeAllRows ? [] : [40],
             CustomerDeliveryAddressId = 30, DeliveryAddress = "Edited address",
         });
@@ -103,6 +131,12 @@ public class InquiryCreationTests
         Assert.Equal("60 days", reloaded.SelectedRecipientTermsOfPayment);
         Assert.Equal(5, reloaded.SelectedRecipientLanguageId);
         Assert.Equal("Edited address", reloaded.DeliveryAddress);
+        Assert.Equal("4", reloaded.Color);
+        Assert.Equal("Translated varnish, Extra varnish", reloaded.Varnish);
+        Assert.Equal("Offset", reloaded.PrintMethod);
+        Assert.Equal("Internal", reloaded.ProductNoteInternal);
+        Assert.Equal("External", reloaded.ProductNoteExternal);
+        Assert.Equal("First line\nSecond line", reloaded.Notes);
         Assert.Equal(removeAllRows ? 0 : 1, reloaded.InquiryRows.Count);
         if (!removeAllRows)
         {
@@ -129,6 +163,8 @@ public class InquiryCreationTests
             {
                 CompanyId = 7, CalculationId = 10, CustomerId = 25,
                 SelectedSupplierId = 20, SelectedRecipientLanguageId = 5,
+                Varnish = "Saved varnish", PrintMethod = "Offset", ProductNoteExternal = "Saved note",
+                Notes = "Original note",
                 CalculationRowIds = [40],
             })).Result).Value);
         var updated = Assert.IsType<InquiryDto>(Assert.IsType<OkObjectResult>(
@@ -137,12 +173,20 @@ public class InquiryCreationTests
                 CompanyId = 7, CalculationId = 10, CustomerId = 25,
                 SelectedInquiryRecipientId = created.SelectedInquiryRecipientId,
                 SelectedRecipientYourRef = "Updated again", SelectedRecipientLanguageId = 5,
+                Notes = "Updated note\nSecond line",
                 InquiryRowIds = created.InquiryRows.Select(row => row.Id).ToList(),
             })).Result).Value);
         Assert.Single(updated.InquiryRows);
         Assert.Equal("Updated again", updated.SelectedRecipientYourRef);
+        Assert.Equal("Translated varnish, Extra varnish", updated.Varnish);
+        Assert.Equal("Offset", updated.PrintMethod);
+        Assert.Equal("External", updated.ProductNoteExternal);
+        Assert.Equal("Updated note\nSecond line", updated.Notes);
 
         db.ChangeTracker.Clear();
+        var reloaded = Assert.IsType<InquiryDto>(Assert.IsType<OkObjectResult>(
+            (await controller.GetById(created.Id)).Result).Value);
+        Assert.Equal("Updated note\nSecond line", reloaded.Notes);
         Assert.IsType<NoContentResult>(await controller.Delete(created.Id));
         Assert.Empty(await db.Inquiries.ToListAsync());
         Assert.Empty(await db.InquiryRows.ToListAsync());
@@ -150,6 +194,80 @@ public class InquiryCreationTests
         Assert.Equal(2, await db.CalculationRows.CountAsync());
         Assert.Single(await db.Suppliers.ToListAsync());
         Assert.Single(await db.Customers.ToListAsync());
+    }
+
+    [Fact]
+    public async Task RowInfoPrintSelectionSurvivesCreateUpdateAndReload()
+    {
+        await using var db = CreateContext();
+        await Seed(db);
+        var controller = Controller(db);
+        var created = Assert.IsType<InquiryDto>(Assert.IsType<CreatedAtActionResult>(
+            (await controller.Create(new CreateInquiryRequest
+            {
+                CompanyId = 7, CalculationId = 10, CalculationRowIds = [40],
+                HiddenCalculationRowInfoIds = [40],
+            })).Result).Value);
+        var row = Assert.Single(created.InquiryRows);
+        Assert.Equal("Calculation row info", row.Info);
+        Assert.False(row.PrintInfo);
+
+        db.ChangeTracker.Clear();
+        var reloaded = Assert.IsType<InquiryDto>(Assert.IsType<OkObjectResult>(
+            (await controller.GetById(created.Id)).Result).Value);
+        Assert.False(Assert.Single(reloaded.InquiryRows).PrintInfo);
+
+        var request = new UpdateInquiryRequest
+        {
+            CompanyId = 7, CalculationId = 10, InquiryRowIds = [row.Id],
+        };
+        var legacyUpdate = Assert.IsType<InquiryDto>(Assert.IsType<OkObjectResult>(
+            (await controller.Update(created.Id, request)).Result).Value);
+        Assert.False(Assert.Single(legacyUpdate.InquiryRows).PrintInfo);
+
+        request.HiddenInquiryRowInfoIds = [];
+        var updated = Assert.IsType<InquiryDto>(Assert.IsType<OkObjectResult>(
+            (await controller.Update(created.Id, request)).Result).Value);
+        Assert.True(Assert.Single(updated.InquiryRows).PrintInfo);
+        db.ChangeTracker.Clear();
+        reloaded = Assert.IsType<InquiryDto>(Assert.IsType<OkObjectResult>(
+            (await controller.GetById(created.Id)).Result).Value);
+        Assert.True(Assert.Single(reloaded.InquiryRows).PrintInfo);
+
+        request.HiddenInquiryRowInfoIds = [row.Id];
+        await controller.Update(created.Id, request);
+        db.ChangeTracker.Clear();
+        reloaded = Assert.IsType<InquiryDto>(Assert.IsType<OkObjectResult>(
+            (await controller.GetById(created.Id)).Result).Value);
+        Assert.False(Assert.Single(reloaded.InquiryRows).PrintInfo);
+    }
+
+    [Fact]
+    public async Task RejectsPrintOptionsForUnrelatedRows()
+    {
+        await using var db = CreateContext();
+        await Seed(db);
+        var controller = Controller(db);
+        var invalidCreate = await controller.Create(new CreateInquiryRequest
+        {
+            CompanyId = 7, CalculationId = 10, CalculationRowIds = [40], HiddenCalculationRowInfoIds = [41],
+        });
+        Assert.IsType<BadRequestObjectResult>(invalidCreate.Result);
+
+        var created = Assert.IsType<InquiryDto>(Assert.IsType<CreatedAtActionResult>(
+            (await controller.Create(new CreateInquiryRequest
+            {
+                CompanyId = 7, CalculationId = 10, CalculationRowIds = [40],
+            })).Result).Value);
+        var row = Assert.Single(created.InquiryRows);
+        Assert.True(row.PrintInfo);
+        var invalidUpdate = await controller.Update(created.Id, new UpdateInquiryRequest
+        {
+            CompanyId = 7, CalculationId = 10, InquiryRowIds = [row.Id],
+            HiddenInquiryRowInfoIds = [row.Id + 100],
+        });
+        Assert.IsType<BadRequestObjectResult>(invalidUpdate.Result);
+        Assert.True((await db.InquiryRows.SingleAsync()).PrintInfo);
     }
 
     [Fact]
@@ -256,6 +374,8 @@ public class InquiryCreationTests
             Product = new Product
             {
                 Id = 15, Name = "Box", Format = "Custom format", LengthMm = 100,
+                NoteInternal = "Internal", NoteExternal = "External",
+                InternalInfo = new ProductInternalInfo { IsOffset = true },
                 Material = new Material { TranslationCode = 100, Name = "Material" },
                 Construction = new Construction { TranslationCode = 101, Name = "Construction" },
                 NrOfColors = "4", Varnish = new Varnish { Id = 6, TranslationCode = 102, Name = "Varnish" },
@@ -274,7 +394,7 @@ public class InquiryCreationTests
             LoadingInstruction = "Loading instructions",
             CalculationRows =
             [
-                new CalculationRow { Id = 40, CompanyId = 7, Edition = 1000, PurchasePrice = 12, Freight = 3 },
+                new CalculationRow { Id = 40, CompanyId = 7, Edition = 1000, PurchasePrice = 12, Freight = 3, Info = "Calculation row info" },
                 new CalculationRow { Id = 41, CompanyId = 7, Edition = 2000, Archived = true },
             ],
         });

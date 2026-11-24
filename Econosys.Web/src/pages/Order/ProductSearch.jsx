@@ -40,13 +40,14 @@ const fetchFilterOptions = async (endpoint) => {
 };
 
 const columns = [
-    { key: 'id', label: 'Produktnr', align: 'left', width: '8%' },
-    { key: 'name', label: 'Namn', align: 'left', width: '23%' },
-    { key: 'ppwrupdatedat', label: 'PPWR', align: 'left', width: '14%' },
-    { key: 'format', label: 'Format', align: 'left', width: '15%' },
-    { key: 'constructionid', label: 'Konstruktion', align: 'left', width: '16%' },
-    { key: 'active', label: 'Aktiv', align: 'left', width: '8%' },
-    { key: 'lastsupplierordercreated', label: 'Senaste beställning', align: 'left' },
+    { key: 'id', label: 'Produktnr', align: 'left', width: '6%' },
+    { key: 'name', label: 'Namn', align: 'left', width: '18%' },
+    { key: 'materialname', label: 'Material', align: 'left', width: '15%' },
+    { key: 'constructionid', label: 'Konstruktion', align: 'left', width: '15%' },
+    { key: 'format', label: 'Format', align: 'left', width: '11%' },
+    { key: 'lastsupplierordercreated', label: 'Senaste beställning', align: 'left', width:'7%' },
+    { key: 'ppwrupdatedat', label: 'PPWR', align: 'left', width: '6%' },
+    { key: 'active', label: 'Aktiv', align: 'left', width: '5%' },
 ];
 
 const initialPagination = {
@@ -78,9 +79,9 @@ const ProductSearch = () => {
     const [loading, setLoading] = useState(true);
     const [searchLoaded, setSearchLoaded] = useState(false);
     const [searchName, setSearchName] = useState('');
-    const [searchCode, setSearchCode] = useState('');
+    const [searchMaterial, setSearchMaterial] = useState('');
     const [appliedName, setAppliedName] = useState('');
-    const [appliedCode, setAppliedCode] = useState('');
+    const [appliedMaterial, setAppliedMaterial] = useState('');
     const [includeInactive, setIncludeInactive] = useState(false);
     const [showAll, setShowAll] = useState(false);
     const [searchError, setSearchError] = useState(false);
@@ -119,12 +120,12 @@ const ProductSearch = () => {
     useEffect(() => {
         const timer = setTimeout(() => {
             setAppliedName(searchName);
-            setAppliedCode(searchCode);
+            setAppliedMaterial(searchMaterial);
             setPagination((prev) => ({ ...prev, pageNumber: 1 }));
         }, 300);
 
         return () => clearTimeout(timer);
-    }, [searchName, searchCode]);
+    }, [searchName, searchMaterial]);
 
     const payload = useMemo(() => {
         const conditions = [];
@@ -137,11 +138,11 @@ const ProductSearch = () => {
             });
         }
 
-        if (appliedCode.trim()) {
+        if (appliedMaterial.trim()) {
             conditions.push({
-                field: 'productcode',
+                field: 'materialname',
                 operator: 'contains',
-                value: appliedCode.trim(),
+                value: appliedMaterial.trim(),
             });
         }
 
@@ -172,7 +173,7 @@ const ProductSearch = () => {
                 direction: sortConfig.direction,
             }, ...(showAll && sortConfig.key !== 'id' ? [{ field: 'id', direction: 'asc' }] : [])],
         };
-    }, [appliedCode, appliedName, filters, includeInactive, pagination.pageNumber, showAll, sortConfig.direction, sortConfig.key]);
+    }, [appliedMaterial, appliedName, filters, includeInactive, pagination.pageNumber, showAll, sortConfig.direction, sortConfig.key]);
 
     useEffect(() => {
         let isActive = true;
@@ -290,6 +291,18 @@ const ProductSearch = () => {
                         value={searchName}
                         onChange={(event) => setSearchName(event.target.value)}
                         placeholder="Sök namn"
+                        className="h-7 w-full pl-8 rounded-full border border-lime-600 bg-white px-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
+                    />
+                </div>
+
+                <div className="relative w-40 shrink-0">
+                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                    <input
+                        type="text"
+                        value={searchMaterial}
+                        onChange={(event) => setSearchMaterial(event.target.value)}
+                        placeholder="Sök material"
+                        aria-label="Sök material"
                         className="h-7 w-full pl-8 rounded-full border border-lime-600 bg-white px-4 text-xs text-gray-700 outline-none transition placeholder:text-gray-500 focus:border-lime-700"
                     />
                 </div>
@@ -442,6 +455,10 @@ const ProductSearch = () => {
                                             {row.name}
                                         </Link>
                                     </td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{row.materialName}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{row.construction?.name ?? row.constructionId}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{formatProductDimensions(row)}</td>
+                                    <td className="truncate px-2 py-1 text-gray-800">{formatDateShort(row.lastSupplierOrderCreated)}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">
                                         {row.ppwrUpdatedAt && (
                                             <span
@@ -452,10 +469,7 @@ const ProductSearch = () => {
                                             </span>
                                         )}
                                     </td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{formatProductDimensions(row)}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{row.construction?.name ?? row.constructionId}</td>
                                     <td className="truncate px-2 py-1 text-gray-800">{row.active ? 'Ja' : 'Nej'}</td>
-                                    <td className="truncate px-2 py-1 text-gray-800">{formatDateShort(row.lastSupplierOrderCreated)}</td>
                                 </tr>
                             ))
                         )}

@@ -12,6 +12,7 @@ public static class QuotationDraftMapper
         var product = calculation.Product;
         var customer = calculation.Customer;
         var supplier = inquiry.SelectedInquiryRecipient?.Supplier;
+        var snapshot = product is null ? null : DocumentProductText.Build(product, translations);
         return new QuotationDto
         {
             CompanyId = calculation.CompanyId,
@@ -41,13 +42,16 @@ public static class QuotationDraftMapper
             TermsOfPayment = customer?.TermsOfPayment,
             PaymentDays = customer?.PaymentDays,
             Message = defaultMessage,
-            Product = product?.Name,
-            ProductMessage = product?.NoteExternal,
-            Material = DocumentProductText.Translate(product?.Material?.TranslationCode, product?.Material?.Name, translations),
-            Construction = DocumentProductText.Translate(product?.Construction?.TranslationCode, product?.Construction?.Name, translations),
-            Format = DocumentProductText.Format(product),
-            // Legacy quotations translate material/construction, but retain the registered varnish name.
-            Color = DocumentProductText.Color(product, new Dictionary<int, string?>()),
+            Product = snapshot?.Product,
+            ProductMessage = snapshot?.ProductNoteExternal,
+            ProductNoteInternal = snapshot?.ProductNoteInternal,
+            Material = snapshot?.Material,
+            MaterialThickness = snapshot?.MaterialThickness,
+            Construction = snapshot?.Construction,
+            Format = snapshot?.Format,
+            Color = snapshot?.Color,
+            Varnish = snapshot?.Varnish,
+            PrintMethod = snapshot?.PrintMethod,
             IsFsc = inquiry.IsFSC,
             SelectedSupplierId = supplier?.Id,
             SelectedSupplierName = supplier?.Name,
@@ -70,6 +74,7 @@ public static class QuotationDraftMapper
         Id = -row.Id,
         CalculationRowId = row.Id,
         Edition = row.Edition,
+        Info = row.Info,
         Price = Math.Round(row.SalesPrice ?? 0,
             Math.Clamp(calculation.NrOfCalcDecimalsSales ?? calculation.Unit?.NrOfCalcDecimals ?? 2, 0, 15)),
         SalesCurrencyName = calculation.SalesCurrency?.Name,

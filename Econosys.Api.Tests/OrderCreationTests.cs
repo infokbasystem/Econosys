@@ -437,6 +437,42 @@ public class OrderCreationTests
         Assert.Equal(expectedNumber, (await context.SupplierOrders.SingleAsync()).SupplierOrderNr);
     }
 
+    [Theory]
+    [InlineData("""{"id":50,"loadingInstruction":"New instruction\nFreight note","eurPallet":false,"oneWayPallet":true}""", "New instruction\nFreight note", false, true)]
+    [InlineData("""{"id":50,"loadingInstruction":null,"eurPallet":true,"oneWayPallet":false}""", null, true, false)]
+    [InlineData("""{"id":50}""", "Old instruction", false, true)]
+    public async Task SupplierOrderUpdatePersistsPackagingAndPreservesOmittedValues(
+        string json, string? instruction, bool eurPallet, bool oneWayPallet)
+    {
+        using var context = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        context.SupplierOrders.Add(new SupplierOrder
+        {
+            Id = 50, SupplierOrderNr = "TEST-50", LoadingInstruction = "Old instruction",
+            EurPallet = false, OneWayPallet = true,
+        });
+        await context.SaveChangesAsync();
+        var controller = new SupplierOrdersController(context,
+            NullLogger<SupplierOrdersController>.Instance,
+            new UserResolution(new LegacyUser { Id = 42, CompanyId = 7 }),
+            new PalletFormatOptionsService(context));
+        var request = JsonSerializer.Deserialize<UpdateSupplierOrderRequest>(
+            json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.NotNull(request);
+
+        var result = await controller.Update(50, request);
+
+        var updated = Assert.IsType<SupplierOrderDto>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal(instruction, updated.LoadingInstruction);
+        Assert.Equal(eurPallet, updated.EurPallet);
+        Assert.Equal(oneWayPallet, updated.OneWayPallet);
+        context.ChangeTracker.Clear();
+        var loaded = Assert.IsType<SupplierOrderDto>(Assert.IsType<OkObjectResult>((await controller.GetById(50)).Result).Value);
+        Assert.Equal(instruction, loaded.LoadingInstruction);
+        Assert.Equal(eurPallet, loaded.EurPallet);
+        Assert.Equal(oneWayPallet, loaded.OneWayPallet);
+    }
+
     [Fact]
     public async Task SupplierOrderUpdatePersistsAndReturnsOrderCostCurrency()
     {

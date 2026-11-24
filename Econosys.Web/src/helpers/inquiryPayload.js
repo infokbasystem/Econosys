@@ -10,6 +10,10 @@ export const buildInquiryPayload = (source) => ({
     materialThickness: source?.materialThickness ?? null,
     format: source?.format ?? null,
     color: source?.color ?? null,
+    varnish: source?.varnish ?? null,
+    printMethod: source?.printMethod ?? null,
+    productNoteInternal: source?.productNoteInternal ?? null,
+    productNoteExternal: source?.productNoteExternal ?? null,
     construction: source?.construction ?? null,
     customerName: source?.customerName ?? null,
     deliveryAddressName: source?.deliveryAddressName ?? null,
@@ -19,11 +23,16 @@ export const buildInquiryPayload = (source) => ({
     deliveryCountry: source?.deliveryCountry ?? null,
     ourRef: source?.ourRef ?? null,
     preparation: source?.preparation ?? null,
+    notes: source?.notes ?? null,
     timeOfDelivery: source?.timeOfDelivery ?? null,
     selectedInquiryRecipientId: parseNullableInt(source?.selectedInquiryRecipientId),
     selectedSupplierId: parseNullableInt(source?.selectedSupplierId),
     calculationRowIds: (source?.inquiryRows ?? [])
         .map((row) => parseNullableInt(row?.calculationRowId))
+        .filter((rowId) => rowId && rowId > 0),
+    hiddenCalculationRowInfoIds: (source?.inquiryRows ?? [])
+        .filter((row) => row.printInfo === false)
+        .map((row) => parseNullableInt(row.calculationRowId))
         .filter((rowId) => rowId && rowId > 0),
     selectedRecipientYourRef: source?.selectedRecipientYourRef ?? null,
     selectedRecipientTermsOfDelivery: source?.selectedRecipientTermsOfDelivery ?? null,
@@ -42,6 +51,10 @@ export const buildInquiryPayload = (source) => ({
             .map((row) => parseNullableInt(row?.id))
             .filter((rowId) => rowId && rowId > 0)
         : [],
+    hiddenInquiryRowInfoIds: (source?.inquiryRows ?? [])
+        .filter((row) => row.printInfo === false)
+        .map((row) => parseNullableInt(row.id))
+        .filter((rowId) => rowId && rowId > 0),
 });
 
 export const createAutomaticInquiry = async (client, calculationId) => {

@@ -5,6 +5,8 @@ namespace Econosys.Api.DTOs
         public int Id { get; set; }
         public int? CustomerOrderId { get; set; }
         public int? SupplierOrderId { get; set; }
+        public int? CalculationRowId { get; set; }
+        public int? SupplierId { get; set; }
         public int? CostId { get; set; }
         public bool DoDebit { get; set; }
         public decimal? NrOf { get; set; }
@@ -31,6 +33,20 @@ namespace Econosys.Api.DTOs
         public int? Id { get; set; }
         public int? CustomerOrderId { get; set; }
         public int? SupplierOrderId { get; set; }
+        private int? _calculationRowId;
+        public int? CalculationRowId
+        {
+            get => _calculationRowId;
+            init { _calculationRowId = value; HasCalculationRowId = true; }
+        }
+        private int? _supplierId;
+        public int? SupplierId
+        {
+            get => _supplierId;
+            init { _supplierId = value; HasSupplierId = true; }
+        }
+        internal bool HasCalculationRowId { get; private init; }
+        internal bool HasSupplierId { get; private init; }
         public int? CostId { get; set; }
         public bool DoDebit { get; set; }
         public decimal? NrOf { get; set; }
@@ -89,6 +105,10 @@ namespace Econosys.Api.DTOs
         public string? MaterialThickness { get; set; }
         public string? Format { get; set; }
         public string? Color { get; set; }
+        public string? Varnish { get; set; }
+        public string? PrintMethod { get; set; }
+        public string? ProductNoteInternal { get; set; }
+        public string? ProductNoteExternal { get; set; }
         public string? Construction { get; set; }
         public string? TimeOfDelivery { get; set; }
         public string? TermsOfDelivery { get; set; }
@@ -181,6 +201,8 @@ namespace Econosys.Api.DTOs
     public class CreateSupplierOrderRequest
     {
         private readonly int? _nrOfPallets;
+        private readonly string? _loadingInstruction;
+        private readonly bool _oneWayPallet;
 
         public string? SupplierOrderNr { get; set; }
         public int? BasedOnSupplierOrderId { get; set; }
@@ -214,12 +236,25 @@ namespace Econosys.Api.DTOs
         public string? Product { get; set; }
         public string? ProductCode { get; set; }
         public string? Material { get; set; }
+        public string? MaterialThickness { get; set; }
         public string? Format { get; set; }
         public string? Color { get; set; }
+        public string? Varnish { get; set; }
+        public string? PrintMethod { get; set; }
+        public string? ProductNoteInternal { get; set; }
+        public string? ProductNoteExternal { get; set; }
         public string? Construction { get; set; }
         public string? GoodsMarking { get; set; }
         public string? Preparation { get; set; }
-        public string? LoadingInstruction { get; set; }
+        public string? LoadingInstruction
+        {
+            get => _loadingInstruction;
+            init
+            {
+                _loadingInstruction = value;
+                HasLoadingInstruction = true;
+            }
+        }
         public int? UnitId { get; set; }
         public int? SelectedCalculationRowId { get; set; }
         public int? Edition { get; set; }
@@ -239,7 +274,15 @@ namespace Econosys.Api.DTOs
         public string? PackagingType { get; set; }
         public int? PalletFormatId { get; set; }
         public bool EurPallet { get; set; }
-        public bool OneWayPallet { get; set; }
+        public bool OneWayPallet
+        {
+            get => _oneWayPallet;
+            init
+            {
+                _oneWayPallet = value;
+                HasOneWayPallet = true;
+            }
+        }
         public int? ProducedEdition { get; set; }
         public int? NrOfPallets
         {
@@ -251,7 +294,9 @@ namespace Econosys.Api.DTOs
             }
         }
 
-        // Older clients omit this field and must not clear an existing count.
+        // Older clients may omit these fields and must not clear existing values.
+        internal bool HasLoadingInstruction { get; private init; }
+        internal bool HasOneWayPallet { get; private init; }
         internal bool HasNrOfPallets { get; private init; }
         public decimal? OverrideHandlingTimeDays { get; set; }
         public string? ForceHandlingTimeCountAs { get; set; }

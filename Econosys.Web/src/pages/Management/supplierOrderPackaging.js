@@ -18,3 +18,10 @@ export async function fetchSupplierOrderPackaging(client, order) {
         oneWayPallet: calculation.palletType === 2,
     };
 }
+
+export function hasSupplierOrderPackagingDifference(order, packaging) {
+    const normalizeText = (value) => (value ?? '').replace(/\r\n/g, '\n');
+    return normalizeText(order.loadingInstruction) !== normalizeText(packaging.loadingInstruction)
+        || Boolean(order.eurPallet) !== packaging.eurPallet
+        || Boolean(order.oneWayPallet) !== packaging.oneWayPallet;
+}

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, GripVertical, Printer, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, ClipboardCheck, FileMinus, GripVertical, Pencil, Printer, Save, Trash2 } from 'lucide-react';
 import { useBlocker, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
@@ -8,6 +8,11 @@ import { usePdf } from '../../contexts/PdfContext';
 import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import LabeledInput from '../../components/LabeledInput';
+import LabeledDatePicker from '../../components/LabeledDatePicker';
+import MailLog from '../../components/MailLog';
+import InvoiceCustomerOrdersModal from '../../components/InvoiceCustomerOrdersModal';
+import InvoiceInvoicingInfoModal from '../../components/InvoiceInvoicingInfoModal';
+import InvoiceStockDeliveryAdjustmentModal from '../../components/InvoiceStockDeliveryAdjustmentModal';
 import SearchCustomer from '../../components/SearchCustomer';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
@@ -24,6 +29,9 @@ import { parseNullableInt, parseNullableNumber } from '../../helpers/numberUtils
 import { getSharedRequest } from '../../helpers/sharedRequest';
 import {
     createNewInvoiceModel,
+    createCreditInvoiceDraft,
+    CREDIT_INVOICE_TYPE_ID,
+    hasCreditStockDeliveries,
     getInvoiceCustomerFields,
     isInvoiceCustomerLocked,
     toDateInputValue,
@@ -94,7 +102,18 @@ const Invoice = () => {
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
     const [unsavedWarningReason, setUnsavedWarningReason] = useState('navigate');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [showCustomerOrders, setShowCustomerOrders] = useState(false);
+    const [showInvoicingInfo, setShowInvoicingInfo] = useState(false);
+    const [showStockDeliveryAdjustment, setShowStockDeliveryAdjustment] = useState(false);
+    const [isEditingInvoiceDate, setIsEditingInvoiceDate] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [mailLogRevision, setMailLogRevision] = useState(0);
+    const [creditRelations, setCreditRelations] = useState(null);
+    const [creditRelationsError, setCreditRelationsError] = useState(null);
+    const [creditRelationsRetry, setCreditRelationsRetry] = useState(0);
+    const [invoiceCustomerOrders, setInvoiceCustomerOrders] = useState(null);
+    const [invoiceCustomerOrdersError, setInvoiceCustomerOrdersError] = useState(null);
+    const [invoiceCustomerOrdersRetry, setInvoiceCustomerOrdersRetry] = useState(0);
     const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
 
     const [invoice, setInvoice] = useState(null);
@@ -114,6 +133,69 @@ const Invoice = () => {
     const originalInventorySource = getInvoiceInventorySource(originalInvoice);
 
     useEffect(() => {
+        const invoiceId = invoice?.id;
+        if (!(invoiceId > 0)) return undefined;
+
+        let controller;
+        const loadCreditRelations = async () => {
+            controller?.abort();
+            controller = new AbortController();
+            const signal = controller.signal;
+            try {
+                const { data } = await apiClient.get(`/invoices/${invoiceId}/credit-relations`, { signal });
+                if (!Array.isArray(data?.creditInvoices)) throw new Error('Invalid invoice credit relations response.');
+                if (signal.aborted) return;
+                setCreditRelations({ invoiceId, ...data });
+                setCreditRelationsError(null);
+            } catch (error) {
+                if (signal.aborted) return;
+                console.error('Failed to load invoice credit relations:', error);
+                setCreditRelations(null);
+                setCreditRelationsError(invoiceId);
+            }
+        };
+        loadCreditRelations();
+        window.addEventListener('focus', loadCreditRelations);
+        return () => {
+            controller?.abort();
+            window.removeEventListener('focus', loadCreditRelations);
+        };
+    }, [invoice?.id, creditRelationsRetry]);
+
+    useEffect(() => {
+        const invoiceId = invoice?.id;
+        if (!(invoiceId > 0)) {
+            setInvoiceCustomerOrders(null);
+            setInvoiceCustomerOrdersError(null);
+            return undefined;
+        }
+
+        let controller;
+        const loadCustomerOrders = async () => {
+            controller?.abort();
+            controller = new AbortController();
+            const signal = controller.signal;
+            setInvoiceCustomerOrdersError(null);
+            try {
+                const { data } = await apiClient.get(`/invoices/${invoiceId}/customer-orders`, { signal });
+                if (!Array.isArray(data)) throw new Error('Invalid invoice customer order response.');
+                if (signal.aborted) return;
+                setInvoiceCustomerOrders({ invoiceId, orders: data });
+            } catch (error) {
+                if (signal.aborted) return;
+                console.error('Failed to load invoice customer order invoicing info:', error);
+                setInvoiceCustomerOrdersError(invoiceId);
+            }
+        };
+        loadCustomerOrders();
+        window.addEventListener('focus', loadCustomerOrders);
+        return () => {
+            controller?.abort();
+            window.removeEventListener('focus', loadCustomerOrders);
+        };
+    }, [invoice?.id, invoiceCustomerOrdersRetry]);
+
+    useEffect(() => {
         if (!originalInvoice) return;
         if (inventorySource === originalInventorySource) {
             setInvoice((prev) => prev ? { ...prev, invoiceAccountRows: originalInvoice.invoiceAccountRows } : prev);
@@ -125,6 +207,7 @@ const Invoice = () => {
             try {
                 const response = await apiClient.post('/invoices/accounting-preview', {
                     customerId: invoice?.customerId,
+                    invoiceTypeCode: invoice?.invoiceTypeCode,
                     invoiceRows: JSON.parse(inventorySource),
                 });
                 if (!active) return;
@@ -146,7 +229,7 @@ const Invoice = () => {
             active = false;
             window.clearTimeout(timer);
         };
-    }, [inventorySource, originalInventorySource, originalInvoice, invoice?.customerId, setMessages]);
+    }, [inventorySource, originalInventorySource, originalInvoice, invoice?.customerId, invoice?.invoiceTypeCode, setMessages]);
 
     const hasUnsavedChanges = useCallback(() => {
         if (skipUnsavedCheckRef.current) return false;
@@ -185,6 +268,7 @@ const Invoice = () => {
 
     useEffect(() => {
         skipUnsavedCheckRef.current = false;
+        setIsEditingInvoiceDate(false);
     }, [id]);
 
     useEffect(() => {
@@ -460,6 +544,7 @@ const Invoice = () => {
             salesCurrencyRate: parseNullableNumber(source?.salesCurrencyRate),
             salesCurrencyId: parseNullableInt(source?.salesCurrencyId),
             termsOfPayment: source?.termsOfPayment ?? null,
+            termsOfDelivery: source?.termsOfDelivery ?? null,
             timeOfDelivery: source?.timeOfDelivery ?? null,
             unitId: parseNullableInt(source?.unitId),
             vatNr: source?.vatNr ?? null,
@@ -490,7 +575,7 @@ const Invoice = () => {
                 || `Faktura ${invoice.invoiceNumber ?? invoice.id}.pdf`;
             const blob = response.data;
             const url = URL.createObjectURL(blob);
-            openPdfPreview(url, apiFileName, null, null, { itemType: 'INVOICE', itemId: invoice.id });
+            openPdfPreview(url, apiFileName, () => setMailLogRevision((value) => value + 1), { invoiceId: invoice.id }, { itemType: 'INVOICE', itemId: invoice.id });
         } catch (error) {
             console.error('Failed to get invoice PDF:', error);
             setMessages((prev) => [
@@ -498,6 +583,45 @@ const Invoice = () => {
                 { type: 'error', text: 'Kunde inte skriva ut fakturan. PDF endpoint saknas eller kunde inte laddas.' },
             ]);
         }
+    };
+
+    const handleCreateCredit = () => {
+        if (hasUnsavedChanges() || customerSelectionPending) {
+            setMessages((prev) => [
+                ...prev.filter((message) => message.type !== 'warning'),
+                { type: 'warning', text: 'Spara fakturan innan du skapar en kreditfaktura.' },
+            ]);
+            return;
+        }
+        if (!invoice.invoiceNumber) {
+            setMessages((prev) => [...prev, { type: 'error', text: 'Fakturan saknar fakturanummer och kan inte krediteras.' }]);
+            return;
+        }
+        const draftWindow = window.open('', '_blank');
+        if (!draftWindow) {
+            setMessages((prev) => [...prev, { type: 'error', text: 'Kunde inte öppna kreditfakturan. Tillåt popupfönster och försök igen.' }]);
+            return;
+        }
+        try {
+            const draftKey = `invoice-draft-${Date.now()}-${crypto.randomUUID()}`;
+            window.localStorage.setItem(draftKey, JSON.stringify(createCreditInvoiceDraft(invoice)));
+            draftWindow.location.href = `/finance/invoice/new?draftKey=${encodeURIComponent(draftKey)}&openedInNewTab=1`;
+        } catch (error) {
+            draftWindow.close();
+            console.error('Failed to create credit invoice draft:', error);
+            setMessages((prev) => [...prev, { type: 'error', text: 'Kunde inte skapa kreditfakturan.' }]);
+        }
+    };
+
+    const handleAdjustStockDeliveries = () => {
+        if (hasUnsavedChanges()) {
+            setMessages((prev) => [
+                ...prev.filter((message) => message.type !== 'warning'),
+                { type: 'warning', text: 'Spara kreditfakturan innan du justerar leveranserna.' },
+            ]);
+            return;
+        }
+        setShowStockDeliveryAdjustment(true);
     };
 
     const handleSave = async () => {
@@ -549,6 +673,9 @@ const Invoice = () => {
                     replace: true,
                     state: { newlyCreatedInvoiceId: savedInvoice.id },
                 });
+                if (hasCreditStockDeliveries(savedInvoice)) {
+                    setShowStockDeliveryAdjustment(true);
+                }
             }
         } catch (error) {
             console.error('Failed to save invoice:', error);
@@ -830,9 +957,44 @@ const Invoice = () => {
     const dueDate = invoice?.invoiceDate && invoice?.invoiceDays != null
         ? new Date(new Date(invoice.invoiceDate).getTime() + (Number(invoice.invoiceDays) * 24 * 60 * 60 * 1000))
         : null;
+    const relations = creditRelations?.invoiceId === invoice.id ? creditRelations : null;
+    const creditedInvoice = invoice.id > 0 ? relations?.creditedInvoice : (
+        invoice.creditedInvoiceId ? { id: invoice.creditedInvoiceId, invoiceNumber: invoice.creditingInvoiceNumber } : null
+    );
+    const relatedCustomerOrders = invoiceCustomerOrders?.invoiceId === invoice.id
+        ? invoiceCustomerOrders.orders
+        : null;
+    const invoicingInfoEntries = (relatedCustomerOrders ?? []).filter((order) =>
+        typeof order.invoicingInfo === 'string' && order.invoicingInfo.trim().length > 0);
+    const invoicingInfoSummary = invoicingInfoEntries.map((order) => order.invoicingInfo.trim());
+    const invoiceReference = (reference) => (
+        <a href={`/finance/invoice/${reference.id}?openedInNewTab=1`} target="_blank" rel="noopener noreferrer"
+            className="underline hover:text-red-700">
+            {reference.invoiceNumber}
+        </a>
+    );
 
     return (
         <div className="relative flex min-h-full flex-col">
+            {showCustomerOrders && (
+                <InvoiceCustomerOrdersModal invoiceId={invoice.id} onClose={() => setShowCustomerOrders(false)}
+                    onSaved={() => setMessages((prev) => [...prev.filter((message) => message.type !== 'success'), { type: 'success', text: 'Ordererkännandena uppdaterades.' }])}
+                />
+            )}
+            {showInvoicingInfo && relatedCustomerOrders && (
+                <InvoiceInvoicingInfoModal
+                    orders={relatedCustomerOrders}
+                    onClose={() => setShowInvoicingInfo(false)}
+                />
+            )}
+            {showStockDeliveryAdjustment && invoice.id > 0 && (
+                <InvoiceStockDeliveryAdjustmentModal invoiceId={invoice.id} onClose={() => setShowStockDeliveryAdjustment(false)}
+                    onAdjusted={() => setMessages((prev) => [
+                        ...prev.filter((message) => message.type !== 'success'),
+                        { type: 'success', text: 'Lagerleveranserna justerades.' },
+                    ])}
+                />
+            )}
             <ConfirmationModal
                 isOpen={showDeleteConfirm}
                 onClose={() => setShowDeleteConfirm(false)}
@@ -885,12 +1047,65 @@ const Invoice = () => {
                             {renderInvoiceMetaRow('Redigerad:', invoice?.edited, invoice?.editedByUserName)}
                             <div className="grid grid-cols-21 gap-1 mt-4 mx-2">
                                 <div className="col-span-5"><span className="font-medium">Fakt.nr:</span></div>
-                                <div className="col-span-8">{invoice.invoiceNumber}{invoice.invoiceTypeCode == 5 ? <span className='ml-3 text-red-500'>KREDIT, krediterar {invoice.creditingInvoiceNumber}</span> : ""}</div>
+                                <div className="col-span-16">
+                                    {invoice.invoiceNumber}
+                                    {Number(invoice.invoiceTypeCode) === CREDIT_INVOICE_TYPE_ID && (
+                                        <span className="ml-3 text-red-500">
+                                            KREDIT, krediterar {creditedInvoice ? invoiceReference(creditedInvoice) : invoice.creditingInvoiceNumber}
+                                        </span>
+                                    )}
+                                    {relations?.creditInvoices.length > 0 && (
+                                        <span className="ml-3 text-red-500">
+                                            Krediterad av{' '}
+                                            {relations.creditInvoices.map((credit, index) => (
+                                                <React.Fragment key={credit.id}>
+                                                    {index > 0 && ', '}{invoiceReference(credit)}
+                                                </React.Fragment>
+                                            ))}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
+                            {creditRelationsError === invoice.id && (
+                                <div role="alert" className="mx-2 text-red-700">
+                                    Kunde inte hämta kreditinformation.{' '}
+                                    <button type="button" className="underline" onClick={() => setCreditRelationsRetry((value) => value + 1)}>
+                                        Försök igen
+                                    </button>
+                                </div>
+                            )}
                             {invoice.invoiceDate && (
-                                <div className="grid grid-cols-21 gap-1 mx-2 mt-4">
+                                <div className="grid grid-cols-21 gap-1 mx-2 mt-4 items-center">
                                     <div className="col-span-5"><span className="font-medium">Fakt.dag:</span></div>
-                                    <div className="col-span-8">{toDateInputValue(invoice.invoiceDate)}</div>
+                                    <div className="col-span-8">
+                                        {isEditingInvoiceDate ? (
+                                            <LabeledDatePicker
+                                                inputAriaLabel="Fakturadatum"
+                                                portal
+                                                value={invoice.invoiceDate}
+                                                onChange={(value) => {
+                                                    if (toDateInputValue(value) !== toDateInputValue(invoice.invoiceDate)) {
+                                                        handleChange('invoiceDate', value);
+                                                    }
+                                                    setIsEditingInvoiceDate(false);
+                                                }}
+                                                clearable={false}
+                                                required
+                                                margintop="0"
+                                            />
+                                        ) : toDateInputValue(invoice.invoiceDate)}
+                                    </div>
+                                    <div className="col-span-8">
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsEditingInvoiceDate((current) => !current)}
+                                            aria-label={isEditingInvoiceDate ? 'Avbryt ändring av fakturadatum' : 'Ändra fakturadatum'}
+                                            title={isEditingInvoiceDate ? 'Avbryt' : 'Ändra fakturadatum'}
+                                            className="inline-flex items-center text-gray-400 hover:text-gray-700"
+                                        >
+                                            <Pencil size={13} aria-hidden="true" />
+                                        </button>
+                                    </div>
                                 </div>
                             )}
                             {dueDate && (
@@ -907,7 +1122,45 @@ const Invoice = () => {
                                     </span>
                                 </div>
                             </div>
-
+                            <div className="mr-2 mt-4">
+                                <div className=" ml-2 mb-1 font-medium">Faktureringsinfo</div>
+                                {relatedCustomerOrders === null ? (
+                                    invoiceCustomerOrdersError === invoice.id ? (
+                                        <p role="alert" className="text-red-700">Kunde inte ladda faktureringsinfo.</p>
+                                    ) : (
+                                        <p role="status" className="text-gray-500">Laddar faktureringsinfo…</p>
+                                    )
+                                ) : invoicingInfoSummary.length > 0 ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowInvoicingInfo(true)}
+                                        aria-label="Visa faktureringsinfo per kundorder"
+                                        className="w-full rounded-sm border border-gray-300 bg-white px-2 text-left text-xs text-gray-700 hover:bg-gray-50"
+                                    >
+                                        {invoicingInfoSummary.map((text, index) => (
+                                            <span
+                                                key={`${index}-${text}`}
+                                                className={`block whitespace-pre-wrap break-words py-2 ${index > 0 ? '' : ''}`}
+                                            >
+                                                {text}
+                                            </span>
+                                        ))}
+                                    </button>
+                                ) : (
+                                    <p className="rounded-sm border border-gray-300 bg-white px-2 py-2 text-gray-500">
+                                        Ingen faktureringsinfo
+                                    </p>
+                                )}
+                                {invoiceCustomerOrdersError === invoice.id && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setInvoiceCustomerOrdersRetry((value) => value + 1)}
+                                        className="mt-1 text-[11px] text-red-700 underline"
+                                    >
+                                        Försök igen
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}
@@ -934,6 +1187,18 @@ const Invoice = () => {
                                 accent="sky"
                             />
                         )}
+                        <div className="flex items-center gap-10 ml-20">
+                            {invoice?.id > 0 && Number(invoice.invoiceTypeCode) !== CREDIT_INVOICE_TYPE_ID && (
+                                <ActionButton label="Kreditera" icon={FileMinus} onClick={handleCreateCredit} accent="sky" />
+                            )}
+                            {invoice?.id > 0 && hasCreditStockDeliveries(invoice) && (
+                                <ActionButton label="Justera leveranser" icon={ClipboardCheck} onClick={handleAdjustStockDeliveries} accent="sky" />
+                            )}
+                            {invoice?.id > 0 && (
+                                <ActionButton label="Klara OE" icon={ClipboardCheck} onClick={() => setShowCustomerOrders(true)} accent="lime" />
+                            )}
+                            {invoice?.id > 0 && <MailLog key={invoice.id} itemType="invoice" itemId={invoice.id} refreshKey={mailLogRevision} />}
+                        </div>
                     </div>
 
                     <div className="flex items-center gap-6">
@@ -1036,6 +1301,14 @@ const Invoice = () => {
                             margintop="0"
                             height="h-12"
                         />
+                        <LabeledDatePicker
+                            label="Lev.datum"
+                            value={invoice?.timeOfDelivery || ''}
+                            onChange={(value) => handleChange('timeOfDelivery', value)}
+                            labelWidth="w-25"
+                            valueType="input"
+                            margintop="0"
+                        />
                     </div>
                     <div className="w-[150px] max-w-full min-w-0">
                         <LabeledSelect
@@ -1095,6 +1368,13 @@ const Invoice = () => {
                             margintop="0"
                             height="h-20"
                         />
+                        <LabeledInput
+                            label="Lev.villkor"
+                            value={invoice?.termsOfDelivery || ''}
+                            onChange={(value) => handleChange('termsOfDelivery', value)}
+                            labelWidth="w-19"
+                            margintop="0"
+                        />
                         <LabeledTextArea
                             label="Anteckning"
                             value={invoice?.noteInternal || ''}
@@ -1112,14 +1392,13 @@ const Invoice = () => {
                             <thead>
                                 <tr className="border-b border-gray-300">
                                     <th className="w-[3%] py-2 text-center text-tiny font-medium text-gray-400">Sort</th>
-                                    <th className="w-[24%] px-4 py-2 text-left text-tiny font-medium text-gray-400">Text</th>
+                                    <th className="w-[32%] px-4 py-2 text-left text-tiny font-medium text-gray-400">Text</th>
                                     <th className="w-[7%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Vikt</th>
                                     <th className="w-[7%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Antal</th>
                                     <th className="w-[8%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">APris</th>
                                     <th className="w-[8%] pr-4 py-2 text-right text-tiny font-medium text-gray-400">Enhet</th>
                                     <th className="w-[9%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Summa</th>
                                     <th className="w-[8%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Konto</th>
-                                    <th className="w-[8%] pr-2 py-2 text-right text-tiny font-medium text-gray-400">Res.enh</th>
                                     <th className="w-[5%] px-2 py-2 text-center text-tiny font-medium text-gray-400">Moms</th>
                                     <th className="w-[7%] px-2 py-2 text-center text-tiny font-medium text-gray-400">Atgard</th>
                                 </tr>
@@ -1127,7 +1406,7 @@ const Invoice = () => {
                             <tbody className="bg-white">
                                 {visibleInvoiceRows.length === 0 ? (
                                     <tr>
-                                        <td colSpan={11} className="px-2 py-4 text-center text-gray-400">Inga rader registrerade.</td>
+                                        <td colSpan={10} className="px-2 py-4 text-center text-gray-400">Inga rader registrerade.</td>
                                     </tr>
                                 ) : (
                                     visibleInvoiceRows.map((row, index) => {
@@ -1260,15 +1539,6 @@ const Invoice = () => {
                                                     </div>
                                                 </td>
                                                 <td className="px-0 relative">
-                                                    <div className="absolute inset-0 border border-transparent bg-white focus-within:border-blue-400">
-                                                        <input
-                                                            value={row.costCenter ?? ''}
-                                                            onChange={(e) => handleInvoiceRowChange(idOrTempId, 'costCenter', e.target.value)}
-                                                            className="w-full h-full text-xs pr-2 border-0 text-right focus:outline-none"
-                                                        />
-                                                    </div>
-                                                </td>
-                                                <td className="px-0 relative">
                                                     <div className="absolute inset-0 flex items-center justify-center border border-transparent bg-white focus-within:border-blue-400">
                                                         <SelectCircleCheckbox
                                                             checked={Boolean(row.vatGround)}
@@ -1323,7 +1593,7 @@ const Invoice = () => {
                                 {/* Empty row for adding new entries */}
                                 <tr className="border-b border-gray-100">
                                     <td className="px-2 py-0.5 text-xs text-gray-400"></td>
-                                    <td colSpan="10" className="px-2 py-2">
+                                    <td colSpan="9" className="px-2 py-2">
                                         <button
                                             type="button"
                                             onClick={addInvoiceRow}

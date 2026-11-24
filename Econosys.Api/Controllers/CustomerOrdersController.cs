@@ -25,15 +25,18 @@ namespace Econosys.Api.Controllers
         private readonly ApplicationDbContext _dbContext;
         private readonly ILogger<CustomerOrdersController> _logger;
         private readonly ILegacyUserResolutionService _legacyUserResolution;
+        private readonly IDocumentProductSnapshotService _productSnapshots;
 
         public CustomerOrdersController(
             ApplicationDbContext dbContext,
             ILogger<CustomerOrdersController> logger,
-            ILegacyUserResolutionService legacyUserResolution)
+            ILegacyUserResolutionService legacyUserResolution,
+            IDocumentProductSnapshotService? productSnapshots = null)
         {
             _dbContext = dbContext;
             _logger = logger;
             _legacyUserResolution = legacyUserResolution;
+            _productSnapshots = productSnapshots ?? new DocumentProductSnapshotService(dbContext);
         }
 
         [HttpGet("{id:int}")]
@@ -51,7 +54,7 @@ namespace Econosys.Api.Controllers
         }
 
         [HttpPost]
-        public async Task<ActionResult<CustomerOrderDto>> Create([FromBody] CreateCustomerOrderRequest request)
+        public async Task<ActionResult<CustomerOrderDto>> Create([FromBody] CreateCustomerOrderRequest request, CancellationToken cancellationToken = default)
         {
             if (!ModelState.IsValid)
             {
@@ -66,6 +69,20 @@ namespace Econosys.Api.Controllers
 
             var entity = new CustomerOrder { CompanyId = legacyUser.CompanyId };
             ApplyCreateRequestToEntity(entity, request);
+
+            if (entity.CalculationId.HasValue)
+            {
+                try
+                {
+                    var snapshot = await _productSnapshots.FromCalculationAsync(
+                        entity.CalculationId.Value, legacyUser.CompanyId, entity.CustomerId, null, null, cancellationToken);
+                    DocumentProductSnapshotService.ApplyValues(entity, snapshot);
+                }
+                catch (DocumentProductSourceException error)
+                {
+                    return BadRequest(new { message = error.Message });
+                }
+            }
 
             entity.Created ??= SwedishTime.Now;
             entity.CreatedBy ??= legacyUser.Id;
@@ -999,6 +1016,7 @@ namespace Econosys.Api.Controllers
         {
             entity.QuotationId = request.QuotationId;
             entity.SupplierOrderId = request.SupplierOrderId;
+            entity.CalculationId = request.CalculationId;
             entity.CustomerOrderNr = request.CustomerOrderNr;
             entity.YourOrderNr = request.YourOrderNr;
             entity.CustomerId = request.CustomerId;
@@ -1023,8 +1041,13 @@ namespace Econosys.Api.Controllers
             entity.Message = request.Message;
             entity.Product = request.Product;
             entity.Material = request.Material;
+            entity.MaterialThickness = request.MaterialThickness;
             entity.Format = request.Format;
             entity.Color = request.Color;
+            entity.Varnish = request.Varnish;
+            entity.PrintMethod = request.PrintMethod;
+            entity.ProductNoteInternal = request.ProductNoteInternal;
+            entity.ProductMessage = request.ProductMessage;
             entity.Construction = request.Construction;
             entity.IsFSC = request.IsFSC;
             entity.SalesCurrencyId = request.SalesCurrencyId;
@@ -1112,6 +1135,9 @@ namespace Econosys.Api.Controllers
                 MaterialThickness = source.MaterialThickness,
                 Format = source.Format,
                 Color = source.Color,
+                Varnish = source.Varnish,
+                PrintMethod = source.PrintMethod,
+                ProductNoteInternal = source.ProductNoteInternal,
                 Construction = source.Construction,
                 TimeOfDelivery = source.TimeOfDelivery,
                 TermsOfDelivery = source.TermsOfDelivery,

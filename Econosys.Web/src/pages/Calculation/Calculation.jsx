@@ -846,7 +846,7 @@ const FreightRowsTable = ({
                         const isLocked = row.archived || row.isDraft;
                         const rowLabel = `upplaga ${row.edition ?? 'ny rad'}`;
                         const numberCell = (field, { decimals, enabled = false, value = row[field], textClass = '' }) => (
-                            <div className={`absolute inset-0 border border-transparent ${enabled ? 'bg-white focus-within:border-blue-400' : 'bg-gray-100'}`}>
+                            <div className={`absolute inset-0 border ${enabled ? 'border-gray-200 bg-white focus-within:border-blue-400' : 'border-transparent bg-gray-100'}`}>
                                 <NumberInput
                                     rowId={row.clientKey}
                                     field={field}
@@ -986,7 +986,7 @@ const StorageRowsTable = ({ rows, calculation, unitMultiplier, decimals, onRowCh
                                 {STORAGE_COLUMNS.map(({ field, width }) => (
                                     <td key={field} style={{ width }} className="relative h-5 px-0 text-right">
                                         {field === 'storageNrOfPallets' || field === 'storageMonths' ? (
-                                            <div className={`absolute inset-0 border border-transparent ${row.archived ? 'bg-gray-100' : 'bg-white focus-within:border-blue-400'}`}>
+                                            <div className={`absolute inset-0 border ${row.archived ? 'border-transparent bg-gray-100' : 'border-gray-200 bg-white focus-within:border-blue-400'}`}>
                                                 <NumberInput
                                                     rowId={row.clientKey}
                                                     field={field}
@@ -1013,7 +1013,7 @@ const StorageRowsTable = ({ rows, calculation, unitMultiplier, decimals, onRowCh
 };
 
 const CostNumberCell = ({ cost, field, label, decimals, enabled = false, hideZeroDecimals = false, value = cost[field], onChange }) => (
-    <div className={`absolute inset-0 border border-transparent ${enabled ? 'bg-white focus-within:border-blue-400' : 'bg-gray-100'}`}>
+    <div className={`absolute inset-0 border ${enabled ? 'border-gray-200 bg-white focus-within:border-blue-400' : 'border-transparent bg-gray-100'}`}>
         <NumberInput
             rowId={cost.clientKey}
             field={field}
@@ -1179,7 +1179,7 @@ const CalculationCostsTable = ({
                                         disabled={row.archived}
                                         onChange={(event) => onCostChange(cost.clientKey, 'costTypeText', event.target.value)}
                                         aria-label={`Kommentar, ${rowLabel}`}
-                                        className="h-6 w-full border border-transparent bg-white px-2 text-left text-xs text-gray-700 focus:border-blue-400 focus:outline-none disabled:bg-gray-50"
+                                        className="h-6 w-full border border-gray-200 bg-white px-2 text-left text-xs text-gray-700 focus:border-blue-400 focus:outline-none disabled:border-transparent disabled:bg-gray-50"
                                     />
                                 ),
                             };
@@ -1290,7 +1290,7 @@ const CalculationRowsTable = ({
                                     return (
                                         <td key={field} style={{ width }} className="relative h-5 px-0 text-right">
                                             <div className="absolute inset-0 flex items-stretch">
-                                                <div className={`min-w-0 flex-1 border border-transparent ${disabled ? 'bg-gray-100' : 'bg-white focus-within:border-blue-400'}`}>
+                                                <div className={`min-w-0 flex-1 border ${disabled ? 'border-transparent bg-gray-100' : 'border-gray-200 bg-white focus-within:border-blue-400'}`}>
                                                     <NumberInput
                                                         rowId={row.clientKey}
                                                         field={field}
@@ -1325,7 +1325,7 @@ const CalculationRowsTable = ({
                                 return (
                                     <td key={field} style={{ width }} className="relative h-5 px-0 text-right">
                                         {isEditable || isCalculated ? (
-                                            <div className={`absolute inset-0 border border-transparent ${disabled ? 'bg-gray-100' : 'bg-white'} ${!disabled ? 'focus-within:border-blue-400' : ''}`}>
+                                            <div className={`absolute inset-0 border ${disabled ? 'border-transparent bg-gray-100' : 'border-gray-200 bg-white focus-within:border-blue-400'}`}>
                                                 <NumberInput
                                                     rowId={row.clientKey}
                                                     field={field}
@@ -1352,7 +1352,7 @@ const CalculationRowsTable = ({
                                     disabled={row.archived}
                                     onChange={(event) => onRowChange(row.clientKey, 'info', event.target.value)}
                                     aria-label={`Info, upplaga ${row.edition ?? 'ny rad'}`}
-                                    className="h-6 w-full border border-transparent bg-white px-2 text-left text-xs text-gray-700 focus:border-blue-400 focus:outline-none disabled:bg-gray-50"
+                                    className="h-6 w-full border border-gray-200 bg-white px-2 text-left text-xs text-gray-700 focus:border-blue-400 focus:outline-none disabled:border-transparent disabled:bg-gray-50"
                                 />
                             </td>
                             <td className="w-10 px-0 py-0 text-center">

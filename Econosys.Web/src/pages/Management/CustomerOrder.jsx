@@ -9,7 +9,8 @@ import ConfirmationModal from '../../components/ConfirmationModal';
 import ActionButton from '../../components/ActionButton';
 import EntityOrderFlowNavigation from '../../components/EntityOrderFlowNavigation';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
-import OrderProductInfo from '../../components/OrderProductInfo';
+import DocumentProductInfo from '../../components/DocumentProductInfo';
+import { mergeDocumentProductSnapshot } from '../../helpers/documentProductSnapshot';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 import useDocumentTitle from '../../hooks/useDocumentTitle';
 import OrderCost from '../../components/OrderCost';
@@ -184,7 +185,7 @@ const CustomerOrder = () => {
             return;
         }
 
-        navigate('/order/customerorders');
+        window.close();
     };
 
     const hasUnsavedChanges = useCallback(() => {
@@ -292,6 +293,7 @@ const CustomerOrder = () => {
         id: parseNullableInt(source?.id) ?? 0,
         quotationId: parseNullableInt(source?.quotationId),
         supplierOrderId: parseNullableInt(source?.supplierOrderId),
+        calculationId: parseNullableInt(source?.calculationId),
         customerOrderNr: source?.customerOrderNr || null,
         yourOrderNr: source?.yourOrderNr || null,
         customerId: parseNullableInt(source?.customerId),
@@ -316,8 +318,13 @@ const CustomerOrder = () => {
         message: source?.message || null,
         product: source?.product || null,
         material: source?.material || null,
+        materialThickness: source?.materialThickness || null,
         format: source?.format || null,
         color: source?.color || null,
+        varnish: source?.varnish || null,
+        printMethod: source?.printMethod || null,
+        productNoteInternal: source?.productNoteInternal || null,
+        productMessage: source?.productMessage || null,
         construction: source?.construction || null,
         isFSC: Boolean(source?.isFSC),
         salesCurrencyId: parseNullableInt(source?.salesCurrencyId),
@@ -857,10 +864,14 @@ const CustomerOrder = () => {
                     </div>
                 </div>
 
-                <OrderProductInfo
-                    calculationId={customerOrder?.calculationId}
-                    quotationId={customerOrder?.quotationId}
-                    linkedSupplierOrderId={customerOrder?.supplierOrderId}
+                <DocumentProductInfo
+                    type="customerorders"
+                    document={customerOrder}
+                    dirty={hasUnsavedChanges()}
+                    onRefreshed={(response) => {
+                        setCustomerOrder((current) => mergeDocumentProductSnapshot(current, 'customerorders', response));
+                        setOriginalCustomerOrder((current) => mergeDocumentProductSnapshot(current, 'customerorders', response));
+                    }}
                 />
 
                 <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">

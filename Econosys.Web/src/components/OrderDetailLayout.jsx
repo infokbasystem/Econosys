@@ -22,29 +22,31 @@ const OrderDetailLayout = ({ title, messages = EMPTY_MESSAGES, isInfoPanelExpand
                     className={`min-w-0 transition-[opacity,margin] duration-300 ease-in-out ${infoPanelVisibilityClass}`}
                     aria-hidden={!isInfoPanelExpanded}
                 >
-                    <aside className="sticky top-[calc(66px+1rem)] z-10 max-h-[calc(100vh-66px-1rem)] overflow-y-auto px-2 py-6">
+                    <aside className="sticky top-[calc(66px+1rem)] z-10 max-h-[calc(100vh-66px-1rem)] overflow-y-auto px-2">
                         {infoContent}
                         <hr className="mt-5 border-gray-300" />
                         <h2 className="mt-5 text-center text-sm text-gray-500">Meddelanden</h2>
-                        {messages.length === 0 ? (
-                            <p className="mt-4 mb-4 text-center text-xs font-light">Inga meddelanden</p>
-                        ) : (
-                            <ul className="mt-2 space-y-2">
-                                {messages.map((message, index) => (
-                                    <li
-                                        key={`${message.type ?? 'info'}-${index}`}
-                                        className={`rounded border border-gray-200 p-2 text-center text-xs ${message.type === 'error'
-                                            ? 'bg-red-100 text-red-700'
-                                            : message.type === 'warning'
-                                                ? 'bg-yellow-100 text-yellow-800'
-                                                : 'bg-green-100 text-green-700'
-                                            }`}
-                                    >
-                                        {String(message.text ?? '')}
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
+                        <div className="pb-4">
+                            {messages.length === 0 ? (
+                                <p className="mt-4 mb text-center text-xs font-light">Inga meddelanden</p>
+                            ) : (
+                                <ul className="mt-2 space-y-2">
+                                    {messages.map((message, index) => (
+                                        <li
+                                            key={`${message.type ?? 'info'}-${index}`}
+                                            className={`rounded border border-gray-200 p-2 text-center text-xs ${message.type === 'error'
+                                                ? 'bg-red-100 text-red-700'
+                                                : message.type === 'warning'
+                                                    ? 'bg-yellow-100 text-yellow-800'
+                                                    : 'bg-green-100 text-green-700'
+                                                }`}
+                                        >
+                                            {String(message.text ?? '')}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
                         {infoFooter}
                     </aside>
                 </div>

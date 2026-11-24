@@ -3,6 +3,54 @@ import { getSwedishTodayDateString, toSwedishDateInputValue } from './dateUtils.
 
 export const VAT_PRICE_TYPE_ID = 13;
 export const ROUNDING_PRICE_TYPE_ID = 12;
+export const CREDIT_INVOICE_TYPE_ID = 5;
+
+export const hasCreditStockDeliveries = (invoice) => (
+    Number(invoice?.invoiceTypeCode) === CREDIT_INVOICE_TYPE_ID
+    && (invoice?.invoiceRows ?? []).some((row) => Number(row.priceTypeId) === 1 && Number(row.deliveryFromStockId) > 0)
+);
+
+export const createCreditInvoiceDraft = (invoice) => ({
+    ...invoice,
+    id: 0,
+    invoiceNumber: null,
+    invoiceTypeCode: CREDIT_INVOICE_TYPE_ID,
+    creditingInvoiceNumber: invoice.invoiceNumber,
+    creditedInvoiceId: invoice.id,
+    invoiceDate: `${getSwedishTodayDateString()}T00:00:00`,
+    accountDate: null,
+    journalNr: null,
+    printed: false,
+    isSettled: false,
+    invoiceOk: false,
+    endInvoiced: false,
+    created: null,
+    createdBy: null,
+    createdByUserName: null,
+    edited: null,
+    editedBy: null,
+    editedByUserName: null,
+    oldDbId: null,
+    invoiceRows: (invoice.invoiceRows ?? []).map((row, index) => ({
+        ...row,
+        id: 0,
+        invoiceId: null,
+        oldDbId: null,
+        tempId: `credit_row_${index}`,
+        unitPrice: row.unitPrice == null ? null : -row.unitPrice,
+        sum: row.sum == null ? null : -row.sum,
+        weight: row.weight == null ? null : -row.weight,
+    })),
+    invoiceAccountRows: (invoice.invoiceAccountRows ?? []).map((row, index) => ({
+        ...row,
+        id: 0,
+        invoiceId: null,
+        oldDbId: null,
+        tempKey: `credit_account_${index}`,
+        nrOf: row.nrOf == null ? null : -row.nrOf,
+        sum: row.sum == null ? null : -row.sum,
+    })),
+});
 
 export const getInvoiceRowIdentity = (row) => ((Number(row?.id) || 0) > 0 ? row.id : row.tempId);
 
@@ -75,8 +123,10 @@ export const createNewInvoiceModel = () => ({
     invoiceDate: `${getSwedishTodayDateString()}T00:00:00`,
     invoiceDays: 30,
     termsOfPayment: '30 dagar fran fakturadatum.',
+    termsOfDelivery: '',
     salesCurrencyId: null,
     accountDate: null,
+    timeOfDelivery: '',
     journalNr: null,
     account: '',
     costCenter: '',

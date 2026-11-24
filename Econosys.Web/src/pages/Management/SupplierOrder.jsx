@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, ClipboardCopy, ExternalLink, Printer, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ClipboardCopy, ExternalLink, Printer, RefreshCw, Save, Trash2 } from 'lucide-react';
 import { Link, useBlocker, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Skeleton from 'react-loading-skeleton';
 import 'react-loading-skeleton/dist/skeleton.css';
@@ -10,7 +10,9 @@ import ActionButton from '../../components/ActionButton';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import EntityOrderFlowNavigation from '../../components/EntityOrderFlowNavigation';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
-import OrderProductInfo from '../../components/OrderProductInfo';
+import DocumentProductInfo from '../../components/DocumentProductInfo';
+import { mergeDocumentProductSnapshot } from '../../helpers/documentProductSnapshot';
+import { resolveSupplierOrderCalculationId } from '../../components/supplierOrderCalculation';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 import useDocumentTitle from '../../hooks/useDocumentTitle';
 import OrderCost from '../../components/OrderCost';
@@ -26,7 +28,7 @@ import { formatDateTime } from '../../helpers/dateUtils';
 import { resolvePdfFileName } from '../../helpers/pdfFileName';
 import { formatNumber, parseNullableInt } from '../../helpers/numberUtils';
 import { getSharedRequest } from '../../helpers/sharedRequest';
-import { fetchSupplierOrderPackaging } from './supplierOrderPackaging';
+import { fetchSupplierOrderPackaging, hasSupplierOrderPackagingDifference } from './supplierOrderPackaging';
 
 const toArray = (value) => (Array.isArray(value) ? value : []);
 const toInputValue = (value) => (value == null ? '' : String(value));
@@ -54,10 +56,12 @@ const confirmedDeliveryDateRequiredMessage = 'Måste ha valt ett Bekräftat lev.
 
 const mapApiOrderCostToEditable = (row) => ({
     localId: row?.id ? String(row.id) : makeTempId(),
-    id: row?.id ?? null,
+    id: row?.id > 0 ? row.id : null,
     quotationId: row?.quotationId ?? null,
     customerOrderId: row?.customerOrderId ?? null,
     supplierOrderId: row?.supplierOrderId ?? null,
+    calculationRowId: row?.calculationRowId ?? null,
+    supplierId: row?.supplierId ?? null,
     costId: row?.costId ?? null,
     doDebit: Boolean(row?.doDebit),
     nrOf: toInputValue(row?.nrOf),
@@ -82,6 +86,8 @@ const buildOrderCostPayload = (row) => ({
     id: row.id ?? null,
     customerOrderId: row.customerOrderId ?? null,
     supplierOrderId: row.supplierOrderId ?? null,
+    calculationRowId: parseNullableInt(row.calculationRowId),
+    supplierId: parseNullableInt(row.supplierId),
     costId: parseNullableInt(row.costId),
     doDebit: Boolean(row.doDebit),
     nrOf: parseNullableDecimal(row.nrOf),
@@ -182,6 +188,9 @@ const SupplierOrder = () => {
 
     const [loading, setLoading] = useState(true);
     const [loadingPackagingInstruction, setLoadingPackagingInstruction] = useState(false);
+    const [packagingComparison, setPackagingComparison] = useState(null);
+    const packagingRequestRef = React.useRef(0);
+    const refreshingPackagingRef = React.useRef(null);
     const { messages, setMessages, isInfoPanelExpanded, isInfoPanelUsingResponsiveDefault, toggleInfoPanel } = useOrderDetailState();
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
@@ -297,6 +306,44 @@ const SupplierOrder = () => {
         }
     }, [closePdfPreview, markStale, setMessages, showPdfPanel]);
 
+    const packagingInquiryId = supplierOrder?.inquiryId;
+    const packagingCalculationId = supplierOrder?.calculationId;
+    const packagingKey = `${id}:${packagingInquiryId ?? ''}:${packagingCalculationId ?? ''}`;
+    const activePackagingComparison = packagingComparison?.key === packagingKey ? packagingComparison : null;
+    const packagingChanged = activePackagingComparison?.packaging
+        && hasSupplierOrderPackagingDifference(supplierOrder, activePackagingComparison.packaging);
+
+    useEffect(() => {
+        if (!(packagingInquiryId > 0 || packagingCalculationId > 0)) return undefined;
+        let active = true;
+        const requestRef = packagingRequestRef;
+        const checkPackaging = async () => {
+            if (refreshingPackagingRef.current === packagingKey) return;
+            const request = ++requestRef.current;
+            try {
+                const packaging = await fetchSupplierOrderPackaging(apiClient, {
+                    inquiryId: packagingInquiryId,
+                    calculationId: packagingCalculationId,
+                });
+                if (active && request === requestRef.current) {
+                    setPackagingComparison({ key: packagingKey, packaging });
+                }
+            } catch (error) {
+                if (active && request === requestRef.current) {
+                    console.error('Failed to compare supplier order packaging:', error);
+                    setPackagingComparison({ key: packagingKey, error: 'Kunde inte jämföra packinstruktionen med kalkylen.' });
+                }
+            }
+        };
+        checkPackaging();
+        window.addEventListener('focus', checkPackaging);
+        return () => {
+            active = false;
+            requestRef.current++;
+            window.removeEventListener('focus', checkPackaging);
+        };
+    }, [packagingInquiryId, packagingCalculationId, packagingKey]);
+
     const handleCustomerDeliveryAddressChange = useCallback((value) => {
         const selectedAddress = selectedCustomerDetails?.deliveryAddresses?.find(
             (item, index) => String(item?.id ?? `virtual-${index}`) === String(value),
@@ -347,8 +394,13 @@ const SupplierOrder = () => {
         product: source?.product || null,
         productCode: source?.productCode || null,
         material: source?.material || null,
+        materialThickness: source?.materialThickness || null,
         format: source?.format || null,
         color: source?.color || null,
+        varnish: source?.varnish || null,
+        printMethod: source?.printMethod || null,
+        productNoteInternal: source?.productNoteInternal || null,
+        productNoteExternal: source?.productNoteExternal || null,
         construction: source?.construction || null,
         goodsMarking: source?.hideCustomerInfoOnPrint || source?.hideCustomerNameOnPrint || source?.hideProductNameOnPrint
             ? null
@@ -498,7 +550,7 @@ const SupplierOrder = () => {
             const editableDraft = {
                 ...createNewSupplierOrderModel(),
                 ...draft,
-                orderCosts: [],
+                orderCosts: toArray(draft.orderCosts).map(mapApiOrderCostToEditable),
             };
             setSupplierFactoryOptions(toArray(response?.data?.supplierFactories));
             setPalletFormatOptions(toArray(response?.data?.palletFormats));
@@ -532,16 +584,22 @@ const SupplierOrder = () => {
 
     const handleRefreshPackagingInstruction = async () => {
         setLoadingPackagingInstruction(true);
+        refreshingPackagingRef.current = packagingKey;
+        const request = ++packagingRequestRef.current;
         try {
             const packaging = await fetchSupplierOrderPackaging(apiClient, supplierOrder);
+            if (request !== packagingRequestRef.current) return;
+            setPackagingComparison({ key: packagingKey, packaging });
             updateSupplierOrder(packaging);
         } catch (error) {
+            if (request !== packagingRequestRef.current) return;
             console.error('Failed to refresh supplier order packaging instruction:', error);
             setMessages((previous) => [
                 ...previous.filter((message) => message.type !== 'error'),
                 { type: 'error', text: error?.response?.data?.message || error.message || 'Kunde inte hämta packinstruktionen från kalkylen.' },
             ]);
         } finally {
+            refreshingPackagingRef.current = null;
             setLoadingPackagingInstruction(false);
         }
     };
@@ -620,6 +678,17 @@ const SupplierOrder = () => {
         return true;
     };
 
+    const loadCurrentProductSnapshot = async (target) => {
+        const resolvedCalculationId = supplierOrder.calculationId || await resolveSupplierOrderCalculationId(apiClient, {
+            inquiryId: supplierOrder.inquiryId,
+            quotationId: supplierOrder.quotationId,
+            supplierOrderId: supplierOrder.id,
+            selectedCalculationRowId: supplierOrder.selectedCalculationRowId,
+        });
+        const response = await apiClient.get(`/document-products/calculations/${resolvedCalculationId}`, { params: target });
+        return { calculationId: resolvedCalculationId, ...response.data };
+    };
+
     const handleCreateCustomerOrder = async () => {
         if (!canStartSupplierOrderAction()) return;
         if (supplierOrder.econopackTransportResponsible && !supplierOrder.confirmedDeliveryDate) {
@@ -645,6 +714,8 @@ const SupplierOrder = () => {
             const customerResponse = customerId
                 ? await apiClient.get(`/customers/${customerId}`)
                 : null;
+            if (!customerId) throw new Error('Beställningen saknar kund.');
+            const productSnapshot = await loadCurrentProductSnapshot({ customerId });
             const quotationRow = toArray(quotation?.quotationRows).find(
                 (row) => Number(row?.calculationRowId) === Number(supplierOrder.selectedCalculationRowId),
             );
@@ -668,11 +739,17 @@ const SupplierOrder = () => {
                 termsOfPayment: quotation?.termsOfPayment ?? supplierOrder.termsOfPayment ?? '',
                 timeOfDelivery: quotation?.timeOfDelivery ?? supplierOrder.timeOfDelivery ?? '',
                 message: quotation?.message ?? supplierOrder.message ?? '',
-                product: quotation?.product ?? supplierOrder.product ?? '',
-                material: quotation?.material || supplierOrder.material || '',
-                format: quotation?.format ?? supplierOrder.format ?? '',
-                color: quotation?.color ?? supplierOrder.color ?? '',
-                construction: quotation?.construction ?? supplierOrder.construction ?? '',
+                calculationId: productSnapshot.calculationId,
+                product: productSnapshot.product,
+                material: productSnapshot.material,
+                materialThickness: productSnapshot.materialThickness,
+                format: productSnapshot.format,
+                color: productSnapshot.color,
+                varnish: productSnapshot.varnish,
+                printMethod: productSnapshot.printMethod,
+                productNoteInternal: productSnapshot.productNoteInternal,
+                productMessage: productSnapshot.productNoteExternal,
+                construction: productSnapshot.construction,
                 isFSC: Boolean(supplierOrder.isFSC),
                 salesCurrencyId: quotation?.salesCurrencyId ?? null,
                 salesCurrencyRate: quotation?.salesCurrencyRate ?? null,
@@ -703,26 +780,35 @@ const SupplierOrder = () => {
         }
     };
 
-    const handleCreateRepeatOrder = () => {
+    const handleCreateRepeatOrder = async () => {
         if (!canStartSupplierOrderAction()) return;
 
-        const repeatDraft = {
-            ...supplierOrder,
-            id: 0,
-            supplierOrderNr: '',
-            basedOnSupplierOrderId: supplierOrder.id,
-            date: getTodayDate(),
-            confirmed: false,
-            confirmedDeliveryDate: null,
-            confirmedDeliveryDateWeekMode: false,
-            orderCosts: [],
-            created: null,
-            edited: null,
-            createdByUserName: null,
-            editedByUserName: null,
-        };
-
-        navigate('/order/supplierorders/new', { state: { supplierOrderDraft: repeatDraft } });
+        try {
+            const snapshot = await loadCurrentProductSnapshot({ supplierId: supplierOrder.supplierId });
+            const repeatDraft = {
+                ...supplierOrder,
+                ...snapshot,
+                id: 0,
+                supplierOrderNr: '',
+                basedOnSupplierOrderId: supplierOrder.id,
+                date: getTodayDate(),
+                confirmed: false,
+                confirmedDeliveryDate: null,
+                confirmedDeliveryDateWeekMode: false,
+                orderCosts: [],
+                created: null,
+                edited: null,
+                createdByUserName: null,
+                editedByUserName: null,
+            };
+            navigate('/order/supplierorders/new', { state: { supplierOrderDraft: repeatDraft } });
+        } catch (error) {
+            console.error('Failed to prepare repeat order product information:', error);
+            setMessages((prev) => [
+                ...prev.filter((message) => message.type !== 'error'),
+                { type: 'error', text: error.response?.data?.detail || 'Kunde inte läsa aktuell produktinformation.' },
+            ]);
+        }
     };
 
     const handleDelete = async () => {
@@ -1292,12 +1378,15 @@ const SupplierOrder = () => {
                     </div>
                 </div>
 
-                <OrderProductInfo
-                    calculationId={supplierOrder?.calculationId}
-                    inquiryId={supplierOrder?.inquiryId}
-                    quotationId={supplierOrder?.quotationId}
-                    supplierOrderId={supplierOrder?.id}
-                    selectedCalculationRowId={supplierOrder?.selectedCalculationRowId}
+                <DocumentProductInfo
+                    type="supplierorders"
+                    document={supplierOrder}
+                    dirty={hasUnsavedChanges()}
+                    onRefreshed={(response) => {
+                        setSupplierOrder((current) => mergeDocumentProductSnapshot(current, 'supplierorders', response));
+                        setOriginalSupplierOrder((current) => mergeDocumentProductSnapshot(current, 'supplierorders', response));
+                        clearStale();
+                    }}
                 />
 
                 <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
@@ -1527,6 +1616,15 @@ const SupplierOrder = () => {
                                     margintop="0"
                                     height="h-15"
                                 />
+                                {packagingChanged ? (
+                                    <p role="status" className="ml-20 mt-1 flex items-center gap-1 text-xs text-amber-700">
+                                        <AlertTriangle size={14} aria-hidden="true" />
+                                        Packinstruktionen eller palltypen skiljer sig från kalkylen. Hämta för att uppdatera.
+                                    </p>
+                                ) : null}
+                                {activePackagingComparison?.error ? (
+                                    <p role="alert" className="ml-20 mt-1 text-xs text-red-700">{activePackagingComparison.error}</p>
+                                ) : null}
                                 <div className="mt-2 flex gap-3 text-xs">
                                     <span className="w-20 shrink-0 text-gray-500">Packning</span>
                                     <span>{supplierOrder?.packagingType || '-'}</span>

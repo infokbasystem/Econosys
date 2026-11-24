@@ -10,7 +10,7 @@ namespace Econosys.Api.Services;
 public static class InquiryPdfDocument
 {
     public sealed record InquiryLine(string Quantity, string Info);
-    public sealed record Content(string PriceHeading, string ProductNote, IReadOnlyList<InquiryLine> Lines);
+    public sealed record Content(string PriceHeading, string ProductNote, IReadOnlyList<InquiryLine> Lines, string? LoadingInstruction);
 
     public static string? RecipientLanguageCode(Inquiry inquiry)
     {
@@ -29,7 +29,7 @@ public static class InquiryPdfDocument
         var unit = calculation?.Unit;
         var currencyName = texts.Text(currency?.TranslationCode ?? 0, currency?.Name ?? currency?.SpcsKey ?? "SEK");
         var unitName = texts.Text(unit?.TranslationCode ?? 0, unit?.Name ?? texts.Text(-101));
-        var productNote = calculation?.Product?.NoteExternal ?? "";
+        var productNote = inquiry.ProductNoteExternal ?? "";
         if (calculation is { PalletLength: > 0, PalletWidth: > 0, PalletHeight: > 0, EditionPerPallet: > 0 })
         {
             var packing = $"{calculation.PalletLength}x{calculation.PalletWidth}x{calculation.PalletHeight}mm "
@@ -41,7 +41,8 @@ public static class InquiryPdfDocument
         }
 
         return new Content($"{currencyName}/{unitName}", productNote,
-            rows.Select(row => new InquiryLine(texts.Number(row.Edition), row.CalculationRow?.Info ?? "")).ToList());
+            rows.Select(row => new InquiryLine(texts.Number(row.Edition), row.PrintInfo ? row.CalculationRow?.Info ?? "" : "")).ToList(),
+            calculation?.LoadingInstruction);
     }
 
     public static byte[] Generate(Inquiry inquiry, CompanyInfo? company, DocumentPdfTranslations texts) =>
@@ -51,6 +52,8 @@ public static class InquiryPdfDocument
     {
         var content = BuildContent(inquiry, texts);
         var recipient = inquiry.SelectedInquiryRecipient;
+        var showRecipientNote = !string.IsNullOrWhiteSpace(recipient?.Note)
+            && !string.Equals(recipient.Note.Trim(), content.LoadingInstruction?.Trim(), StringComparison.Ordinal);
         return Document.Create(document => document.Page(page =>
         {
             Configure(page);
@@ -111,7 +114,7 @@ public static class InquiryPdfDocument
                             material += "\n" + texts.Text(-96);
                         }
                         product.Item().Element(container => Field(container, texts.Text(-3), material));
-                        product.Item().Element(container => Field(container, texts.Text(-5), inquiry.Color));
+                        product.Item().Element(container => Field(container, texts.Text(-5), DocumentProductText.ColorWithVarnish(inquiry.Color, inquiry.Varnish)));
                         if (!string.IsNullOrWhiteSpace(content.ProductNote))
                         {
                             product.Item().Element(container => Field(container, texts.Text(DocumentPdfTranslations.Note), content.ProductNote));
@@ -140,22 +143,33 @@ public static class InquiryPdfDocument
                     });
                 });
 
-                column.Item().PaddingTop(20).Column(additions =>
+                if (!string.IsNullOrWhiteSpace(inquiry.Notes))
                 {
-                    additions.Spacing(6);
-                    additions.Item().Text(texts.Text(DocumentPdfTranslations.Additions)).Bold();
-                    additions.Item().LineHorizontal(0.5f).LineColor("#000000");
-                    additions.Item().Element(container => Field(container,
-                        texts.Text(DocumentPdfTranslations.InquiryToolingCost) + ":", "?", 170));
-                    if (!string.IsNullOrWhiteSpace(inquiry.Preparation))
+                    column.Item().PaddingTop(20).Column(notes =>
                     {
-                        additions.Item().Element(container => Field(container, texts.Text(-44), inquiry.Preparation));
-                    }
-                    if (!string.IsNullOrWhiteSpace(recipient?.Note))
+                        notes.Spacing(6);
+                        notes.Item().Text(texts.Text(DocumentPdfTranslations.InquiryNotes)).Bold();
+                        notes.Item().Text(inquiry.Notes);
+                    });
+                }
+
+                if (!string.IsNullOrWhiteSpace(inquiry.Preparation) || showRecipientNote)
+                {
+                    column.Item().PaddingTop(20).Column(additions =>
                     {
-                        additions.Item().Text(recipient.Note);
-                    }
-                });
+                        additions.Spacing(6);
+                        additions.Item().Text(texts.Text(DocumentPdfTranslations.Additions)).Bold();
+                        additions.Item().LineHorizontal(0.5f).LineColor("#000000");
+                        if (!string.IsNullOrWhiteSpace(inquiry.Preparation))
+                        {
+                            additions.Item().Element(container => Field(container, texts.Text(-44), inquiry.Preparation));
+                        }
+                        if (showRecipientNote)
+                        {
+                            additions.Item().Text(recipient!.Note!);
+                        }
+                    });
+                }
 
                 column.Item().ExtendVertical().AlignBottom().PaddingTop(24).PaddingBottom(2, PdfUnit.Centimetre).Column(terms =>
                 {

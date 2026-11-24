@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import OrderFlowNavigation from './OrderFlowNavigation.jsx';
+import { filterOrderFlowItems } from './orderFlowNavigationSections.js';
 import apiClient from '../config/apiClient';
 import { getSharedRequest } from '../helpers/sharedRequest';
 
-const EntityOrderFlowNavigation = ({ entityType, entityId, refreshKey, draftItems }) => {
+const EntityOrderFlowNavigation = ({ entityType, entityId, refreshKey, draftItems, relatedCalculationId }) => {
     const [result, setResult] = useState(null);
     const [retry, setRetry] = useState(0);
     const [archivedVisibleFor, setArchivedVisibleFor] = useState(null);
@@ -47,10 +48,11 @@ const EntityOrderFlowNavigation = ({ entityType, entityId, refreshKey, draftItem
 
     const currentResult = result?.requestKey === requestKey && result.refreshKey === refreshKey ? result : null;
     const items = hasSavedEntity ? currentResult?.items : draftItems;
+    const relatedItems = items && filterOrderFlowItems(items, entityType, relatedCalculationId);
     const filterArchived = entityType !== 'calculation';
     const showArchived = archivedVisibleFor === requestKey;
-    const hasArchived = filterArchived && items?.some((item) => item.type === 'calculation' && item.isArchived);
-    const visibleItems = filterArchived && !showArchived ? items?.filter((item) => !item.isArchived) : items;
+    const hasArchived = filterArchived && relatedItems?.some((item) => item.type === 'calculation' && item.isArchived);
+    const visibleItems = filterArchived && !showArchived ? relatedItems?.filter((item) => !item.isArchived) : relatedItems;
 
     if (!hasSavedEntity && !draftItems) return null;
 

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CalendarDays, X } from 'lucide-react';
 import { DayPicker } from '@daypicker/react';
 import { sv } from 'date-fns/locale';
@@ -58,6 +59,8 @@ const LabeledDatePicker = ({
     label,
     labelWidth,
     inputWidth,
+    inputAriaLabel,
+    portal = false,
     margintop,
     name,
     value,
@@ -76,6 +79,8 @@ const LabeledDatePicker = ({
     ...props
 }) => {
     const wrapperRef = useRef(null);
+    const inputRef = useRef(null);
+    const popupRef = useRef(null);
     const [isOpen, setIsOpen] = useState(false);
     const isFilterTheme = theme === 'filter';
 
@@ -99,7 +104,7 @@ const LabeledDatePicker = ({
 
     useEffect(() => {
         const handleOutside = (event) => {
-            if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+            if (wrapperRef.current && !wrapperRef.current.contains(event.target) && !popupRef.current?.contains(event.target)) {
                 setIsOpen(false);
             }
         };
@@ -107,6 +112,43 @@ const LabeledDatePicker = ({
         document.addEventListener('mousedown', handleOutside);
         return () => document.removeEventListener('mousedown', handleOutside);
     }, []);
+
+    useLayoutEffect(() => {
+        if (!portal || !isOpen || disabled) return;
+
+        const anchor = inputRef.current;
+        const popup = popupRef.current;
+        if (!anchor || !popup) return;
+
+        const updatePosition = () => {
+            const rect = anchor.getBoundingClientRect();
+            const margin = 8;
+            const gap = 4;
+            const popupRect = popup.getBoundingClientRect();
+            const viewportWidth = document.documentElement.clientWidth;
+            const viewportHeight = window.innerHeight;
+            const left = Math.max(margin, Math.min(rect.left, viewportWidth - popupRect.width - margin));
+            const preferredTop = rect.bottom + gap + popupRect.height <= viewportHeight - margin
+                ? rect.bottom + gap
+                : rect.top - gap - popupRect.height;
+            const top = Math.max(margin, Math.min(preferredTop, viewportHeight - popupRect.height - margin));
+
+            Object.assign(popup.style, { left: `${left}px`, top: `${top}px`, visibility: 'visible' });
+        };
+
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        window.addEventListener('scroll', updatePosition, true);
+        const observer = new ResizeObserver(updatePosition);
+        observer.observe(anchor);
+        observer.observe(popup);
+
+        return () => {
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+            observer.disconnect();
+        };
+    }, [portal, isOpen, disabled]);
 
     const handleSelect = (date) => {
         onWeekModeChange?.(false);
@@ -139,11 +181,55 @@ const LabeledDatePicker = ({
         ? toWeekLabelValue(selectedDate)
         : formatDateShort(selectedDate);
 
+    const popup = (
+        <div
+            ref={popupRef}
+            className={`daypicker ${portal ? 'fixed z-50 w-max max-h-[calc(100vh-16px)] max-w-[calc(100vw-16px)] overflow-auto' : 'absolute left-0 top-full z-30 mt-1'} rounded-sm border border-gray-300 bg-white p-2 px-5 shadow-lg`}
+            style={portal ? { visibility: 'hidden' } : undefined}
+        >
+            <DayPicker
+                animate
+                mode="single"
+                locale={sv}
+                selected={selectedDate}
+                onSelect={handleSelect}
+                showWeekNumber={showWeekNumber}
+                ISOWeek={ISOWeek}
+                weekStartsOn={weekStartsOn}
+                className="text-xs"
+                components={{
+                    ...dayPickerComponents,
+                    WeekNumber: ({ week, children }) => (
+                        enableWeekSelect ? (
+                            <button
+                                type="button"
+                                className="mt-3 mr-2 inline-flex h-[18px] min-w-[40px] items-center justify-center rounded-md px-1 text-xs leading-none text-blue-700 hover:bg-blue-50"
+                                title={`Välj vecka ${week?.weekNumber ?? ''}`}
+                                onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    handleWeekSelect(week);
+                                }}
+                            >
+                                <span>{`v. ${children}`}</span>
+                            </button>
+                        ) : (
+                            <span className="mt-3 mr-2 inline-flex h-[18px] min-w-[40px] items-center justify-center rounded-md px-1 text-xs leading-none text-gray-500">
+                                {`v. ${children}`}
+                            </span>
+                        )
+                    ),
+                }}
+                {...props}
+            />
+        </div>
+    );
+
     return (
         <div className={`flex items-center w-full pb-[1px] mt-${margintop}`} ref={wrapperRef}>
-            <label className={`${labelWidth || ''} flex-none text-xs text-gray-700 pt-0.5`}>{label}</label>
+            {label && <label className={`${labelWidth || ''} flex-none text-xs text-gray-700 pt-0.5`}>{label}</label>}
 
-            <div className={`relative ${inputWidth || 'w-full'}`}>
+            <div className={`relative ${inputWidth || 'w-full'}`} ref={inputRef}>
                 {name && <input type="hidden" name={name} value={hiddenValue} />}
 
                 <button
@@ -157,6 +243,7 @@ const LabeledDatePicker = ({
                             : 'h-6 rounded-sm border-gray-300 px-2 pt-0.5 text-gray-700',
                         disabled ? 'bg-transparent text-gray-500' : 'bg-white',
                     ].join(' ')}
+                    aria-label={inputAriaLabel}
                     aria-expanded={isOpen}
                 >
                     <CalendarDays size={14} className={`shrink-0 text-gray-500 ${isFilterTheme ? '' : 'pb-0.5'}`} />
@@ -175,45 +262,7 @@ const LabeledDatePicker = ({
                     )}
                 </button>
 
-                {isOpen && !disabled && (
-                    <div className="daypicker absolute left-0 top-full z-30 mt-1 rounded-sm border border-gray-300 bg-white p-2 px-5 shadow-lg">
-                        <DayPicker
-                            animate
-                            mode="single"
-                            locale={sv}
-                            selected={selectedDate}
-                            onSelect={handleSelect}
-                            showWeekNumber={showWeekNumber}
-                            ISOWeek={ISOWeek}
-                            weekStartsOn={weekStartsOn}
-                            className="text-xs"
-                            components={{
-                                ...dayPickerComponents,
-                                WeekNumber: ({ week, children }) => (
-                                    enableWeekSelect ? (
-                                        <button
-                                            type="button"
-                                            className="mt-3 mr-2 inline-flex h-[18px] min-w-[40px] items-center justify-center rounded-md px-1 text-xs leading-none text-blue-700 hover:bg-blue-50"
-                                            title={`Välj vecka ${week?.weekNumber ?? ''}`}
-                                            onClick={(event) => {
-                                                event.preventDefault();
-                                                event.stopPropagation();
-                                                handleWeekSelect(week);
-                                            }}
-                                        >
-                                            <span>{`v. ${children}`}</span>
-                                        </button>
-                                    ) : (
-                                        <span className="mt-3 mr-2 inline-flex h-[18px] min-w-[40px] items-center justify-center rounded-md px-1 text-xs leading-none text-gray-500">
-                                            {`v. ${children}`}
-                                        </span>
-                                    )
-                                ),
-                            }}
-                            {...props}
-                        />
-                    </div>
-                )}
+                {isOpen && !disabled && (portal ? createPortal(popup, document.body) : popup)}
             </div>
         </div>
     );

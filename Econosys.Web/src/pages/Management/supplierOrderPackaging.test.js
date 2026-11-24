@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fetchSupplierOrderPackaging } from './supplierOrderPackaging.js';
+import { fetchSupplierOrderPackaging, hasSupplierOrderPackagingDifference } from './supplierOrderPackaging.js';
 
 test('uses the inquiry calculation for legacy orders and includes freight notes and EUR pallets', async () => {
     const requests = [];
@@ -67,4 +67,18 @@ test('propagates inquiry and calculation request failures', async () => {
     const client = { get: async () => { throw failure; } };
     await assert.rejects(fetchSupplierOrderPackaging(client, { inquiryId: 7 }), (error) => error === failure);
     await assert.rejects(fetchSupplierOrderPackaging(client, { calculationId: 12 }), (error) => error === failure);
+});
+
+test('compares the instructions and both pallet types, normalizing empty values and line endings', () => {
+    const packaging = { loadingInstruction: 'Pack\nFreight', eurPallet: false, oneWayPallet: true };
+    assert.equal(hasSupplierOrderPackagingDifference(
+        { loadingInstruction: 'Pack\r\nFreight', eurPallet: false, oneWayPallet: true }, packaging), false);
+    assert.equal(hasSupplierOrderPackagingDifference(
+        { loadingInstruction: 'Old', eurPallet: false, oneWayPallet: true }, packaging), true);
+    assert.equal(hasSupplierOrderPackagingDifference(
+        { loadingInstruction: 'Pack\nFreight', eurPallet: true, oneWayPallet: true }, packaging), true);
+    assert.equal(hasSupplierOrderPackagingDifference(
+        { loadingInstruction: 'Pack\nFreight', eurPallet: false, oneWayPallet: false }, packaging), true);
+    assert.equal(hasSupplierOrderPackagingDifference(
+        { loadingInstruction: null }, { loadingInstruction: '', eurPallet: false, oneWayPallet: false }), false);
 });

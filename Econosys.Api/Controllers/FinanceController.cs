@@ -355,7 +355,7 @@ namespace Econosys.Api.Controllers
         {
             var rate = salesCurrencyRate.GetValueOrDefault() == 0 ? 1m : salesCurrencyRate!.Value;
             var amount = (decimal)rowSum * rate;
-            return isCredit ? -amount : amount;
+            return isCredit ? -Math.Abs(amount) : amount;
         }
 
         private static decimal Round2(decimal value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);

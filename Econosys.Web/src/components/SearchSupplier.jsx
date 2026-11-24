@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ExternalLink, Search } from 'lucide-react'
 import { searchSuppliers } from '../helpers/supplierApi'
+import useSearchKeyboardNavigation from '../hooks/useSearchKeyboardNavigation'
 import useSearchPopupPosition from '../hooks/useSearchPopupPosition'
 
 export default function SearchSupplier({
@@ -27,18 +28,22 @@ export default function SearchSupplier({
     const mayHaveMoreMatches = !isSearching && take > 0 && matches.length >= take
     const showMatches = isOpen && (query.trim() === '**' || query.trim().length >= minQueryLength)
 
+    const { listId, activeIndex, setActiveIndex, handleKeyDown } = useSearchKeyboardNavigation({
+        matches, isOpen: showMatches, setIsOpen, popupRef, onPick: handlePick,
+    })
     useSearchPopupPosition(showMatches, containerRef, popupRef)
 
     useEffect(() => {
         function handleDocumentMouseDown(event) {
             if (!containerRef.current?.contains(event.target) && !popupRef.current?.contains(event.target)) {
                 setIsOpen(false)
+                setActiveIndex(-1)
             }
         }
 
         document.addEventListener('mousedown', handleDocumentMouseDown)
         return () => document.removeEventListener('mousedown', handleDocumentMouseDown)
-    }, [])
+    }, [setActiveIndex])
 
     useEffect(() => {
         if (!hasEditedSinceSelection) return
@@ -74,12 +79,14 @@ export default function SearchSupplier({
     }, [debounceMs, hasEditedSinceSelection, minQueryLength, query, take])
 
     function handlePick(supplier) {
+        requestRef.current += 1
         onSupplierSelect?.(supplier)
         onPendingSelectionChange?.(false)
         setQuery(supplier?.name ?? '')
         setHasEditedSinceSelection(false)
         setMatches([])
         setIsOpen(false)
+        setActiveIndex(-1)
     }
 
     return (
@@ -87,13 +94,22 @@ export default function SearchSupplier({
             <div className="relative">
                 <input
                     value={query}
+                    role="combobox"
+                    aria-label={placeholder}
+                    aria-autocomplete="list"
+                    aria-expanded={showMatches}
+                    aria-controls={showMatches ? listId : undefined}
+                    aria-activedescendant={showMatches && activeIndex >= 0 ? `${listId}-option-${activeIndex}` : undefined}
+                    onKeyDown={handleKeyDown}
                     onChange={(event) => {
                         const nextQuery = event.target.value
+                        requestRef.current += 1
                         setQuery(nextQuery)
                         setHasEditedSinceSelection(true)
                         setMatches([])
                         setIsSearching(false)
                         setIsOpen(false)
+                        setActiveIndex(-1)
 
                         const hasQuery = nextQuery.trim() !== ''
                         onPendingSelectionChange?.(hasQuery)
@@ -129,17 +145,21 @@ export default function SearchSupplier({
             {showMatches && createPortal(
                 <div ref={popupRef} className="fixed z-50 overflow-x-hidden overflow-y-auto overscroll-contain rounded-sm border border-stone-400 bg-stone-50 shadow-lg isolate [-webkit-overflow-scrolling:touch]">
                     <div className="bg-stone-50">
-                        <ul className="divide-y divide-stone-300">
-                            {matches.map((supplier) => {
+                        <ul id={listId} role="listbox" aria-label="Leverantörer" className="divide-y divide-stone-300">
+                            {matches.map((supplier, index) => {
                                 const reference = supplier.reference?.trim() || supplier.email?.trim()
                                 const telephone = supplier.telephone1?.trim()
                                 const postalAddress = supplier.postalAddress?.trim()
 
                                 return (
-                                    <li key={supplier.id}>
+                                    <li key={supplier.id} role="presentation">
                                         <button
                                             type="button"
-                                            className="w-full cursor-pointer px-4 py-2 text-left text-gray-800 transition hover:bg-stone-200/60"
+                                            id={`${listId}-option-${index}`}
+                                            role="option"
+                                            aria-selected={index === activeIndex}
+                                            data-search-option-index={index}
+                                            className={`w-full cursor-pointer px-4 py-2 text-left text-gray-800 transition hover:bg-stone-200/60 ${index === activeIndex ? 'bg-stone-200' : ''}`}
                                             onClick={() => handlePick(supplier)}
                                         >
                                             <div className="truncate text-xs font-medium tracking-[0.08em] text-slate-800 uppercase">

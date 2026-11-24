@@ -1,4 +1,5 @@
 using Econosys.Api.Models;
+using System.Text.RegularExpressions;
 using QuestPDF.Fluent;
 using QuestPDF.Infrastructure;
 
@@ -7,6 +8,7 @@ namespace Econosys.Api.Services;
 public static class InvoicePdfDocument
 {
     private const decimal VatRate = 0.25m;
+    private const int PalletPriceTypeId = 107;
     private const int RoundingPriceTypeId = 12;
     private const int VatPriceTypeId = 13;
     private const string DefaultCurrency = "SEK";
@@ -21,21 +23,73 @@ public static class InvoicePdfDocument
     {
         var printForScanning = invoice.Customer?.PrintForDocumentScanning == true;
         var invoiceRows = invoice.InvoiceRows
-            .OrderBy(row => row.SortOrder ?? int.MaxValue)
+            .OrderBy(IsSlattPallet)
+            .ThenBy(row => row.SortOrder ?? int.MaxValue)
             .ThenBy(row => row.Id)
             .ToList();
 
-        var lines = invoiceRows
-            .Where(row => row.PriceTypeId != VatPriceTypeId && row.PriceTypeId != RoundingPriceTypeId)
-            .Select(row => new InvoiceLine(
+        var lines = new List<InvoiceLine>();
+        foreach (var row in invoiceRows.Where(row =>
+                     row.PriceTypeId != VatPriceTypeId
+                     && row.PriceTypeId != RoundingPriceTypeId
+                     && row.PriceTypeId != PalletPriceTypeId))
+        {
+            var parentDeliveryToCustomerId = row.DeliveryToCustomer is { IsSlattPallet: true }
+                ? row.DeliveryToCustomer.ParentDeliveryId
+                : null;
+            var parentDeliveryFromStockId = row.DeliveryFromStock is { IsSlattPallet: true }
+                ? row.DeliveryFromStock.ParentDeliveryId
+                : null;
+            var parentLineIndex = !row.DoNotAggregateWithParent && parentDeliveryToCustomerId.HasValue
+                ? lines.FindIndex(line => line.DeliveryToCustomerId == parentDeliveryToCustomerId)
+                : !row.DoNotAggregateWithParent && parentDeliveryFromStockId.HasValue
+                    ? lines.FindIndex(line => line.DeliveryFromStockId == parentDeliveryFromStockId)
+                    : -1;
+
+            if (parentLineIndex >= 0)
+            {
+                var parentLine = lines[parentLineIndex];
+                var weight = parentLine.Weight.GetValueOrDefault() + row.Weight.GetValueOrDefault();
+                lines[parentLineIndex] = parentLine with
+                {
+                    Quantity = parentLine.Quantity.GetValueOrDefault() + row.NrOf.GetValueOrDefault(),
+                    Total = parentLine.Total.GetValueOrDefault() + row.Sum.GetValueOrDefault(),
+                    Weight = weight,
+                    Description = UpdateWeight(parentLine.Description, weight)
+                };
+                continue;
+            }
+
+            lines.Add(new InvoiceLine(
                 row.Text,
                 row.Text2,
                 row.NrOf,
                 row.Unit?.Name,
                 row.UnitPrice,
                 row.Sum,
-                row.VatGround))
-            .ToList();
+                row.VatGround,
+                row.DeliveryToCustomerId,
+                row.DeliveryFromStockId,
+                row.Weight));
+        }
+
+        foreach (var palletGroup in invoiceRows
+                     .Where(row => row.PriceTypeId == PalletPriceTypeId)
+                     .GroupBy(row => new { row.UnitPrice, row.Text }))
+        {
+            var firstRow = palletGroup.First();
+            lines.Add(new InvoiceLine(
+                firstRow.Text,
+                null,
+                palletGroup.Sum(row => row.NrOf.GetValueOrDefault()),
+                null,
+                firstRow.UnitPrice,
+                palletGroup.Sum(row => row.Sum.GetValueOrDefault()),
+                firstRow.VatGround,
+                null,
+                null,
+                null));
+        }
 
         var subtotal = lines.Sum(line => (decimal)(line.Total ?? 0d));
         var vatRow = invoiceRows.FirstOrDefault(row => row.PriceTypeId == VatPriceTypeId);
@@ -118,8 +172,12 @@ public static class InvoicePdfDocument
                 });
                 row.ConstantItem(190).Column(title =>
                 {
-                    title.Item().AlignRight().Text("Faktura").FontSize(16).SemiBold();
+                    title.Item().AlignRight().Text(invoice.InvoiceTypeCode == InvoiceTypeCode.Credit ? "Kreditfaktura" : "Faktura").FontSize(16).SemiBold();
                     title.Item().AlignRight().Text(Value(invoice.InvoiceNumber?.ToString())).FontSize(16).SemiBold();
+                    if (invoice.InvoiceTypeCode == InvoiceTypeCode.Credit && invoice.CreditingInvoiceNumber.HasValue)
+                    {
+                        title.Item().AlignRight().Text($"Krediterar nr {invoice.CreditingInvoiceNumber}");
+                    }
                 });
             });
         });
@@ -221,12 +279,12 @@ public static class InvoicePdfDocument
                 row.RelativeItem().Row(line =>
                 {
                     line.ConstantItem(112).Text("Leveransdatum").Bold();
-                    line.RelativeItem().Text(FormatDate(invoice.AccountDate ?? invoice.InvoiceDate));
+                    line.RelativeItem().Text(Value(invoice.TimeOfDelivery));
                 });
                 row.RelativeItem().Row(line =>
                 {
                     line.ConstantItem(112).Text("Leveransvillkor").Bold();
-                    line.RelativeItem().Text(Value(invoice.TimeOfDelivery));
+                    line.RelativeItem().Text(Value(invoice.TermsOfDelivery));
                 });
             });
 
@@ -265,6 +323,22 @@ public static class InvoicePdfDocument
 
     private static string Value(string? value) => string.IsNullOrWhiteSpace(value) ? "" : value;
 
+    private static bool IsSlattPallet(InvoiceRow row) =>
+        row.DeliveryToCustomer?.IsSlattPallet == true || row.DeliveryFromStock?.IsSlattPallet == true;
+
+    private static string? UpdateWeight(string? description, decimal weight)
+    {
+        if (weight == 0 || string.IsNullOrEmpty(description))
+        {
+            return description;
+        }
+
+        var match = Regex.Match(description, @"Vikt: (.*) kg");
+        return match.Success
+            ? description.Replace(match.Value, $"Vikt: {weight:#,0} kg")
+            : description;
+    }
+
     private static string FormatDate(DateTime? date) => date?.ToString("yyyy-MM-dd") ?? "";
 
     private static string FormatNumber(double? value) => value?.ToString("0.##") ?? "";
@@ -282,5 +356,8 @@ public static class InvoicePdfDocument
         string? Unit,
         double? UnitPrice,
         double? Total,
-        bool VatGround);
+        bool VatGround,
+        int? DeliveryToCustomerId,
+        int? DeliveryFromStockId,
+        decimal? Weight);
 }

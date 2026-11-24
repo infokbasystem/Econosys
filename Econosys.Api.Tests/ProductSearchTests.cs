@@ -71,6 +71,35 @@ public class ProductSearchTests
     }
 
     [Fact]
+    public async Task MaterialNameCanBeFilteredAndSorted()
+    {
+        await using var context = await CreateContext();
+        var paper = new Material { Id = 17, Name = "Paper" };
+        var board = new Material { Id = 18, Name = "Board" };
+        context.Materials.AddRange(paper, board);
+        foreach (var product in context.Products)
+        {
+            product.Material = product.Id is 1 or 3 ? paper : board;
+        }
+        await context.SaveChangesAsync();
+
+        var controller = CreateController(context);
+        var filtered = GetPage(await controller.Search(new SearchProductsRequest
+        {
+            Filter = new FilterRequest { Conditions = [Condition("materialname", "oard", "contains")] },
+            OrderBy = [new SortRequest { Field = "materialname" }, new SortRequest { Field = "id" }],
+        }));
+        Assert.Equal(new[] { 2, 4, 5 }, filtered.Items.Select(item => item.Id));
+        Assert.All(filtered.Items, item => Assert.Equal("Board", item.MaterialName));
+
+        var sorted = GetPage(await controller.Search(new SearchProductsRequest
+        {
+            OrderBy = [new SortRequest { Field = "materialname" }, new SortRequest { Field = "id" }],
+        }));
+        Assert.Equal(new[] { 2, 4, 5, 1, 3 }, sorted.Items.Select(item => item.Id));
+    }
+
+    [Fact]
     public async Task FiltersCombineWithNameAndActiveBeforePaginationWithoutDuplicates()
     {
         await using var context = await CreateContext();

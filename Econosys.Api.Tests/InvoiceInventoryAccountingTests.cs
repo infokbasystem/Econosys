@@ -10,6 +10,18 @@ namespace Econosys.Api.Tests;
 public class InvoiceInventoryAccountingTests
 {
     [Fact]
+    public async Task CreditReversesInventoryPostingsWithoutChangingTheDeliveredQuantity()
+    {
+        using var context = CreateContext();
+        AddDelivery(context, 1);
+        AddAccounts(context);
+        await context.SaveChangesAsync();
+        var result = await InvoiceInventoryAccounting.BuildAsync(context, [Product(1, 2)], isCredit: true);
+        AssertPosting(result, "1460", "Lager ut", -2.25);
+        AssertPosting(result, "4990", "Lagerförändring", 2.25);
+    }
+
+    [Fact]
     public async Task RoundsEachLineToEvenBeforeAggregatingFallbackAndOverrideAccounts()
     {
         using var context = CreateContext();

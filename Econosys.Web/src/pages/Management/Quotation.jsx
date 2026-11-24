@@ -10,13 +10,16 @@ import ConfirmationModal from '../../components/ConfirmationModal';
 import InquirySelectionModal from '../../components/InquirySelectionModal';
 import EntityOrderFlowNavigation from '../../components/EntityOrderFlowNavigation';
 import OrderDetailLayout from '../../components/OrderDetailLayout';
-import OrderProductInfo from '../../components/OrderProductInfo';
+import DocumentProductInfo from '../../components/DocumentProductInfo';
+import { mergeDocumentProductSnapshot } from '../../helpers/documentProductSnapshot';
 import useOrderDetailState from '../../hooks/useOrderDetailState';
 import useDocumentTitle from '../../hooks/useDocumentTitle';
 import OrderCost from '../../components/OrderCost';
+import { getQuotationCostCurrencyId } from '../../components/quotationCostCurrency';
 import LabeledInput from '../../components/LabeledInput';
 import LabeledReactSelect from '../../components/LabeledReactSelect';
 import LabeledSwitch from '../../components/LabeledSwitch';
+import SmallSwitch from '../../components/SmallSwitch';
 import apiClient, { logApiRequestSummary } from '../../config/apiClient';
 import useAppUpdateGuard from '../../hooks/useAppUpdateGuard';
 import { formatDateTime, fromDateInputToSwedishIso, toSwedishDateInputValue } from '../../helpers/dateUtils';
@@ -116,6 +119,7 @@ const createNewQuotationModel = (initialValues = {}) => ({
     timeOfDelivery: '',
     date: null,
     hideDeliveryAddressOnPrint: false,
+    hideExtraCostsOnPrint: false,
     createdAt: null,
     editedAt: null,
     createdBy: null,
@@ -188,9 +192,15 @@ const Quotation = () => {
     const [orderCostOptions, setOrderCostOptions] = useState([]);
     const [pdfCostVersion, setPdfCostVersion] = useState(null);
     const [currencyOptions, setCurrencyOptions] = useState([]);
+    const [supplierCurrency, setSupplierCurrency] = useState({ supplierId: null, currencyId: null, loading: false, error: '' });
     const [palletFormatOptions, setPalletFormatOptions] = useState([]);
     const skipUnsavedCheckRef = useRef(false);
     const quotationLoadStartedAtRef = useRef(null);
+    const selectedSupplierId = parseNullableInt(quotation?.selectedSupplierId);
+    const supplierCurrencyLoading = Boolean(selectedSupplierId > 0
+        && (supplierCurrency.supplierId !== selectedSupplierId || supplierCurrency.loading));
+    const supplierCurrencyId = supplierCurrency.supplierId === selectedSupplierId ? supplierCurrency.currencyId : null;
+    const supplierCurrencyError = supplierCurrency.supplierId === selectedSupplierId ? supplierCurrency.error : '';
 
     const handleBackClick = () => {
         if (window.history.length > 1) {
@@ -392,6 +402,9 @@ const Quotation = () => {
         materialThickness: source?.materialThickness ?? null,
         format: source?.format ?? null,
         color: source?.color ?? null,
+        varnish: source?.varnish ?? null,
+        printMethod: source?.printMethod ?? null,
+        productNoteInternal: source?.productNoteInternal ?? null,
         construction: source?.construction ?? null,
         customerName: source?.customerName ?? null,
         deliveryAddressName: source?.deliveryAddressName ?? null,
@@ -407,6 +420,7 @@ const Quotation = () => {
         timeOfDelivery: source?.timeOfDelivery ?? null,
         date: source?.date ?? null,
         hideDeliveryAddressOnPrint: Boolean(source?.hideDeliveryAddressOnPrint),
+        hideExtraCostsOnPrint: Boolean(source?.hideExtraCostsOnPrint),
         eurPallet: Boolean(source?.eurPallet),
         nrOfEurPallet: parseNullableInt(source?.nrOfEurPallet),
         eurPalletValue: parseNullableDecimal(source?.eurPalletValue),
@@ -420,18 +434,39 @@ const Quotation = () => {
         calculationRowIds: toArray(source?.quotationRows)
             .map((row) => parseNullableInt(row?.calculationRowId))
             .filter((rowId) => rowId && rowId > 0),
+        hiddenCalculationRowInfoIds: toArray(source?.quotationRows)
+            .filter((row) => row.printInfo === false)
+            .map((row) => parseNullableInt(row.calculationRowId))
+            .filter((rowId) => rowId && rowId > 0),
         quotationRowIds: Array.isArray(source?.quotationRows)
             ? source.quotationRows
                 .map((row) => parseNullableInt(row?.id))
                 .filter((rowId) => rowId && rowId > 0)
             : [],
+        hiddenQuotationRowInfoIds: toArray(source?.quotationRows)
+            .filter((row) => row.printInfo === false)
+            .map((row) => parseNullableInt(row.id))
+            .filter((rowId) => rowId && rowId > 0),
         orderCosts: toArray(source?.orderCosts)
             .filter((row) => row.costId != null)
-            .map(buildOrderCostPayload),
+            .map((row) => ({
+                ...buildOrderCostPayload(row),
+                inPriceCurrencyId: getQuotationCostCurrencyId(
+                    row,
+                    orderCostOptions.find((option) => String(option.id) === String(row.costId)),
+                    supplierCurrencyId,
+                ),
+            })),
     });
 
     const handleDeleteRow = (rowId) => {
         updateQuotation({ quotationRows: (quotation?.quotationRows ?? []).filter((row) => row.id !== rowId) });
+    };
+
+    const handlePrintInfoChange = (rowId, _field, checked) => {
+        updateQuotation({
+            quotationRows: (quotation?.quotationRows ?? []).map((row) => row.id === rowId ? { ...row, printInfo: checked } : row),
+        });
     };
 
     const handleOrderCostChange = useCallback((newRows) => {
@@ -444,6 +479,15 @@ const Quotation = () => {
 
     const handleSave = async () => {
         if (!quotation) return;
+
+        if (supplierCurrencyLoading && toArray(quotation.orderCosts).some((row) => row.inPriceCurrencyId == null
+            && orderCostOptions.some((option) => String(option.id) === String(row.costId) && option.isSupplier))) {
+            setMessages((prev) => [
+                ...prev.filter((message) => message.type !== 'error'),
+                { type: 'error', text: 'Vänta tills leverantörens valuta har laddats innan du sparar.' },
+            ]);
+            return;
+        }
 
         try {
             const payload = buildQuotationPayload(quotation);
@@ -498,6 +542,32 @@ const Quotation = () => {
 
     const customerId = parseNullableInt(quotation?.customerId);
     const isCustomerDetailsLoading = Boolean(customerId && customerId > 0 && loadedCustomerDetailsForId !== customerId);
+
+    useEffect(() => {
+        if (!selectedSupplierId || selectedSupplierId <= 0) {
+            setSupplierCurrency({ supplierId: null, currencyId: null, loading: false, error: '' });
+            return;
+        }
+
+        let isActive = true;
+        setSupplierCurrency({ supplierId: selectedSupplierId, currencyId: null, loading: true, error: '' });
+        const loadSupplierCurrency = async () => {
+            try {
+                const response = await getSharedRequest(
+                    `suppliers:${selectedSupplierId}`,
+                    () => apiClient.get(`/suppliers/${selectedSupplierId}`),
+                );
+                if (!isActive) return;
+                const currencyId = parseNullableInt(response?.data?.currencyId);
+                setSupplierCurrency({ supplierId: selectedSupplierId, currencyId: currencyId > 0 ? currencyId : null, loading: false, error: '' });
+            } catch (error) {
+                console.error('Failed to load supplier currency:', error);
+                if (isActive) setSupplierCurrency({ supplierId: selectedSupplierId, currencyId: null, loading: false, error: 'Kunde inte läsa leverantörens valuta.' });
+            }
+        };
+        loadSupplierCurrency();
+        return () => { isActive = false; };
+    }, [selectedSupplierId]);
 
     useEffect(() => {
         let isActive = true;
@@ -870,244 +940,276 @@ const Quotation = () => {
                     <EntityOrderFlowNavigation
                         entityType="quotation"
                         entityId={Number.isInteger(quotation?.id) && quotation.id > 0 ? quotation.id : null}
+                        relatedCalculationId={parseNullableInt(quotation?.calculationId)}
                     />
                 )}
             >
-                    <div className="flex justify-between w-full mb-5">
-                        <div className="flex items-center gap-6">
+                <div className="flex justify-between w-full mb-5">
+                    <div className="flex items-center gap-6">
+                        <ActionButton
+                            label="Tillbaka"
+                            icon={ArrowLeft}
+                            onClick={handleBackClick}
+                            accent="slate"
+                        />
+                        <ActionButton
+                            label="Spara"
+                            icon={Save}
+                            onClick={handleSave}
+                            accent="lime"
+                        />
+                        {quotation?.id !== 0 && (
                             <ActionButton
-                                label="Tillbaka"
-                                icon={ArrowLeft}
-                                onClick={handleBackClick}
-                                accent="slate"
+                                label="Skriv ut"
+                                icon={Printer}
+                                onClick={() => void getPdf()}
+                                accent="sky"
                             />
-                            <ActionButton
-                                label="Spara"
-                                icon={Save}
-                                onClick={handleSave}
-                                accent="lime"
-                            />
-                            {quotation?.id !== 0 && (
-                                <ActionButton
-                                    label="Skriv ut"
-                                    icon={Printer}
-                                    onClick={() => void getPdf()}
-                                    accent="sky"
-                                />
-                            )}
-                        </div>
-                        <div className="flex items-center gap-6">
-                            {quotation?.id !== 0 && (
-                                <ActionButton
-                                    label="Radera"
-                                    icon={Trash2}
-                                    onClick={() => setShowDeleteConfirm(true)}
-                                    accent="rose"
-                                />
-                            )}
-                        </div>
+                        )}
                     </div>
+                    <div className="flex items-center gap-6">
+                        {quotation?.id !== 0 && (
+                            <ActionButton
+                                label="Radera"
+                                icon={Trash2}
+                                onClick={() => setShowDeleteConfirm(true)}
+                                accent="rose"
+                            />
+                        )}
+                    </div>
+                </div>
 
-                    <OrderProductInfo
-                        calculationId={quotation?.calculationId ?? calculationId}
-                    />
+                <DocumentProductInfo
+                    type="quotations"
+                    document={quotation}
+                    dirty={hasUnsavedChanges()}
+                    onRefreshed={(response) => {
+                        setQuotation((current) => mergeDocumentProductSnapshot(current, 'quotations', response));
+                        setOriginalQuotation((current) => mergeDocumentProductSnapshot(current, 'quotations', response));
+                        clearStale();
+                    }}
+                />
 
-                    <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
-                        <span>
-                            <div className="grid grid-cols-[380px_380px_300px] gap-x-20 gap-y-8">
-                                <span>
-                                    <p className='text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300'>{quotation?.customerName || ''}</p>
-                                    <LabeledReactSelect
-                                        name='customerDeliveryAddressId'
-                                        label='Lev. adress'
-                                        value={quotation?.customerDeliveryAddressId || ''}
-                                        items={customerDeliveryAddressItems}
-                                        onChange={handleCustomerDeliveryAddressChange}
-                                        labelWidth="w-20"
-                                        margintop="2"
-                                        allowRawValueLabel
-                                    />
+                <div className="mt-10 grid w-full grid-cols-[max-content_minmax(0,1fr)] gap-x-25">
+                    <span>
+                        <div className="grid grid-cols-[380px_380px_300px] gap-x-20 gap-y-8">
+                            <span>
+                                <p className='text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300'>{quotation?.customerName || ''}</p>
+                                <LabeledReactSelect
+                                    name='customerDeliveryAddressId'
+                                    label='Lev. adress'
+                                    value={quotation?.customerDeliveryAddressId || ''}
+                                    items={customerDeliveryAddressItems}
+                                    onChange={handleCustomerDeliveryAddressChange}
+                                    labelWidth="w-20"
+                                    margintop="2"
+                                    allowRawValueLabel
+                                />
+                                <LabeledInput
+                                    label=''
+                                    value={quotation?.deliveryAddressName || ''}
+                                    onChange={(value) => updateQuotation({ deliveryAddressName: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                />
+                                <LabeledInput
+                                    label=''
+                                    value={quotation?.deliveryAddress || ''}
+                                    onChange={(value) => updateQuotation({ deliveryAddress: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                />
+                                <div className='flex space-x-1 w-full mt-[0px]'>
                                     <LabeledInput
+                                        name='deliveryPostalNr'
                                         label=''
-                                        value={quotation?.deliveryAddressName || ''}
-                                        onChange={(value) => updateQuotation({ deliveryAddressName: value })}
+                                        value={quotation?.deliveryPostalNr || ''}
+                                        onChange={(value) => updateQuotation({ deliveryPostalNr: value })}
                                         labelWidth="w-20"
+                                        inputWidth="w-25"
                                         margintop="0"
+                                        placeholder=""
                                     />
-                                    <LabeledInput
-                                        label=''
-                                        value={quotation?.deliveryAddress || ''}
-                                        onChange={(value) => updateQuotation({ deliveryAddress: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                    />
-                                    <div className='flex space-x-1 w-full mt-[0px]'>
-                                        <LabeledInput
-                                            name='deliveryPostalNr'
-                                            label=''
-                                            value={quotation?.deliveryPostalNr || ''}
-                                            onChange={(value) => updateQuotation({ deliveryPostalNr: value })}
-                                            labelWidth="w-20"
-                                            inputWidth="w-25"
-                                            margintop="0"
-                                            placeholder=""
-                                        />
-                                        <div className="w-full">
-                                            <input
-                                                name="deliveryPostalAddress"
-                                                value={quotation?.deliveryPostalAddress || ''}
-                                                onChange={(value) => updateQuotation({ deliveryPostalAddress: value })}
-                                                className='text-xs w-full border border-gray-300 rounded-sm px-2 py-1 focus:outline-none bg-white'
-                                            />
-
-                                        </div>
-                                    </div>
-                                    <LabeledInput
-                                        label=''
-                                        value={quotation?.deliveryCountry || ''}
-                                        onChange={(value) => updateQuotation({ deliveryCountry: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                    />
-                                    <div className='flex items-center space-x-1 w-50 text-xs pt-[1px] pb-1'>
-                                        <LabeledSwitch
-                                            field='hideDeliveryAddressOnPrint'
-                                            name='hideDeliveryAddressOnPrint'
-                                            label='Dölj adress'
-                                            value={quotation?.hideDeliveryAddressOnPrint || false}
-                                            onChange={(rowId, field, checked) => updateQuotation({ [field]: checked })}
-                                            labelWidth="w-20"
-                                            marginTop={1}
-                                        />
-                                    </div>
-                                    <LabeledInput
-                                        name='material'
-                                        label='Material'
-                                        value={quotation?.material || ''}
-                                        onChange={(value) => updateQuotation({ material: value })}
-                                        labelWidth="w-20"
-                                        margintop="3"
-                                    />
-                                    <LabeledInput
-                                        label='Leveranstid'
-                                        value={quotation?.timeOfDelivery || ''}
-                                        onChange={(value) => updateQuotation({ timeOfDelivery: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                    />
-                                    <div className='flex items-center space-x-1 w-50 text-xs pt-[1px]'>
-                                        <label className="w-20 flex-none text-xs text-gray-700">Datum</label>
+                                    <div className="w-full">
                                         <input
-                                            type="date"
-                                            value={formatDateInputValue(quotation?.date)}
-                                            onChange={(event) => updateQuotation({ date: fromDateInputToSwedishIso(event.target.value) })}
-                                            className="w-30 text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                                            name="deliveryPostalAddress"
+                                            value={quotation?.deliveryPostalAddress || ''}
+                                            onChange={(value) => updateQuotation({ deliveryPostalAddress: value })}
+                                            className='text-xs w-full border border-gray-300 rounded-sm px-2 py-1 focus:outline-none bg-white'
                                         />
+
                                     </div>
-                                </span>
+                                </div>
+                                <LabeledInput
+                                    label=''
+                                    value={quotation?.deliveryCountry || ''}
+                                    onChange={(value) => updateQuotation({ deliveryCountry: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                />
+                                <div className='flex items-center space-x-1 w-50 text-xs pt-[1px] pb-1'>
+                                    <LabeledSwitch
+                                        field='hideDeliveryAddressOnPrint'
+                                        name='hideDeliveryAddressOnPrint'
+                                        label='Dölj adress'
+                                        value={quotation?.hideDeliveryAddressOnPrint || false}
+                                        onChange={(rowId, field, checked) => updateQuotation({ [field]: checked })}
+                                        labelWidth="w-20"
+                                        marginTop={1}
+                                    />
+                                </div>
+                                <LabeledInput
+                                    name='material'
+                                    label='Material'
+                                    value={quotation?.material || ''}
+                                    onChange={(value) => updateQuotation({ material: value })}
+                                    labelWidth="w-20"
+                                    margintop="3"
+                                />
+                                <LabeledInput
+                                    label='Leveranstid'
+                                    value={quotation?.timeOfDelivery || ''}
+                                    onChange={(value) => updateQuotation({ timeOfDelivery: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                />
+                                <div className='flex items-center space-x-1 w-50 text-xs pt-[1px]'>
+                                    <label className="w-20 flex-none text-xs text-gray-700">Datum</label>
+                                    <input
+                                        type="date"
+                                        value={formatDateInputValue(quotation?.date)}
+                                        onChange={(event) => updateQuotation({ date: fromDateInputToSwedishIso(event.target.value) })}
+                                        className="w-30 text-xs px-2 py-1 border border-gray-300 bg-white rounded-sm focus:outline-none focus:ring-1 focus:ring-green-500"
+                                    />
+                                </div>
+                            </span>
 
-                                <span>
-                                    <p className='text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300'>{quotation?.selectedSupplierName ?? 'Saknas'}</p>
-                                    <LabeledReactSelect
-                                        name='yourReference'
-                                        label='Er referens'
-                                        value={quotation?.yourReference || ''}
-                                        items={customerContactPersonItems}
-                                        onChange={(value) => updateQuotation({ yourReference: value || '' })}
-                                        labelWidth="w-20"
-                                        margintop="2"
-                                        allowRawValueLabel
-                                    />
-                                    <LabeledReactSelect
-                                        name='ourReference'
-                                        label='Vår referens'
-                                        value={quotation?.ourReference || ''}
-                                        items={legacyUserOptions}
-                                        onChange={(value) => updateQuotation({ ourReference: value || '' })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                        allowRawValueLabel
-                                    />
-                                    <LabeledInput
-                                        label='Lev.villkor'
-                                        value={quotation?.termsOfDelivery || ''}
-                                        onChange={(value) => updateQuotation({ termsOfDelivery: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                    />
-                                    <LabeledTextArea
-                                        label='Bet.villkor'
-                                        value={quotation?.termsOfPayment || ''}
-                                        onChange={(value) => updateQuotation({ termsOfPayment: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                        height="h-20"
-                                    />
-                                    <LabeledTextArea
-                                        label='Meddelande'
-                                        value={quotation?.message || ''}
-                                        onChange={(value) => updateQuotation({ message: value })}
-                                        labelWidth="w-20"
-                                        margintop="0"
-                                        height="h-15"
-                                    />
-                                </span>
+                            <span>
+                                <p className='text-sm font-semibold text-gray-500 mb-4 pb-2 text-center border-b border-gray-300'>{quotation?.selectedSupplierName ?? 'Saknas'}</p>
+                                <LabeledReactSelect
+                                    name='yourReference'
+                                    label='Er referens'
+                                    value={quotation?.yourReference || ''}
+                                    items={customerContactPersonItems}
+                                    onChange={(value) => updateQuotation({ yourReference: value || '' })}
+                                    labelWidth="w-20"
+                                    margintop="2"
+                                    allowRawValueLabel
+                                />
+                                <LabeledReactSelect
+                                    name='ourReference'
+                                    label='Vår referens'
+                                    value={quotation?.ourReference || ''}
+                                    items={legacyUserOptions}
+                                    onChange={(value) => updateQuotation({ ourReference: value || '' })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                    allowRawValueLabel
+                                />
+                                <LabeledInput
+                                    label='Lev.villkor'
+                                    value={quotation?.termsOfDelivery || ''}
+                                    onChange={(value) => updateQuotation({ termsOfDelivery: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                />
+                                <LabeledTextArea
+                                    label='Bet.villkor'
+                                    value={quotation?.termsOfPayment || ''}
+                                    onChange={(value) => updateQuotation({ termsOfPayment: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                    height="h-20"
+                                />
+                                <LabeledTextArea
+                                    label='Meddelande'
+                                    value={quotation?.message || ''}
+                                    onChange={(value) => updateQuotation({ message: value })}
+                                    labelWidth="w-20"
+                                    margintop="0"
+                                    height="h-15"
+                                />
+                            </span>
 
-                                <span>
-                                    <p className="text-sm font-semibold text-gray-500 mb-1 pb-2 text-center">Affärsförslagrader</p>
-                                    {Array.isArray(quotation?.quotationRows) && quotation.quotationRows.length > 0 && (
-                                        <table className="w-full text-xs border-collapse">
-                                            <thead>
-                                                <tr className="border-b border-gray-300">
-                                                    <th className="text-left font-medium text-gray-500 tracking-thin py-1 pr-6">Upplaga</th>
-                                                    <th className="text-left font-medium text-gray-500 tracking-thin py-1 pr-6">{priceColumnTitle}</th>
-                                                    <th className="text-left font-medium text-gray-500 tracking-thin py-1">Ta bort</th>
+                            <span>
+                                <p className="text-sm font-semibold text-gray-500 mb-1 pb-2 text-center">Affärsförslagrader</p>
+                                {Array.isArray(quotation?.quotationRows) && quotation.quotationRows.length > 0 && (
+                                    <table className="w-full text-xs border-collapse">
+                                        <thead>
+                                            <tr className="border-b border-gray-300">
+                                                <th className="text-left font-medium text-gray-500 tracking-thin py-1 pr-6">Upplaga</th>
+                                                <th className="text-left font-medium text-gray-500 tracking-thin py-1 pr-6">{priceColumnTitle}</th>
+                                                <th className="text-left font-medium text-gray-500 tracking-thin py-1 pr-6">Info</th>
+                                                <th className="text-left font-medium text-gray-500 tracking-thin py-1 pr-6">Skriv ut info</th>
+                                                <th className="text-left font-medium text-gray-500 tracking-thin py-1">Ta bort</th>
+                                            </tr>
+                                            <tr>
+                                                <td colSpan={5}><div className="border-t border-gray-300" /></td>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="[&>tr:first-child>td]:pt-2">
+                                            {quotation.quotationRows.map((row) => (
+                                                <tr key={row.id} className="border-b border-gray-100">
+                                                    <td className="py-1 pr-6 font-bold">{row.edition ?? ''}</td>
+                                                    <td className="py-1 pr-6 font-bold">{row.price ?? ''}</td>
+                                                    <td className="py-1 pr-6 whitespace-pre-wrap">{row.info ?? ''}</td>
+                                                    <td className="py-1 pr-6">
+                                                        <SmallSwitch
+                                                            checked={row.printInfo !== false}
+                                                            label={`Skriv ut info för upplaga ${row.edition ?? row.id}`}
+                                                            onChange={(checked) => handlePrintInfoChange(row.id, 'printInfo', checked)}
+                                                        />
+                                                    </td>
+                                                    <td className="py-1">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDeleteRow(row.id)}
+                                                            className="text-gray-600 hover:text-red-700"
+                                                        >
+                                                            Ta bort
+                                                        </button>
+                                                    </td>
                                                 </tr>
-                                                <tr>
-                                                    <td colSpan={3}><div className="border-t border-gray-300" /></td>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="[&>tr:first-child>td]:pt-2">
-                                                {quotation.quotationRows.map((row) => (
-                                                    <tr key={row.id} className="border-b border-gray-100">
-                                                        <td className="py-1 pr-6 font-bold">{row.edition ?? ''}</td>
-                                                        <td className="py-1 pr-6 font-bold">{row.price ?? ''}</td>
-                                                        <td className="py-1">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleDeleteRow(row.id)}
-                                                                className="text-gray-600 hover:text-red-700"
-                                                            >
-                                                                Ta bort
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    )}
-                                </span>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </span>
 
-                                <span className="col-span-2">
-                                    <OrderCost
-                                        quotationId={quotation?.id}
-                                        rows={quotation?.orderCosts ?? []}
-                                        costOptions={orderCostOptions}
-                                        currencyOptions={currencyOptions}
-                                        palletFormatId={quotation?.palletFormatId}
-                                        eurPallet={quotation?.eurPallet}
-                                        nrOfEurPallet={quotation?.nrOfEurPallet}
-                                        eurPalletValue={quotation?.eurPalletValue}
-                                        palletFormatOptions={palletFormatOptions}
-                                        onPalletChange={handlePalletRowChange}
-                                        onCostVersionChange={handleCostVersionChange}
-                                        onChange={handleOrderCostChange}
+                            <span className="col-span-2">
+                                {supplierCurrencyError && <span role="alert" className="block text-red-700">{supplierCurrencyError}</span>}
+                                <OrderCost
+                                    quotationId={quotation?.id}
+                                    rows={quotation?.orderCosts ?? []}
+                                    costOptions={orderCostOptions}
+                                    currencyOptions={currencyOptions}
+                                    supplierCurrencyId={supplierCurrencyId}
+                                    supplierCurrencyLoading={supplierCurrencyLoading}
+                                    supplierCurrencyError={supplierCurrencyError}
+                                    allowSupplierCurrencyEdit
+                                    palletFormatId={quotation?.palletFormatId}
+                                    eurPallet={quotation?.eurPallet}
+                                    nrOfEurPallet={quotation?.nrOfEurPallet}
+                                    eurPalletValue={quotation?.eurPalletValue}
+                                    palletFormatOptions={palletFormatOptions}
+                                    onPalletChange={handlePalletRowChange}
+                                    onCostVersionChange={handleCostVersionChange}
+                                    onChange={handleOrderCostChange}
+                                />
+                                <div className="mt-2">
+                                    <LabeledSwitch
+                                        field="hideExtraCostsOnPrint"
+                                        name="hideExtraCostsOnPrint"
+                                        label="Dölj extrakostnader"
+                                        value={Boolean(quotation?.hideExtraCostsOnPrint)}
+                                        onChange={(_rowId, field, checked) => updateQuotation({ [field]: checked })}
                                     />
-                                </span>
-                            </div>
+                                </div>
+                            </span>
+                        </div>
 
-                        </span>
-                    </div>
+                    </span>
+                </div>
             </OrderDetailLayout>
         </div>
     );

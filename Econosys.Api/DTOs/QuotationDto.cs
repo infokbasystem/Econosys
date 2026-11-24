@@ -9,6 +9,7 @@ namespace Econosys.Api.DTOs
         public bool DoDebit { get; set; }
         public decimal? NrOf { get; set; }
         public decimal? InPrice { get; set; }
+        public int? InPriceCurrencyId { get; set; }
         public decimal? InPriceAttested { get; set; }
         public decimal? OutPrice { get; set; }
         public decimal? OutPriceSEK { get; set; }
@@ -34,6 +35,18 @@ namespace Econosys.Api.DTOs
         public bool DoDebit { get; set; }
         public decimal? NrOf { get; set; }
         public decimal? InPrice { get; set; }
+        private int? _inPriceCurrencyId;
+        public int? InPriceCurrencyId
+        {
+            get => _inPriceCurrencyId;
+            init
+            {
+                _inPriceCurrencyId = value;
+                HasInPriceCurrencyId = true;
+            }
+        }
+
+        internal bool HasInPriceCurrencyId { get; private init; }
         public decimal? InPriceAttested { get; set; }
         public decimal? OutPrice { get; set; }
         public string? Note { get; set; }
@@ -53,6 +66,8 @@ namespace Econosys.Api.DTOs
         public int? CalculationRowId { get; set; }
         public int? Edition { get; set; }
         public double? Price { get; set; }
+        public string? Info { get; set; }
+        public bool PrintInfo { get; set; } = true;
         public string? SalesCurrencyName { get; set; }
         public string? UnitName { get; set; }
         public short? UnitMultiplicator { get; set; }
@@ -83,6 +98,9 @@ namespace Econosys.Api.DTOs
         public string? MaterialThickness { get; set; }
         public string? Format { get; set; }
         public string? Color { get; set; }
+        public string? Varnish { get; set; }
+        public string? PrintMethod { get; set; }
+        public string? ProductNoteInternal { get; set; }
         public string? Construction { get; set; }
         public string? TimeOfDelivery { get; set; }
         public string? TermsOfDelivery { get; set; }
@@ -120,6 +138,7 @@ namespace Econosys.Api.DTOs
         public string? EditedByUserName { get; set; }
         public bool Printed { get; set; }
         public bool HideDeliveryAddressOnPrint { get; set; }
+        public bool HideExtraCostsOnPrint { get; set; }
         public string? ProductMessage { get; set; }
         public string? NoteInternal { get; set; }
         public double? SalesCurrencyRate { get; set; }
@@ -171,6 +190,9 @@ namespace Econosys.Api.DTOs
         public string? MaterialThickness { get; set; }
         public string? Format { get; set; }
         public string? Color { get; set; }
+        public string? Varnish { get; set; }
+        public string? PrintMethod { get; set; }
+        public string? ProductNoteInternal { get; set; }
         public string? Construction { get; set; }
         public string? TimeOfDelivery { get; set; }
         public string? TermsOfDelivery { get; set; }
@@ -206,6 +228,7 @@ namespace Econosys.Api.DTOs
         public int? EditedBy { get; set; }
         public bool Printed { get; set; }
         public bool HideDeliveryAddressOnPrint { get; set; }
+        public bool? HideExtraCostsOnPrint { get; set; }
         public string? ProductMessage { get; set; }
         public string? NoteInternal { get; set; }
         public double? SalesCurrencyRate { get; set; }
@@ -217,6 +240,8 @@ namespace Econosys.Api.DTOs
         public int? PalletFormatId { get; set; }
         public bool IsFsc { get; set; }
         public List<int> QuotationRowIds { get; set; } = new();
+        public List<int>? HiddenCalculationRowInfoIds { get; set; }
+        public List<int>? HiddenQuotationRowInfoIds { get; set; }
         public List<UpsertQuotationOrderCostRequest> OrderCosts { get; set; } = new();
     }
 

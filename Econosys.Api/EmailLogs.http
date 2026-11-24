@@ -2,6 +2,7 @@
 @token = replace-with-access-token
 @callOffId = 1
 @transportOrderId = 1
+@invoiceId = 1
 
 ### Supplier order contacts and the logged-in user's copy-to default
 GET {{baseUrl}}/api/email/recipients/SUPPLIERORDER/44774
@@ -21,6 +22,10 @@ Authorization: Bearer {{token}}
 
 ### Sent emails for a transport order
 GET {{baseUrl}}/api/email/log/transportorder/{{transportOrderId}}
+Authorization: Bearer {{token}}
+
+### Sent emails for an invoice
+GET {{baseUrl}}/api/email/log/invoice/{{invoiceId}}
 Authorization: Bearer {{token}}
 
 ### Unsupported item type returns 400

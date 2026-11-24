@@ -272,9 +272,18 @@ public sealed class EmailService(
     private async Task<(string Item, int Id)?> ResolveLogItemAsync(
         SendEmailRequest request, CancellationToken cancellationToken)
     {
-        if (request.CallOffId.HasValue && request.TransportOrderId.HasValue)
+        if (new[] { request.CallOffId, request.TransportOrderId, request.InvoiceId }.Count(id => id.HasValue) > 1)
         {
-            throw new EmailValidationException("Välj endast ett avrop eller en transportorder för mail-loggen.");
+            throw new EmailValidationException("Välj endast ett dokument för mail-loggen.");
+        }
+
+        if (request.InvoiceId is int invoiceId)
+        {
+            if (invoiceId <= 0 || !await dbContext.Invoices.AnyAsync(x => x.Id == invoiceId, cancellationToken))
+            {
+                throw new EmailValidationException("Fakturan för mail-loggen finns inte.");
+            }
+            return (MailLogService.InvoiceItem, invoiceId);
         }
 
         if (request.CallOffId is int callOffId)

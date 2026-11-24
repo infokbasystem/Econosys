@@ -25,6 +25,8 @@ namespace Econosys.Api.Models
         [Column("dblPrice")]
         public double? Price { get; set; }
 
+        public bool PrintInfo { get; set; } = true;
+
         [Column("OldDbId")]
         public int? OldDbId { get; set; }
 

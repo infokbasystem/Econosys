@@ -16,6 +16,23 @@ namespace Econosys.Api.Tests;
 
 public class QuotationCreationTests
 {
+    [Fact]
+    public async Task CreateCapturesProductChangesMadeAfterDraftWasPrepared()
+    {
+        await using var db = CreateContext();
+        await Seed(db);
+        var draft = await Draft(db);
+        var product = await db.Products.SingleAsync();
+        product.Name = "Updated after draft";
+        await db.SaveChangesAsync();
+        var request = JsonSerializer.Deserialize<CreateQuotationRequest>(JsonSerializer.Serialize(draft))!;
+        request.CalculationRowIds = [40];
+
+        var result = await Controller(db).Create(request);
+        var saved = Assert.IsType<QuotationDto>(Assert.IsType<CreatedAtActionResult>(result.Result).Value);
+        Assert.Equal("Updated after draft", saved.Product);
+    }
+
     [Theory]
     [InlineData(false, 30, "Address 30")]
     [InlineData(true, 31, "Address 31 Extra")]
@@ -60,7 +77,8 @@ public class QuotationCreationTests
         Assert.Equal("Translated material", draft.Material);
         Assert.Equal("Translated construction", draft.Construction);
         Assert.Equal("Custom format", draft.Format);
-        Assert.Equal("4 + Varnish, Extra varnish", draft.Color);
+        Assert.Equal("4", draft.Color);
+        Assert.Equal("Translated varnish, Extra varnish", draft.Varnish);
         Assert.Equal(1, draft.SalesCurrencyId);
         Assert.Equal(11.5, draft.SalesCurrencyRate);
         Assert.Equal(2, draft.PurchaseCurrencyId);
@@ -136,6 +154,7 @@ public class QuotationCreationTests
         Assert.Equal(draft.Construction, reloaded.Construction);
         Assert.Equal(draft.Format, reloaded.Format);
         Assert.Equal(draft.Color, reloaded.Color);
+        Assert.Equal(draft.Varnish, reloaded.Varnish);
         Assert.True(reloaded.IsFsc);
         Assert.Equal(draft.SalesCurrencyId, reloaded.SalesCurrencyId);
         Assert.Equal(draft.SalesCurrencyRate, reloaded.SalesCurrencyRate);
@@ -306,6 +325,150 @@ public class QuotationCreationTests
         Assert.Empty(saved.QuotationRows);
     }
 
+    [Fact]
+    public async Task OrderCostCurrencyIsSavedReloadedAndPreservedWhenOmitted()
+    {
+        await using var db = CreateContext();
+        var controller = Controller(db);
+        var saved = Assert.IsType<QuotationDto>(Assert.IsType<CreatedAtActionResult>(
+            (await controller.Create(new CreateQuotationRequest
+            {
+                CompanyId = 7,
+                OrderCosts = [new UpsertQuotationOrderCostRequest { CostId = 3, InPriceCurrencyId = 7 }],
+            })).Result).Value);
+        var costId = Assert.Single(saved.OrderCosts).Id;
+        Assert.Equal(7, saved.OrderCosts[0].InPriceCurrencyId);
+        db.ChangeTracker.Clear();
+        var reloaded = Assert.IsType<QuotationDto>(Assert.IsType<OkObjectResult>(
+            (await controller.GetById(saved.Id)).Result).Value);
+        Assert.Equal(7, Assert.Single(reloaded.OrderCosts).InPriceCurrencyId);
+
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var update = JsonSerializer.Deserialize<UpdateQuotationRequest>(
+            $$"""{"id":{{saved.Id}},"orderCosts":[{"id":{{costId}},"costId":3,"inPriceCurrencyId":2}]}""", options)!;
+        var updated = Assert.IsType<QuotationDto>(Assert.IsType<OkObjectResult>(
+            (await controller.Update(saved.Id, update)).Result).Value);
+        Assert.Equal(2, Assert.Single(updated.OrderCosts).InPriceCurrencyId);
+        db.ChangeTracker.Clear();
+        Assert.Equal(2, (await db.OrderCosts.SingleAsync()).InPriceCurrencyId);
+
+        var omitted = JsonSerializer.Deserialize<UpdateQuotationRequest>(
+            $$"""{"id":{{saved.Id}},"orderCosts":[{"id":{{costId}},"costId":3}]}""", options)!;
+        var preserved = Assert.IsType<QuotationDto>(Assert.IsType<OkObjectResult>(
+            (await controller.Update(saved.Id, omitted)).Result).Value);
+        Assert.Equal(2, Assert.Single(preserved.OrderCosts).InPriceCurrencyId);
+        var clear = JsonSerializer.Deserialize<UpdateQuotationRequest>(
+            $$"""{"id":{{saved.Id}},"orderCosts":[{"id":{{costId}},"costId":3,"inPriceCurrencyId":null}]}""", options)!;
+        var cleared = Assert.IsType<QuotationDto>(Assert.IsType<OkObjectResult>(
+            (await controller.Update(saved.Id, clear)).Result).Value);
+        Assert.Null(Assert.Single(cleared.OrderCosts).InPriceCurrencyId);
+        db.ChangeTracker.Clear();
+        Assert.Null((await db.OrderCosts.SingleAsync()).InPriceCurrencyId);
+    }
+
+    [Fact]
+    public async Task HideExtraCostsSettingCanBeSavedReloadedAndChanged()
+    {
+        await using var db = CreateContext();
+        var controller = Controller(db);
+        var created = Assert.IsType<QuotationDto>(Assert.IsType<CreatedAtActionResult>(
+            (await controller.Create(new CreateQuotationRequest { CompanyId = 7, HideExtraCostsOnPrint = true })).Result).Value);
+        Assert.True(created.HideExtraCostsOnPrint);
+        db.ChangeTracker.Clear();
+        var reloaded = Assert.IsType<QuotationDto>(Assert.IsType<OkObjectResult>(
+            (await controller.GetById(created.Id)).Result).Value);
+        Assert.True(reloaded.HideExtraCostsOnPrint);
+
+        var preserved = Assert.IsType<QuotationDto>(Assert.IsType<OkObjectResult>(
+            (await controller.Update(created.Id, new UpdateQuotationRequest { Id = created.Id })).Result).Value);
+        Assert.True(preserved.HideExtraCostsOnPrint);
+        var updated = Assert.IsType<QuotationDto>(Assert.IsType<OkObjectResult>(
+            (await controller.Update(created.Id, new UpdateQuotationRequest
+            {
+                Id = created.Id, HideExtraCostsOnPrint = false
+            })).Result).Value);
+        Assert.False(updated.HideExtraCostsOnPrint);
+        db.ChangeTracker.Clear();
+        Assert.False((await db.Quotations.SingleAsync()).HideExtraCostsOnPrint);
+    }
+
+    [Fact]
+    public async Task RowInfoPrintSelectionSurvivesCreateUpdateAndReload()
+    {
+        await using var db = CreateContext();
+        await Seed(db);
+        (await db.CalculationRows.SingleAsync(row => row.Id == 40)).Info = "Row information";
+        db.CalculationRows.Add(new CalculationRow
+        {
+            Id = 43, CalculationId = 10, CompanyId = 7, Edition = 3000,
+            SalesPrice = 20, PercentAddition = 25, Info = "Other information",
+        });
+        await db.SaveChangesAsync();
+        var controller = Controller(db);
+        var draft = await Draft(db);
+        Assert.All(draft.QuotationRows, row => Assert.True(row.PrintInfo));
+        Assert.Equal("Row information", draft.QuotationRows.Single(row => row.CalculationRowId == 40).Info);
+
+        var request = new CreateQuotationRequest
+        {
+            CompanyId = 7, CalculationId = 10, InquiryId = 50, CustomerId = 25,
+            CalculationRowIds = [40, 43], HiddenCalculationRowInfoIds = [40],
+        };
+        var created = Assert.IsType<QuotationDto>(Assert.IsType<CreatedAtActionResult>(
+            (await controller.Create(request)).Result).Value);
+        var hiddenRow = created.QuotationRows.Single(row => row.CalculationRowId == 40);
+        var visibleRow = created.QuotationRows.Single(row => row.CalculationRowId == 43);
+        Assert.Equal("Row information", hiddenRow.Info);
+        Assert.False(hiddenRow.PrintInfo);
+        Assert.True(visibleRow.PrintInfo);
+
+        db.ChangeTracker.Clear();
+        var loaded = Assert.IsType<QuotationDto>(Assert.IsType<OkObjectResult>(
+            (await controller.GetById(created.Id)).Result).Value);
+        Assert.False(loaded.QuotationRows.Single(row => row.Id == hiddenRow.Id).PrintInfo);
+        var update = new UpdateQuotationRequest
+        {
+            Id = created.Id, QuotationRowIds = [hiddenRow.Id, visibleRow.Id],
+        };
+        var preserved = Assert.IsType<QuotationDto>(Assert.IsType<OkObjectResult>(
+            (await controller.Update(created.Id, update)).Result).Value);
+        Assert.False(preserved.QuotationRows.Single(row => row.Id == hiddenRow.Id).PrintInfo);
+        update.HiddenQuotationRowInfoIds = [visibleRow.Id];
+        var changed = Assert.IsType<QuotationDto>(Assert.IsType<OkObjectResult>(
+            (await controller.Update(created.Id, update)).Result).Value);
+        Assert.True(changed.QuotationRows.Single(row => row.Id == hiddenRow.Id).PrintInfo);
+        Assert.False(changed.QuotationRows.Single(row => row.Id == visibleRow.Id).PrintInfo);
+        db.ChangeTracker.Clear();
+        loaded = Assert.IsType<QuotationDto>(Assert.IsType<OkObjectResult>(
+            (await controller.GetById(created.Id)).Result).Value);
+        Assert.True(loaded.QuotationRows.Single(row => row.Id == hiddenRow.Id).PrintInfo);
+        Assert.False(loaded.QuotationRows.Single(row => row.Id == visibleRow.Id).PrintInfo);
+    }
+
+    [Fact]
+    public async Task RejectsPrintOptionsForUnrelatedQuotationRows()
+    {
+        await using var db = CreateContext();
+        await Seed(db);
+        var controller = Controller(db);
+        var request = new CreateQuotationRequest
+        {
+            CompanyId = 7, CalculationId = 10, InquiryId = 50, CustomerId = 25,
+            CalculationRowIds = [40], HiddenCalculationRowInfoIds = [42],
+        };
+        Assert.IsType<BadRequestObjectResult>((await controller.Create(request)).Result);
+        request.HiddenCalculationRowInfoIds = null;
+        var created = Assert.IsType<QuotationDto>(Assert.IsType<CreatedAtActionResult>(
+            (await controller.Create(request)).Result).Value);
+        var row = Assert.Single(created.QuotationRows);
+        Assert.True(row.PrintInfo);
+        Assert.IsType<BadRequestObjectResult>((await controller.Update(created.Id, new UpdateQuotationRequest
+        {
+            Id = created.Id, QuotationRowIds = [row.Id], HiddenQuotationRowInfoIds = [row.Id + 100],
+        })).Result);
+        Assert.True((await db.QuotationRows.SingleAsync()).PrintInfo);
+    }
+
     private static async Task<QuotationDto> Draft(ApplicationDbContext db) =>
         Assert.IsType<QuotationDto>(Assert.IsType<OkObjectResult>(
             (await Controller(db).FromCalculation(10, 50, default)).Result).Value);
@@ -329,7 +492,7 @@ public class QuotationCreationTests
     {
         var customer = new Customer
         {
-            Id = 25, Name = "Customer", Email = "customer@example.com",
+            Id = 25, CompanyId = 7, Name = "Customer", Email = "customer@example.com",
             Address = "Invoice address", Address2 = "Second line", PostalNr = "12345",
             PostalAddress = "Town", Country = "Sweden", Reference = "Customer reference",
             TermsOfDelivery = "DAP", TermsOfPayment = "30 days", PaymentDays = 30,

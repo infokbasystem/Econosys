@@ -7,6 +7,11 @@ export const ORDER_FLOW_SECTIONS = [
     { type: 'customerOrder', label: 'ORDERERKÄNNANDEN', currentLabel: 'AKTUELLT ORDERERKÄNNANDE', path: 'customerorders', limit: 8 },
 ];
 
+export const filterOrderFlowItems = (items, entityType, relatedCalculationId) => {
+    if (entityType !== 'inquiry' && entityType !== 'quotation') return items;
+    return items.filter((item) => item.type !== 'calculation' || item.id === relatedCalculationId);
+};
+
 export const getOrderFlowSections = (items, currentEntityType) => ORDER_FLOW_SECTIONS.map((section) => ({
     ...section,
     limit: currentEntityType === 'calculation' && ['inquiry', 'quotation'].includes(section.type)

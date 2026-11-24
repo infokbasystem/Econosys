@@ -1,6 +1,36 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyInvoiceDerivedRows, computeInvoiceRowSum, getInvoiceCustomerFields, getInvoiceDraftMode, getInvoiceInventorySource, isInvoiceCustomerLocked, reorderInvoiceRows } from './invoiceUtils.js';
+import { applyInvoiceDerivedRows, computeInvoiceRowSum, createCreditInvoiceDraft, getInvoiceCustomerFields, getInvoiceDraftMode, getInvoiceInventorySource, hasCreditStockDeliveries, isInvoiceCustomerLocked, reorderInvoiceRows } from './invoiceUtils.js';
+
+test('only credit invoices with stock product deliveries offer adjustment', () => {
+    assert.equal(hasCreditStockDeliveries(null), false);
+    assert.equal(hasCreditStockDeliveries({ invoiceTypeCode: 1, invoiceRows: [{ priceTypeId: 1, deliveryFromStockId: 10 }] }), false);
+    assert.equal(hasCreditStockDeliveries({ invoiceTypeCode: 5, invoiceRows: [{ priceTypeId: 1, deliveryToCustomerId: 10 }] }), false);
+    assert.equal(hasCreditStockDeliveries({ invoiceTypeCode: 5, invoiceRows: [{ priceTypeId: 107, deliveryFromStockId: 10 }] }), false);
+    assert.equal(hasCreditStockDeliveries({ invoiceTypeCode: 5, invoiceRows: [{ priceTypeId: 1, deliveryFromStockId: 10 }] }), true);
+});
+
+test('credit draft reverses amounts while preserving delivery quantities and links', () => {
+    const invoice = {
+        id: 8, invoiceNumber: 123, invoiceTypeCode: 1, accountDate: '2026-01-01', journalNr: 2, isSettled: true, invoiceOk: true, endInvoiced: true,
+        invoiceRows: [{ id: 9, invoiceId: 8, priceTypeId: 1, deliveryFromStockId: 10, nrOf: 12, unitPrice: 3, sum: 36, weight: 5 }],
+        invoiceAccountRows: [{ id: 11, invoiceId: 8, nrOf: 2, unitPrice: 7, sum: 14 }],
+    };
+    const original = structuredClone(invoice);
+    const draft = createCreditInvoiceDraft(invoice);
+    assert.equal(draft.id, 0);
+    assert.equal(draft.invoiceTypeCode, 5);
+    assert.equal(draft.creditingInvoiceNumber, 123);
+    assert.equal(draft.creditedInvoiceId, 8);
+    assert.equal(draft.accountDate, null);
+    assert.equal(draft.isSettled, false);
+    assert.equal(draft.invoiceOk, false);
+    assert.equal(draft.endInvoiced, false);
+    assert.deepEqual([draft.invoiceRows[0].nrOf, draft.invoiceRows[0].unitPrice, draft.invoiceRows[0].sum, draft.invoiceRows[0].weight], [12, -3, -36, -5]);
+    assert.equal(draft.invoiceRows[0].deliveryFromStockId, 10);
+    assert.deepEqual([draft.invoiceAccountRows[0].nrOf, draft.invoiceAccountRows[0].unitPrice, draft.invoiceAccountRows[0].sum], [-2, 7, -14]);
+    assert.deepEqual(invoice, original);
+});
 
 test('standalone invoices allow customer selection', () => {
     assert.equal(isInvoiceCustomerLocked(null), false);

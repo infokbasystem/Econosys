@@ -12,6 +12,7 @@ public sealed record SendEmailRequest
     public int? QuotationId { get; init; }
     public int? CallOffId { get; init; }
     public int? TransportOrderId { get; init; }
+    public int? InvoiceId { get; init; }
 }
 
 /// <summary>Confirmation that the SMTP server accepted the email.</summary>

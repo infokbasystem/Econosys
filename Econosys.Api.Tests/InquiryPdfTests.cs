@@ -38,7 +38,7 @@ public class InquiryPdfTests
         Assert.Contains("1200x800x1300mm", text);
         Assert.Contains("External product note", text);
         Assert.Contains("info@econopack.se", text);
-        Assert.Contains("?", text);
+        Assert.DoesNotContain("?", text);
         Assert.DoesNotContain("98765", text);
         Assert.DoesNotContain("45678", text);
         Assert.DoesNotContain("SECRET", text);
@@ -61,6 +61,22 @@ public class InquiryPdfTests
         Assert.Equal("6,400", content.Lines[0].Quantity);
         Assert.Equal("2+1 colours", content.Lines[0].Info);
         Assert.Equal("2+2 colours", content.Lines[1].Info);
+    }
+
+    [Fact]
+    public void PrintsOnlyEnabledRowInfoWithoutRemovingTheRow()
+    {
+        var inquiry = Fixture();
+        var hiddenRow = inquiry.InquiryRows.Single(row => row.Id == 1);
+        hiddenRow.PrintInfo = false;
+        hiddenRow.Edition = 12345;
+        var document = InquiryPdfDocument.CreateDocument(inquiry, Company(), new DocumentPdfTranslations("EN"));
+        var text = RenderedText(document);
+
+        Assert.DoesNotContain("2+1 colours", text);
+        Assert.Contains("2+2 colours", text);
+        Assert.Contains("12,345", text);
+        Assert.Equal(2, InquiryPdfDocument.BuildContent(inquiry, new DocumentPdfTranslations("EN")).Lines.Count);
     }
 
     [Fact]
@@ -108,7 +124,7 @@ public class InquiryPdfTests
     public void LongProductNotesAndManyRowsPaginate()
     {
         var inquiry = Fixture();
-        inquiry.Calculation!.Product!.NoteExternal = string.Join("\n", Enumerable.Repeat("A long external product note that must wrap naturally.", 60));
+        inquiry.ProductNoteExternal = string.Join("\n", Enumerable.Repeat("A long external product note that must wrap naturally.", 60));
         inquiry.InquiryRows = Enumerable.Range(1, 100).Select(id => new InquiryRow
         {
             Id = id, Edition = id * 1000,
@@ -152,9 +168,63 @@ public class InquiryPdfTests
     public void PackingTextAlreadyInProductNoteIsNotDuplicated()
     {
         var inquiry = Fixture();
-        inquiry.Calculation!.Product!.NoteExternal = "1200x800x1300mm 680st/pall";
+        inquiry.ProductNoteExternal = "1200x800x1300mm 680st/pall";
         Assert.Equal("1200x800x1300mm 680st/pall",
             InquiryPdfDocument.BuildContent(inquiry, new DocumentPdfTranslations("SW")).ProductNote);
+    }
+
+    [Fact]
+    public void DoesNotPrintCalculationPackagingAgainAsRecipientNote()
+    {
+        var inquiry = Fixture();
+        const string loadingInstruction = "1200x800x1300 - 680pcs/pallet - 2 pallets in height on truck";
+        inquiry.Calculation!.LoadingInstruction = loadingInstruction;
+        inquiry.SelectedInquiryRecipient!.Note = loadingInstruction;
+
+        var text = RenderedText(InquiryPdfDocument.CreateDocument(inquiry, Company(), new DocumentPdfTranslations("EN")));
+
+        Assert.Contains("1200x800x1300mm", text);
+        Assert.DoesNotContain("2 pallets in height on truck", text);
+        Assert.DoesNotContain("Additional costs", text);
+    }
+
+    [Fact]
+    public void HidesEmptyAdditionalCostsSection()
+    {
+        var inquiry = Fixture();
+        inquiry.SelectedInquiryRecipient!.Note = null;
+        var text = RenderedText(InquiryPdfDocument.CreateDocument(inquiry, Company(), new DocumentPdfTranslations("EN")));
+
+        Assert.DoesNotContain("Additional costs", text);
+        Assert.DoesNotContain("Die-cutting tooling cost", text);
+    }
+
+    [Theory]
+    [InlineData("SW", "Notering")]
+    [InlineData("EN", "Notes")]
+    public void PrintsInquiryNotesWithTranslatedHeading(string language, string heading)
+    {
+        var inquiry = Fixture();
+        inquiry.Notes = "First inquiry note\nSecond inquiry note";
+        var text = RenderedText(InquiryPdfDocument.CreateDocument(inquiry, Company(), new DocumentPdfTranslations(language)));
+
+        Assert.Contains(heading, text);
+        Assert.Contains("First inquiry note", text);
+        Assert.Contains("Second inquiry note", text);
+    }
+
+    [Fact]
+    public void UsesConfiguredTranslationForInquiryNotes()
+    {
+        var inquiry = Fixture();
+        inquiry.Notes = "Custom note";
+        var translations = new DocumentPdfTranslations("EN", [
+            new TranslationItem { TranslationCode = DocumentPdfTranslations.InquiryNotes, LangCode = "EN", Translation = "Custom notes heading" },
+        ]);
+        var text = RenderedText(InquiryPdfDocument.CreateDocument(inquiry, Company(), translations));
+
+        Assert.Contains("Custom notes heading", text);
+        Assert.Contains("Custom note", text);
     }
 
     [Theory]
@@ -171,19 +241,25 @@ public class InquiryPdfTests
     }
 
     [Fact]
-    public void RendersBlackDividerBetweenAdditionalCostsHeadingAndToolingCost()
+    public void RendersSavedToolingAndRecipientNoteWithoutHardcodedCost()
     {
-        var document = InquiryPdfDocument.CreateDocument(Fixture(), Company(), new DocumentPdfTranslations("EN"));
+        var inquiry = Fixture();
+        inquiry.Preparation = "Saved tooling";
+        var document = InquiryPdfDocument.CreateDocument(inquiry, Company(), new DocumentPdfTranslations("EN"));
         var elements = XDocument.Parse(document.GenerateSvg().Single()).Descendants().ToList();
         var heading = elements.FindIndex(element => element.Name.LocalName == "text"
             && element.Value.Trim() == "Additional costs");
-        var toolingCost = elements.FindIndex(element => element.Name.LocalName == "text"
-            && element.Value.Contains("Die-cutting tooling cost:", StringComparison.Ordinal));
+        var tooling = elements.FindIndex(element => element.Name.LocalName == "text"
+            && element.Value.Contains("Tooling", StringComparison.Ordinal));
 
-        Assert.True(heading >= 0 && toolingCost > heading);
-        Assert.Contains(elements.Skip(heading + 1).Take(toolingCost - heading - 1), element =>
+        Assert.True(heading >= 0 && tooling > heading);
+        Assert.Contains(elements.Skip(heading + 1).Take(tooling - heading - 1), element =>
             element.Name.LocalName == "path"
             && (string?)element.Attribute("stroke") is "black" or "#000000");
+        var text = RenderedText(document);
+        Assert.Contains("Saved tooling", text);
+        Assert.Contains("External recipient note", text);
+        Assert.DoesNotContain("Die-cutting tooling cost", text);
     }
 
     [Fact]
@@ -219,6 +295,7 @@ public class InquiryPdfTests
     private static Inquiry Fixture() => new()
     {
         Id = 25691, CompanyId = 1, CreatedAt = new DateTime(2026, 5, 22), AnswerDueDate = new DateTime(2026, 5, 29),
+        ProductNoteExternal = "External product note that wraps naturally within the product column.",
         CustomerName = "AB Tingstad Papper", Customer = new Customer
         {
             Name = "SECRET LIVE NAME", Address = "Customer street", PostalNr = "40251", PostalAddress = "G\u00f6teborg", Country = "Sverige"

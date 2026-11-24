@@ -39,8 +39,20 @@ namespace Econosys.Api.Models
         public string? Format { get; set; }
 
         [Column("strColor")]
-        [MaxLength(50)]
+        [MaxLength(255)]
         public string? Color { get; set; }
+
+        [MaxLength(255)]
+        public string? Varnish { get; set; }
+
+        [MaxLength(50)]
+        public string? PrintMethod { get; set; }
+
+        [MaxLength(255)]
+        public string? ProductNoteInternal { get; set; }
+
+        [MaxLength(255)]
+        public string? ProductNoteExternal { get; set; }
 
         [Column("strConstruction")]
         [MaxLength(50)]
@@ -77,6 +89,8 @@ namespace Econosys.Api.Models
         [Column("strPreparation")]
         [MaxLength(50)]
         public string? Preparation { get; set; }
+
+        public string? Notes { get; set; }
 
         [Column("strTimeOfDelivery")]
         [MaxLength(50)]

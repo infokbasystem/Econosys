@@ -32,6 +32,8 @@ public sealed class DocumentPdfTranslations
     public const int DeliveryAddressLabel = -1125;
     public const int SupplierOrderNumberLabel = -1126;
     public const int PalletSchemeLabel = -1127;
+    public const int InquiryNotes = -1128;
+    public const int HiddenExtraCost = -1129;
 
     public sealed record Definition(int Code, string Label, string Swedish, string English);
 
@@ -108,7 +110,9 @@ public sealed class DocumentPdfTranslations
         new Definition(PlacesOfDeliveryLabel, "Leveransplatser", "Leveransplatser", "Places of delivery"),
         new Definition(DeliveryAddressLabel, "Leveransadress", "Leveransadress", "Delivery address"),
         new Definition(SupplierOrderNumberLabel, "Leverant\u00f6rsordernummer", "Leverant\u00f6rsorder", "Supplier order"),
-        new Definition(PalletSchemeLabel, "Pallplan", "Pallplan", "Pallet scheme")
+        new Definition(PalletSchemeLabel, "Pallplan", "Pallplan", "Pallet scheme"),
+        new Definition(InquiryNotes, "Förfrågan, notering", "Notering", "Notes"),
+        new Definition(HiddenExtraCost, "Affärsförslag, dold extrakostnad", "tillkommer", "extra")
     });
 
     private static readonly IReadOnlyDictionary<int, Definition> Defaults = Definitions.ToDictionary(item => item.Code);

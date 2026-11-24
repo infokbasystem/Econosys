@@ -11,6 +11,7 @@ public static class InquiryDraftMapper
     {
         var product = calculation.Product;
         var supplier = calculation.Supplier;
+        var snapshot = product is null ? null : DocumentProductText.Build(product, translations);
 
         return new InquiryDto
         {
@@ -19,11 +20,16 @@ public static class InquiryDraftMapper
             CustomerId = calculation.CustomerId,
             CustomerName = calculation.Customer?.Name,
             CustomerEmail = calculation.Customer?.Email,
-            Product = product?.Name,
-            Material = DocumentProductText.Translate(product?.Material?.TranslationCode, product?.Material?.Name, translations),
-            Construction = DocumentProductText.Translate(product?.Construction?.TranslationCode, product?.Construction?.Name, translations),
-            Format = DocumentProductText.Format(product),
-            Color = DocumentProductText.Color(product, translations),
+            Product = snapshot?.Product,
+            Material = snapshot?.Material,
+            MaterialThickness = snapshot?.MaterialThickness,
+            Construction = snapshot?.Construction,
+            Format = snapshot?.Format,
+            Color = snapshot?.Color,
+            Varnish = snapshot?.Varnish,
+            PrintMethod = snapshot?.PrintMethod,
+            ProductNoteInternal = snapshot?.ProductNoteInternal,
+            ProductNoteExternal = snapshot?.ProductNoteExternal,
             CustomerDeliveryAddressId = address?.Id,
             DeliveryAddressName = address?.Name,
             DeliveryAddress = address == null ? null
@@ -54,6 +60,7 @@ public static class InquiryDraftMapper
                     Edition = row.Edition,
                     PurchasePrice = row.PurchasePrice,
                     Freight = row.Freight,
+                    Info = row.Info,
                 }).ToList(),
         };
     }

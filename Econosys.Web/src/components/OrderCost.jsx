@@ -8,6 +8,7 @@ import { formatDateTime } from '../helpers/dateUtils';
 import LabeledInput from './LabeledInput';
 import LabeledSwitch from './LabeledSwitch';
 import NumberInput from './NumberInput';
+import { getQuotationCostCurrencyId } from './quotationCostCurrency';
 
 const toInputValue = (value) => (value == null ? '' : String(value));
 
@@ -127,6 +128,7 @@ const OrderCost = ({
     supplierCurrencyId,
     supplierCurrencyLoading = false,
     supplierCurrencyError = '',
+    allowSupplierCurrencyEdit = false,
     palletFormatId,
     eurPallet,
     nrOfEurPallet,
@@ -573,12 +575,16 @@ const OrderCost = ({
                         )}
                         {rowsWithDraft.map((row) => {
                             const selectedOption = (Array.isArray(costOptions) && costOptions.find((o) => o.id === row.costId)) || null;
-                            const selectedCurrency = (Array.isArray(currencyOptions) && currencyOptions.find((o) => o.id === row.inPriceCurrencyId)) || null;
+                            const currencyId = allowSupplierCurrencyEdit
+                                ? getQuotationCostCurrencyId(row, selectedOption, supplierCurrencyId)
+                                : row.inPriceCurrencyId;
+                            const selectedCurrency = (Array.isArray(currencyOptions) && currencyOptions.find((o) => o.id === currencyId)) || null;
                             const nrOfDisabled = selectedOption?.isNrOf === false;
                             const isCurrencyEnabled = row.costId != null
-                                && selectedOption?.isSupplier == false
-                                && selectedOption?.dmtFixed == null
-                                && selectedOption?.dmtPercent == null;
+                                && ((allowSupplierCurrencyEdit && selectedOption?.isSupplier)
+                                    || (selectedOption?.isSupplier == false
+                                        && selectedOption?.dmtFixed == null
+                                        && selectedOption?.dmtPercent == null));
 
                             return (
                                 <tr key={row.localId} className="border-b border-gray-100">
@@ -653,7 +659,7 @@ const OrderCost = ({
                                     </td>
                                     <td className="py-0 px-[1px]">
                                         <select
-                                            value={toInputValue(row.inPriceCurrencyId)}
+                                            value={toInputValue(currencyId)}
                                             onChange={(event) => patchRow(row.localId, { inPriceCurrencyId: parseNullableInt(event.target.value) })}
                                             disabled={!isCurrencyEnabled}
                                             className={`w-full min-w-0 rounded-sm border border-gray-300 px-2 pt-[3px] pb-[4px] ${isCurrencyEnabled ? 'bg-white' : 'bg-gray-100 text-gray-500 cursor-not-allowed'}`}
@@ -662,7 +668,9 @@ const OrderCost = ({
                                                 {selectedOption?.isSupplier
                                                     ? supplierCurrencyLoading
                                                         ? 'Laddar valuta...'
-                                                        : supplierCurrencyError || 'Valuta saknas'
+                                                        : supplierCurrencyError || (allowSupplierCurrencyEdit && supplierCurrencyId != null
+                                                            ? 'Leverantörens valuta'
+                                                            : 'Valuta saknas')
                                                     : ''}
                                             </option>
                                             {selectedCurrency && selectedCurrency.active === false && (
@@ -674,8 +682,8 @@ const OrderCost = ({
                                                     {selectedCurrency.name + ' — inaktiv'}
                                                 </option>
                                             )}
-                                            {row.inPriceCurrencyId != null && !selectedCurrency && (
-                                                <option value={row.inPriceCurrencyId}>ID {row.inPriceCurrencyId}</option>
+                                            {currencyId != null && !selectedCurrency && (
+                                                <option value={currencyId}>ID {currencyId}</option>
                                             )}
                                             {activeCurrencyOptions.map((option) => (
                                                 <option key={option.id} value={option.id}>{option.name}</option>

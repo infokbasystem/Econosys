@@ -222,6 +222,10 @@ namespace Econosys.Api.Controllers
                 .Include(x => x.SalesCurrency)
                 .Include(x => x.InvoiceRows)
                     .ThenInclude(x => x.Unit)
+                .Include(x => x.InvoiceRows)
+                    .ThenInclude(x => x.DeliveryToCustomer)
+                .Include(x => x.InvoiceRows)
+                    .ThenInclude(x => x.DeliveryFromStock)
                 .Include(x => x.InvoiceAccountRows)
                 .FirstOrDefaultAsync(x => x.Id == id);
 

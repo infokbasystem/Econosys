@@ -1,8 +1,24 @@
-import Select, { components } from 'react-select';
+import { useState } from 'react';
+import Select, { components, createFilter } from 'react-select';
 import { ChevronDown, ExternalLink } from 'lucide-react';
 
+const defaultFilterOption = createFilter();
+
+const EditableInput = (inputProps) => (
+    <components.Input
+        {...inputProps}
+        onKeyDown={(event) => {
+            if (inputProps.selectProps.value && (event.key === 'Home' || event.key === 'End')) {
+                event.stopPropagation();
+            }
+        }}
+    />
+);
 
 const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, value, items, onChange, disableInactive, allowRawValueLabel = false, filterStyle = false, fitMenuToContent = false, openInNewTabUrl, openInNewTabLabel = 'Öppna i ny flik', ...props }) => {
+    const [searchText, setSearchText] = useState('');
+    const [isEditingSelection, setIsEditingSelection] = useState(false);
+    const [hasEditedSearch, setHasEditedSearch] = useState(false);
     const normalizedItems = Array.isArray(items) ? items : [];
 
     const options = normalizedItems
@@ -13,6 +29,7 @@ const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, va
         }));
 
     const isMultiSelect = Boolean(props.isMulti);
+    const editableSelection = !isMultiSelect && props.isSearchable !== false;
 
     const selectedValue = isMultiSelect
         ? (value == null
@@ -27,8 +44,41 @@ const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, va
             return;
         }
 
+        setSearchText('');
+        setIsEditingSelection(false);
+        setHasEditedSearch(false);
         onChange?.(selected?.value || '');
     };
+
+    const editableSearchProps = editableSelection ? {
+        inputValue: searchText,
+        controlShouldRenderValue: isEditingSelection ? false : props.controlShouldRenderValue,
+        onFocus: (event) => {
+            if (selectedValue) {
+                setSearchText(selectedValue.label);
+                setIsEditingSelection(true);
+                setHasEditedSearch(false);
+            }
+            props.onFocus?.(event);
+        },
+        onBlur: (event) => {
+            setSearchText('');
+            setIsEditingSelection(false);
+            setHasEditedSearch(false);
+            props.onBlur?.(event);
+        },
+        onInputChange: (inputValue, actionMeta) => {
+            if (actionMeta.action === 'input-change') {
+                setSearchText(inputValue);
+                setHasEditedSearch(true);
+            }
+            props.onInputChange?.(inputValue, actionMeta);
+        },
+        filterOption: (option, inputValue) => {
+            const search = isEditingSelection && !hasEditedSearch ? '' : inputValue;
+            return (props.filterOption === undefined ? defaultFilterOption : props.filterOption)?.(option, search) ?? true;
+        },
+    } : {};
 
     const CheckboxOption = (optionProps) => (
         <components.Option {...optionProps}>
@@ -208,10 +258,12 @@ const LabeledReactSelect = ({ label, labelWidth, inputWidth, margintop, name, va
                 isSearchable
                 styles={customStyles}
                 {...props}
+                {...editableSearchProps}
                 closeMenuOnSelect={!isMultiSelect}
                 blurInputOnSelect={!isMultiSelect}
                 hideSelectedOptions={false}
                 components={{
+                    ...(editableSelection ? { Input: EditableInput } : {}),
                     ...(isMultiSelect ? { Option: CheckboxOption } : {}),
                     ...(isMultiSelect ? { MenuList: MultiSelectMenuList } : {}),
                     ...(isMultiSelect ? { MultiValue } : {}),

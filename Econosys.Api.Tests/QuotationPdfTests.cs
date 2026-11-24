@@ -68,6 +68,120 @@ public class QuotationPdfTests
     }
 
     [Fact]
+    public void InvoicePdfPrintsDeliveryDateAndTerms()
+    {
+        PdfFontRegistration.Register();
+        var invoice = new Invoice
+        {
+            AccountDate = new DateTime(2026, 11, 1),
+            InvoiceDate = new DateTime(2026, 11, 2),
+            TimeOfDelivery = "2026-11-30",
+            TermsOfDelivery = "DAP",
+        };
+        var text = XDocument.Parse(InvoicePdfDocument.CreateDocument(invoice, null, null).GenerateSvg().Single())
+            .Descendants()
+            .Where(element => element.Name.LocalName == "text")
+            .Select(element => element.Value.Trim())
+            .ToList();
+
+        Assert.Contains("Leveransdatum", text);
+        Assert.Contains("2026-11-30", text);
+        Assert.Contains("Leveransvillkor", text);
+        Assert.Contains("DAP", text);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SlattDeliveryRowsMergeIntoTheirParent(bool fromStock)
+    {
+        PdfFontRegistration.Register();
+        var invoice = CreateInvoiceWithSlattDelivery(fromStock);
+        var svg = XDocument.Parse(InvoicePdfDocument.CreateDocument(invoice, null, null).GenerateSvg().Single());
+
+        Assert.Single(svg.Descendants(), element => element.Name.LocalName == "text" && element.Value.Trim() == "Product");
+        Assert.Contains("4052", svg.Root!.Value);
+        Assert.Contains(svg.Descendants(), element =>
+            element.Name.LocalName == "text" && element.Value.Contains("452", StringComparison.Ordinal));
+        Assert.Contains("Vikt: 37 kg", svg.Root.Value);
+    }
+
+    [Fact]
+    public void SlattDeliveryRowsRespectDoNotAggregateWithParent()
+    {
+        PdfFontRegistration.Register();
+        var invoice = CreateInvoiceWithSlattDelivery(fromStock: false, doNotAggregateWithParent: true);
+        var svg = XDocument.Parse(InvoicePdfDocument.CreateDocument(invoice, null, null).GenerateSvg().Single());
+
+        Assert.Equal(2, svg.Descendants().Count(element =>
+            element.Name.LocalName == "text" && element.Value.Trim() == "Product"));
+    }
+
+    [Fact]
+    public void InvoicePalletRowsWithSamePriceAndDescriptionMergeTogether()
+    {
+        PdfFontRegistration.Register();
+        var invoice = new Invoice
+        {
+            InvoiceRows =
+            [
+                new InvoiceRow { Id = 1, PriceTypeId = 107, Text = "EUR-pall", NrOf = 9, UnitPrice = 145, Sum = 1305 },
+                new InvoiceRow { Id = 2, PriceTypeId = 107, Text = "EUR-pall", NrOf = 1, UnitPrice = 145, Sum = 145 }
+            ]
+        };
+        var svg = XDocument.Parse(InvoicePdfDocument.CreateDocument(invoice, null, null).GenerateSvg().Single());
+        var text = svg.Descendants().Where(element => element.Name.LocalName == "text").ToList();
+
+        Assert.Single(text, element => element.Value.Trim() == "EUR-pall");
+        Assert.Contains(text, element => element.Value.Trim() == "10");
+        Assert.Contains(text, element =>
+            new string(element.Value.Where(char.IsDigit).ToArray()) == "145000");
+    }
+
+    private static Invoice CreateInvoiceWithSlattDelivery(bool fromStock, bool doNotAggregateWithParent = false)
+    {
+        var rows = new List<InvoiceRow>();
+        if (fromStock)
+        {
+            var parent = new DeliveryFromStock { Id = 1 };
+            var slatt = new DeliveryFromStock { Id = 2, IsSlattPallet = true, ParentDeliveryId = 1 };
+            rows.AddRange([
+                new InvoiceRow
+                {
+                    Id = 1, SortOrder = 20, DeliveryFromStockId = 1, DeliveryFromStock = parent,
+                    Text = "Product\nVikt: 2 kg", NrOf = 4000, UnitPrice = 100, Sum = 400, Weight = 2
+                },
+                new InvoiceRow
+                {
+                    Id = 2, SortOrder = 10, DeliveryFromStockId = 2, DeliveryFromStock = slatt,
+                    Text = "Product\nVikt: 35 kg", NrOf = 52, UnitPrice = 100, Sum = 52, Weight = 35,
+                    DoNotAggregateWithParent = doNotAggregateWithParent
+                }
+            ]);
+        }
+        else
+        {
+            var parent = new DeliveryToCustomer { Id = 1 };
+            var slatt = new DeliveryToCustomer { Id = 2, IsSlattPallet = true, ParentDeliveryId = 1 };
+            rows.AddRange([
+                new InvoiceRow
+                {
+                    Id = 1, SortOrder = 20, DeliveryToCustomerId = 1, DeliveryToCustomer = parent,
+                    Text = "Product\nVikt: 2 kg", NrOf = 4000, UnitPrice = 100, Sum = 400, Weight = 2
+                },
+                new InvoiceRow
+                {
+                    Id = 2, SortOrder = 10, DeliveryToCustomerId = 2, DeliveryToCustomer = slatt,
+                    Text = "Product\nVikt: 35 kg", NrOf = 52, UnitPrice = 100, Sum = 52, Weight = 35,
+                    DoNotAggregateWithParent = doNotAggregateWithParent
+                }
+            ]);
+        }
+
+        return new Invoice { InvoiceRows = rows };
+    }
+
+    [Fact]
     public void InvoiceDatesEndAtTheSameRightEdge()
     {
         PdfFontRegistration.Register();
@@ -106,6 +220,23 @@ public class QuotationPdfTests
             var expected = Assert.Single(referenceText.Descendants(), element => element.Name.LocalName == "text" && element.Value.Trim() == value);
             Assert.InRange(Math.Abs(FirstGlyphX(actual) - FirstGlyphX(expected)), 0, 0.01);
         }
+    }
+
+    [Fact]
+    public void CreditInvoiceIdentifiesTheOriginalInvoice()
+    {
+        PdfFontRegistration.Register();
+        var document = InvoicePdfDocument.CreateDocument(new Invoice
+        {
+            InvoiceTypeCode = InvoiceTypeCode.Credit,
+            InvoiceNumber = 20,
+            CreditingInvoiceNumber = 19,
+        }, null, null);
+        var text = XDocument.Parse(document.GenerateSvg().Single()).Descendants()
+            .Where(element => element.Name.LocalName == "text")
+            .Select(element => element.Value.Trim()).ToArray();
+        Assert.Contains("Kreditfaktura", text);
+        Assert.Contains("Krediterar nr 19", text);
     }
 
     [Theory]
@@ -352,6 +483,57 @@ public class QuotationPdfTests
         Assert.Equal("250 SEK", selected.Amount);
     }
 
+    [Theory]
+    [InlineData("SW", "Svensk verktygstext")]
+    [InlineData("EN", "English tool retention text")]
+    public void ToolRetentionTextIsRenderedAfterCostsUsingTheSelectedLanguage(string language, string translatedText)
+    {
+        var quotation = Fixture();
+        quotation.HideExtraCostsOnPrint = true;
+        quotation.OrderCosts.Add(new OrderCost
+        {
+            DoDebit = true, DoPrintOnQuotation = false, OutPrice = 100,
+            Cost = new Cost { Name = "Tooling", DoPrintScrapToolsTextOnCustomerOrder = true }
+        });
+        var texts = new DocumentPdfTranslations(language, new[]
+        {
+            new TranslationItem { TranslationCode = -94, LangCode = language, Translation = translatedText }
+        });
+        var svg = QuotationPdfDocument.CreateDocument(quotation, null, texts, "Customer greeting").GenerateSvg().Single();
+        var elements = XDocument.Parse(svg).Descendants()
+            .Where(element => element.Name.LocalName == "text").Select(element => element.Value).ToList();
+        var cost = elements.FindIndex(value => value.Contains("Tooling"));
+        var retention = elements.FindIndex(value => value.Contains(translatedText));
+        var greeting = elements.FindIndex(value => value.Contains("Customer greeting"));
+
+        Assert.True(cost >= 0 && retention > cost && greeting > retention);
+    }
+
+    [Fact]
+    public void ToolRetentionTextRequiresDebitedFlaggedCostInSelectedVersion()
+    {
+        var quotation = Fixture();
+        var flagged = new Cost { Name = "Flagged", DoPrintScrapToolsTextOnCustomerOrder = true };
+        var unflagged = new Cost { Name = "Unflagged" };
+        var costs = new List<OrderCost>
+        {
+            new() { DoDebit = false, Cost = flagged },
+            new() { DoDebit = true, Cost = unflagged },
+            new() { DoDebit = true, SupplierOrderId = 20, Cost = flagged },
+            new() { DoDebit = true, SupplierOrderId = 21, Cost = null }
+        };
+        var texts = new DocumentPdfTranslations("EN");
+
+        Assert.False(QuotationPdfDocument.BuildContent(quotation, texts, costs).ShowToolRetentionText);
+        Assert.True(QuotationPdfDocument.BuildContent(quotation, texts, costs, 20).ShowToolRetentionText);
+        Assert.False(QuotationPdfDocument.BuildContent(quotation, texts, costs, 21).ShowToolRetentionText);
+
+        var svg = QuotationPdfDocument.CreateDocument(quotation, null, texts, orderCosts: costs).GenerateSvg().Single();
+        var rendered = string.Join(" ", XDocument.Parse(svg).Descendants()
+            .Where(element => element.Name.LocalName == "text").Select(element => element.Value));
+        Assert.DoesNotContain("Die-cutting tools and printing plates are stored", rendered);
+    }
+
     [Fact]
     public void PalletUnknownPriceAndQuantityCostsAreNotInvented()
     {
@@ -372,6 +554,63 @@ public class QuotationPdfTests
         Assert.Equal("2 pcs. * 50 = 100 SEK", QuotationPdfDocument.BuildContent(quotation, new DocumentPdfTranslations("EN")).Costs[0].Amount);
         quotation.EurPalletValue = 0;
         Assert.Empty(QuotationPdfDocument.BuildContent(quotation, new DocumentPdfTranslations("EN")).Costs[0].Amount);
+    }
+
+    [Fact]
+    public void RowPrintSelectionOnlyHidesTheChosenCalculationInfo()
+    {
+        var quotation = Fixture();
+        var rows = quotation.QuotationRows.OrderBy(row => row.Id).ToList();
+        rows[0].CalculationRow!.Info = "HIDDEN ROW INFO";
+        rows[0].PrintInfo = false;
+        rows[1].CalculationRow = new CalculationRow { Info = "VISIBLE ROW INFO" };
+        var texts = new DocumentPdfTranslations("EN");
+        var content = QuotationPdfDocument.BuildContent(quotation, texts);
+        Assert.Empty(content.Prices[0].Note);
+        Assert.Equal("VISIBLE ROW INFO", content.Prices[1].Note);
+        var svg = QuotationPdfDocument.CreateDocument(quotation, null, texts).GenerateSvg().Single();
+        var rendered = string.Join(" ", XDocument.Parse(svg).Descendants()
+            .Where(element => element.Name.LocalName == "text").Select(element => element.Value));
+        Assert.DoesNotContain("HIDDEN ROW INFO", rendered);
+        Assert.Contains("VISIBLE ROW INFO", rendered);
+        rows[0].PrintInfo = true;
+        Assert.Equal("HIDDEN ROW INFO", QuotationPdfDocument.BuildContent(quotation, texts).Prices[0].Note);
+    }
+
+    [Theory]
+    [InlineData("SV", "tillkommer")]
+    [InlineData("EN", "extra")]
+    public void HiddenExtraCostsReplaceAmountsButNotQuotationPrices(string language, string replacement)
+    {
+        var quotation = Fixture();
+        quotation.EurPallet = true;
+        quotation.NrOfEurPallet = 2;
+        quotation.EurPalletValue = 50;
+        quotation.OrderCosts = new List<OrderCost>
+        {
+            new() { Id = 1, DoDebit = true, OutPrice = 222, Cost = new Cost { Name = "Tooling" } },
+            new() { Id = 2, DoDebit = true, OutPrice = 333, NrOf = 3, Cost = new Cost { Name = "Plates", IsNrOf = true } },
+            new() { Id = 3, DoDebit = true, Cost = new Cost { Name = "Unknown" } },
+            new() { Id = 4, DoDebit = true, SupplierOrderId = 20, OutPrice = 777, Cost = new Cost { Name = "Version" } }
+        };
+        var texts = new DocumentPdfTranslations(language);
+        var original = QuotationPdfDocument.BuildContent(quotation, texts);
+        Assert.All(original.Costs.Take(3), cost => Assert.NotEmpty(cost.Amount));
+
+        quotation.HideExtraCostsOnPrint = true;
+        var hidden = QuotationPdfDocument.BuildContent(quotation, texts);
+        Assert.All(hidden.Costs.Take(3), cost => Assert.Equal(replacement, cost.Amount));
+        Assert.Empty(hidden.Costs[3].Amount);
+        Assert.Equal(original.Prices, hidden.Prices);
+        Assert.Equal(original.Costs.Select(cost => cost.Description), hidden.Costs.Select(cost => cost.Description));
+        Assert.Equal(replacement, QuotationPdfDocument.BuildContent(quotation, texts, supplierOrderId: 20).Costs[1].Amount);
+
+        var svg = QuotationPdfDocument.CreateDocument(quotation, null, texts).GenerateSvg().Single();
+        var rendered = XDocument.Parse(svg).Descendants().Where(element => element.Name.LocalName == "text")
+            .Select(element => element.Value).ToList();
+        Assert.Equal(3, rendered.Count(value => value.Trim() == replacement));
+        Assert.DoesNotContain(rendered, value => value.Contains("222 SEK") || value.Contains("999 SEK"));
+        Assert.Equal(222, quotation.OrderCosts.First().OutPrice);
     }
 
     [Fact]
@@ -506,6 +745,9 @@ public class QuotationPdfTests
         var additionsHeading = Assert.Single(elements, element => element.Value.Trim() == texts.Text(DocumentPdfTranslations.Additions));
         var signature = Assert.Single(elements, element => element.Value.Trim() == greeting);
 
+        Assert.NotNull(lastQuantity.Attribute("font-size"));
+        Assert.Equal(lastQuantity.Attribute("font-size")!.Value, vatNote.Attribute("font-size")?.Value);
+        Assert.Equal(lastQuantity.Attribute("font-size")!.Value, validityNote.Attribute("font-size")?.Value);
         Assert.InRange(Math.Abs(FirstGlyphX(lastQuantity) - FirstGlyphX(vatNote)), 0, 0.01);
         Assert.InRange(Math.Abs(FirstGlyphX(vatNote) - FirstGlyphX(validityNote)), 0, 0.01);
         Assert.True(elements.IndexOf(lastQuantity) < elements.IndexOf(vatNote));

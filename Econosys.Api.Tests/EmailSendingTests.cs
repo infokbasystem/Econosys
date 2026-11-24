@@ -307,7 +307,8 @@ public class EmailSendingTests
             new LogEntry { Id = 3, Item = "CALLOFF", ItemId = 73, Action = "SAVE", DateTime = new DateTime(2026, 7, 12, 8, 30, 0) },
             new LogEntry { Id = 4, Item = "TRANSPORTORDER", ItemId = 73, Action = "SENDMAIL", DateTime = new DateTime(2026, 7, 12, 8, 32, 0) },
             new LogEntry { Id = 5, Item = "CALLOFF", ItemId = 74, Action = "SENDMAIL", DateTime = new DateTime(2026, 7, 12, 8, 32, 0) },
-            new LogEntry { Id = 6, Item = "CUSTOMERORDER", ItemId = 73, Action = "SENDMAIL", DateTime = new DateTime(2026, 7, 12, 8, 34, 0) });
+            new LogEntry { Id = 6, Item = "CUSTOMERORDER", ItemId = 73, Action = "SENDMAIL", DateTime = new DateTime(2026, 7, 12, 8, 34, 0) },
+            new LogEntry { Id = 7, Item = "INVOICE", ItemId = 73, Action = "SENDMAIL", DateTime = new DateTime(2026, 7, 12, 8, 35, 0) });
         await db.SaveChangesAsync();
 
         var service = new MailLogService(db);
@@ -322,18 +323,23 @@ public class EmailSendingTests
         Assert.Single(await service.GetAsync("TRANSPORTORDER", 73, CancellationToken.None));
         Assert.Empty(await service.GetAsync("TRANSPORTORDER", 74, CancellationToken.None));
         Assert.Single(await service.GetAsync(MailLogService.CustomerOrderItem, 73, CancellationToken.None));
+        var result = await new EmailController(null!, null!, NullLogger<EmailController>.Instance)
+            .GetLog("invoice", 73, service, CancellationToken.None);
+        Assert.Single(Assert.IsAssignableFrom<IReadOnlyList<MailLogEntryResponse>>(Assert.IsType<OkObjectResult>(result.Result).Value));
     }
 
     [Theory]
     [InlineData("CALLOFF")]
     [InlineData("TRANSPORTORDER")]
-    public async Task SuccessfulLogisticsEmailIsRecordedInLegacyLog(string item)
+    [InlineData("INVOICE")]
+    public async Task SuccessfulDocumentEmailIsRecordedInLegacyLog(string item)
     {
         await using var db = CreateDb();
         await AddSettings(db);
         db.LegacyUsers.Add(User());
         db.CallOffs.Add(new CallOff { Id = 73 });
         db.TransportOrders.Add(new TransportOrder { Id = 73 });
+        db.Invoices.Add(new Invoice { Id = 73 });
         await db.SaveChangesAsync();
         var transport = new FakeTransport();
         var request = Request(
@@ -342,6 +348,7 @@ public class EmailSendingTests
         {
             CallOffId = item == "CALLOFF" ? 73 : null,
             TransportOrderId = item == "TRANSPORTORDER" ? 73 : null,
+            InvoiceId = item == "INVOICE" ? 73 : null,
         };
 
         await new EmailService(db, transport, NullLogger<EmailService>.Instance).SendAsync(request, User(), CancellationToken.None);
@@ -368,6 +375,10 @@ public class EmailSendingTests
             Request() with { CallOffId = 73 }, User(), CancellationToken.None));
         await Assert.ThrowsAsync<EmailValidationException>(() => service.SendAsync(
             Request() with { CallOffId = 73, TransportOrderId = 73 }, User(), CancellationToken.None));
+        await Assert.ThrowsAsync<EmailValidationException>(() => service.SendAsync(
+            Request() with { InvoiceId = 73 }, User(), CancellationToken.None));
+        await Assert.ThrowsAsync<EmailValidationException>(() => service.SendAsync(
+            Request() with { InvoiceId = 73, CallOffId = 73 }, User(), CancellationToken.None));
         Assert.Equal(0, transport.Calls);
 
         db.CallOffs.Add(new CallOff { Id = 73 });

@@ -287,6 +287,7 @@ export default function PdfPanel({ onOpenFileModal = null }) {
                     quotationId={emailInfo?.quotationId ?? null}
                     callOffId={mailLogItem?.callOffId ?? null}
                     transportOrderId={mailLogItem?.transportOrderId ?? null}
+                    invoiceId={mailLogItem?.invoiceId ?? null}
                     onSent={onEmailSent}
                     onClose={closeEmailModal}
                 />

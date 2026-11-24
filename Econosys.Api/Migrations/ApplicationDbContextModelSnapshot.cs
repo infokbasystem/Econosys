@@ -1813,10 +1813,6 @@ namespace Econosys.Api.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<int>("CompanyId")
-                        .HasColumnType("int")
-                        .HasColumnName("CompanyId");
-
                     b.Property<int?>("AccountNrAccountsReceivable")
                         .HasColumnType("int")
                         .HasColumnName("AccountNrAccountsReceivable");
@@ -1847,6 +1843,10 @@ namespace Econosys.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("Category");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
 
                     b.Property<string>("Country")
                         .HasMaxLength(50)
@@ -2335,8 +2335,8 @@ namespace Econosys.Api.Migrations
                         .HasColumnName("dblChangeOfSheet");
 
                     b.Property<string>("Color")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
                         .HasColumnName("strColor");
 
                     b.Property<int>("CompanyId")
@@ -2573,6 +2573,10 @@ namespace Econosys.Api.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("strPostalNr");
 
+                    b.Property<string>("PrintMethod")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<string>("Product")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
@@ -2582,6 +2586,10 @@ namespace Econosys.Api.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("strProductMessage");
+
+                    b.Property<string>("ProductNoteInternal")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
                     b.Property<int?>("QuotationId")
                         .HasColumnType("int")
@@ -2641,6 +2649,10 @@ namespace Econosys.Api.Migrations
                     b.Property<int?>("UnitId")
                         .HasColumnType("int")
                         .HasColumnName("lngUnit_ID");
+
+                    b.Property<string>("Varnish")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
                     b.Property<string>("YourOrderNr")
                         .HasMaxLength(50)
@@ -2905,6 +2917,9 @@ namespace Econosys.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("strCallOff");
+
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("CostMissingEmailSentDateTime")
                         .HasColumnType("datetime2(0)");
@@ -3498,8 +3513,8 @@ namespace Econosys.Api.Migrations
                         .HasColumnName("lngCalculation_ID");
 
                     b.Property<string>("Color")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
                         .HasColumnName("strColor");
 
                     b.Property<int>("CompanyId")
@@ -3588,6 +3603,9 @@ namespace Econosys.Api.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("strMaterialThickness");
 
+                    b.Property<string>("Notes")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<int?>("OldDbId")
                         .HasColumnType("int")
                         .HasColumnName("OldDbId");
@@ -3602,10 +3620,22 @@ namespace Econosys.Api.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("strPreparation");
 
+                    b.Property<string>("PrintMethod")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<string>("Product")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("strProduct");
+
+                    b.Property<string>("ProductNoteExternal")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("ProductNoteInternal")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
                     b.Property<int?>("SelectedInquiryRecipientId")
                         .HasColumnType("int")
@@ -3615,6 +3645,10 @@ namespace Econosys.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("strTimeOfDelivery");
+
+                    b.Property<string>("Varnish")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
                     b.HasKey("Id");
 
@@ -3718,6 +3752,9 @@ namespace Econosys.Api.Migrations
                     b.Property<int?>("InquiryId")
                         .HasColumnType("int")
                         .HasColumnName("InquiryId");
+
+                    b.Property<bool>("PrintInfo")
+                        .HasColumnType("bit");
 
                     b.HasKey("Id");
 
@@ -4023,6 +4060,11 @@ namespace Econosys.Api.Migrations
                     b.Property<decimal?>("SalesCurrencyRate")
                         .HasColumnType("decimal(10,5)")
                         .HasColumnName("SalesCurrencyRate");
+
+                    b.Property<string>("TermsOfDelivery")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
+                        .HasColumnName("strTermsOfDelivery");
 
                     b.Property<string>("TermsOfPayment")
                         .HasMaxLength(255)
@@ -5067,6 +5109,10 @@ namespace Econosys.Api.Migrations
                         .HasColumnType("bit")
                         .HasColumnName("Active");
 
+                    b.Property<int>("CompanyId")
+                        .HasColumnType("int")
+                        .HasColumnName("CompanyId");
+
                     b.Property<int?>("ConstructionId")
                         .HasColumnType("int")
                         .HasColumnName("lngConstruction_ID");
@@ -5264,8 +5310,8 @@ namespace Econosys.Api.Migrations
                         .HasColumnName("dblChangeOfSheet");
 
                     b.Property<string>("Color")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
                         .HasColumnName("strColor");
 
                     b.Property<int>("CompanyId")
@@ -5356,6 +5402,10 @@ namespace Econosys.Api.Migrations
                     b.Property<bool>("HideDeliveryAddressOnPrint")
                         .HasColumnType("bit")
                         .HasColumnName("bolHideDeliveryAddressOnPrint");
+
+                    b.Property<bool>("HideExtraCostsOnPrint")
+                        .HasColumnType("bit")
+                        .HasColumnName("bolHideExtraCostsOnPrint");
 
                     b.Property<int?>("InquiryId")
                         .HasColumnType("int")
@@ -5465,6 +5515,10 @@ namespace Econosys.Api.Migrations
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("strPostalNr");
 
+                    b.Property<string>("PrintMethod")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<bool>("Printed")
                         .HasColumnType("bit")
                         .HasColumnName("bolPrinted");
@@ -5478,6 +5532,10 @@ namespace Econosys.Api.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)")
                         .HasColumnName("strProductMessage");
+
+                    b.Property<string>("ProductNoteInternal")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
                     b.Property<int?>("PurchaseCurrencyId")
                         .HasColumnType("int")
@@ -5513,6 +5571,10 @@ namespace Econosys.Api.Migrations
                     b.Property<int?>("UnitId")
                         .HasColumnType("int")
                         .HasColumnName("lngUnit_ID");
+
+                    b.Property<string>("Varnish")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
                     b.Property<string>("YourReference")
                         .HasMaxLength(50)
@@ -5575,6 +5637,9 @@ namespace Econosys.Api.Migrations
                     b.Property<double?>("Price")
                         .HasColumnType("float")
                         .HasColumnName("dblPrice");
+
+                    b.Property<bool>("PrintInfo")
+                        .HasColumnType("bit");
 
                     b.Property<int?>("QuotationId")
                         .HasColumnType("int")
@@ -6151,8 +6216,8 @@ namespace Econosys.Api.Migrations
                         .HasColumnType("int");
 
                     b.Property<string>("Color")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)")
                         .HasColumnName("strColor");
 
                     b.Property<int>("CompanyId")
@@ -6373,6 +6438,10 @@ namespace Econosys.Api.Migrations
                         .HasColumnType("bit")
                         .HasColumnName("bolPrintBasisAccepted");
 
+                    b.Property<string>("PrintMethod")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
                     b.Property<int?>("ProducedEdition")
                         .HasColumnType("int");
 
@@ -6385,6 +6454,14 @@ namespace Econosys.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)")
                         .HasColumnName("strProductCode");
+
+                    b.Property<string>("ProductNoteExternal")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("ProductNoteInternal")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
                     b.Property<bool>("PuchDrawingAccepted")
                         .HasColumnType("bit")
@@ -6443,6 +6520,10 @@ namespace Econosys.Api.Migrations
                     b.Property<int?>("UnitId")
                         .HasColumnType("int")
                         .HasColumnName("lngUnit_ID");
+
+                    b.Property<string>("Varnish")
+                        .HasMaxLength(255)
+                        .HasColumnType("nvarchar(255)");
 
                     b.Property<string>("YourReference")
                         .HasMaxLength(50)

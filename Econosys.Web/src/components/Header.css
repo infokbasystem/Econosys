@@ -125,6 +125,11 @@ div#header a:hover {
     text-align: left;
 }
 
+div#header #superSearch .header-search-result {
+    color: #1d1d1d;
+    text-decoration: none;
+}
+
 .header-search-result:hover,
 .header-search-result.is-active {
     background: rgb(233 226 159 / 45%);

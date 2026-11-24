@@ -1,0 +1,18 @@
+@baseUrl = http://localhost:5000/api
+
+### Current product information for a customer-language document
+GET {{baseUrl}}/document-products/calculations/1?customerId=1
+
+### Compare an existing quotation
+GET {{baseUrl}}/document-products/quotations/1
+
+### Refresh only product information (use the edited value from the comparison response)
+PUT {{baseUrl}}/document-products/quotations/1
+Content-Type: application/json
+
+{
+  "edited": null
+}
+
+### Missing document
+GET {{baseUrl}}/document-products/quotations/999999

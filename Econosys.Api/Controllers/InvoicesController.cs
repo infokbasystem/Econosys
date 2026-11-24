@@ -61,6 +61,107 @@ namespace Econosys.Api.Controllers
             return Ok(MapToDto(invoice));
         }
 
+        /// <summary>Returns invoice references for credits and the invoice they credit.</summary>
+        [HttpGet("{id:int:min(1)}/credit-relations")]
+        [ProducesResponseType(typeof(InvoiceCreditRelationsResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<InvoiceCreditRelationsResponse>> GetCreditRelations(int id, CancellationToken cancellationToken)
+        {
+            var invoice = await _dbContext.Invoices.AsNoTracking()
+                .Where(x => x.Id == id)
+                .Select(x => new { x.InvoiceNumber, x.InvoiceTypeCode, x.CreditingInvoiceNumber })
+                .FirstOrDefaultAsync(cancellationToken);
+            if (invoice is null) return NotFound();
+
+            InvoiceReferenceResponse? creditedInvoice = null;
+            if (invoice.InvoiceTypeCode == InvoiceTypeCode.Credit && invoice.CreditingInvoiceNumber > 0)
+            {
+                creditedInvoice = await _dbContext.Invoices.AsNoTracking()
+                    .Where(x => x.Id != id && x.InvoiceNumber == invoice.CreditingInvoiceNumber)
+                    .OrderBy(x => x.Id)
+                    .Select(x => new InvoiceReferenceResponse(x.Id, x.InvoiceNumber!.Value))
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+
+            var credits = invoice.InvoiceNumber > 0
+                ? await _dbContext.Invoices.AsNoTracking()
+                    .Where(x => x.Id != id && x.InvoiceTypeCode == InvoiceTypeCode.Credit
+                        && x.CreditingInvoiceNumber == invoice.InvoiceNumber && x.InvoiceNumber > 0)
+                    .OrderBy(x => x.InvoiceNumber).ThenBy(x => x.Id)
+                    .Select(x => new InvoiceReferenceResponse(x.Id, x.InvoiceNumber!.Value))
+                    .ToListAsync(cancellationToken)
+                : [];
+
+            return Ok(new InvoiceCreditRelationsResponse(creditedInvoice, credits));
+        }
+
+        /// <summary>Previews stock delivery quantity changes for a credit invoice.</summary>
+        [HttpGet("{id:int:min(1)}/stock-delivery-adjustments")]
+        [ProducesResponseType(typeof(IReadOnlyList<InvoiceStockDeliveryAdjustmentResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+        public async Task<ActionResult<IReadOnlyList<InvoiceStockDeliveryAdjustmentResponse>>> PreviewStockDeliveryAdjustments(
+            int id, [FromServices] IInvoiceStockDeliveryAdjustmentService service, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var changes = await service.PreviewAsync(id, cancellationToken);
+                return changes is null ? NotFound() : Ok(changes);
+            }
+            catch (InvoiceStockDeliveryAdjustmentException ex)
+            {
+                return Conflict(new ProblemDetails { Detail = ex.Message });
+            }
+        }
+
+        /// <summary>Applies reviewed stock delivery quantity changes for a credit invoice.</summary>
+        [HttpPut("{id:int:min(1)}/stock-delivery-adjustments")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+        public async Task<IActionResult> ApplyStockDeliveryAdjustments(
+            int id, [FromBody] ApplyInvoiceStockDeliveryAdjustmentsRequest request,
+            [FromServices] IInvoiceStockDeliveryAdjustmentService service, CancellationToken cancellationToken)
+        {
+            if (request.Deliveries is null) return BadRequest(new ProblemDetails { Detail = "Leveranslistan saknas." });
+            try
+            {
+                return await service.ApplyAsync(id, request.Deliveries, cancellationToken) ? NoContent() : NotFound();
+            }
+            catch (InvoiceStockDeliveryAdjustmentException ex)
+            {
+                return Conflict(new ProblemDetails { Detail = ex.Message });
+            }
+        }
+
+        /// <summary>Lists the customer orders linked to an invoice and their delivery status.</summary>
+        [HttpGet("{id:int:min(1)}/customer-orders")]
+        [ProducesResponseType(typeof(IReadOnlyList<InvoiceCustomerOrderCompletionResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<ActionResult<IReadOnlyList<InvoiceCustomerOrderCompletionResponse>>> GetCustomerOrders(
+            int id, [FromServices] IInvoiceCustomerOrderCompletionService service, CancellationToken cancellationToken)
+        {
+            var orders = await service.GetAsync(id, cancellationToken);
+            return orders is null ? NotFound() : Ok(orders);
+        }
+
+        /// <summary>Updates completion states for customer orders linked to an invoice.</summary>
+        [HttpPut("{id:int:min(1)}/customer-orders")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> UpdateCustomerOrders(
+            int id, [FromBody] UpdateInvoiceCustomerOrdersRequest request,
+            [FromServices] IInvoiceCustomerOrderCompletionService service, CancellationToken cancellationToken)
+        {
+            if (request.Orders is null) return BadRequest(new ProblemDetails { Detail = "Orderlistan saknas." });
+            var result = await service.UpdateAsync(id, request.Orders, cancellationToken);
+            return result is null ? NotFound()
+                : result == false ? BadRequest(new ProblemDetails { Detail = "Orderlistan innehåller ogiltiga ordererkännanden." })
+                : NoContent();
+        }
+
         [HttpPost]
         public async Task<ActionResult<InvoiceDto>> Create([FromBody] CreateInvoiceRequest request)
         {
@@ -86,7 +187,7 @@ namespace Econosys.Api.Controllers
             try
             {
                 if (request.InvoiceRows?.Any(x => x.PriceTypeId == 1 && x.DeliveryFromStockId > 0) == true)
-                    request.InvoiceAccountRows = await InvoiceInventoryAccounting.BuildAsync(_dbContext, request.InvoiceRows);
+                    request.InvoiceAccountRows = await InvoiceInventoryAccounting.BuildAsync(_dbContext, request.InvoiceRows, isCredit: request.InvoiceTypeCode == InvoiceTypeCode.Credit);
             }
             catch (InvalidOperationException ex)
             {
@@ -162,7 +263,7 @@ namespace Econosys.Api.Controllers
             {
                 if (invoice.InvoiceRows.Any(x => x.PriceTypeId == 1 && x.DeliveryFromStockId > 0)
                     || request.InvoiceRows?.Any(x => x.PriceTypeId == 1 && x.DeliveryFromStockId > 0) == true)
-                    request.InvoiceAccountRows = await InvoiceInventoryAccounting.BuildAsync(_dbContext, request.InvoiceRows ?? []);
+                    request.InvoiceAccountRows = await InvoiceInventoryAccounting.BuildAsync(_dbContext, request.InvoiceRows ?? [], isCredit: request.InvoiceTypeCode == InvoiceTypeCode.Credit);
             }
             catch (InvalidOperationException ex)
             {
@@ -240,7 +341,7 @@ namespace Econosys.Api.Controllers
                 return BadRequest(new { message = "Lagerleveranserna tillhör inte den valda kunden." });
             try
             {
-                return Ok(await InvoiceInventoryAccounting.BuildAsync(_dbContext, request.InvoiceRows, cancellationToken));
+                return Ok(await InvoiceInventoryAccounting.BuildAsync(_dbContext, request.InvoiceRows, cancellationToken, request.InvoiceTypeCode == InvoiceTypeCode.Credit));
             }
             catch (InvalidOperationException ex)
             {
@@ -1028,12 +1129,13 @@ namespace Econosys.Api.Controllers
                 .Select(x => new { Code = x.Key, Text = x.Select(y => y.Translation).First() })
                 .ToDictionaryAsync(x => x.Code, x => x.Text);
 
-            var customerOrderIds = selectedDeliveryRows.Select(x => x.CustomerOrderId)
+            var underlyingCustomerOrderIds = selectedDeliveryRows.Select(x => x.CustomerOrderId)
                 .Concat(selectedOrderCostRows.Select(x => x.CustomerOrderId))
                 .Where(x => x.HasValue)
                 .Distinct()
-                .Take(2)
+                .Select(x => x.GetValueOrDefault())
                 .ToList();
+            var customerOrderIds = underlyingCustomerOrderIds.Take(2).ToList();
             var singleCustomerOrder = customerOrderIds.Count == 1
                 ? await _dbContext.CustomerOrders
                     .AsNoTracking()
@@ -1041,6 +1143,47 @@ namespace Econosys.Api.Controllers
                     .Select(x => new { x.OurReference, x.YourOrderNr, x.CustomerOrderNr })
                     .SingleAsync()
                 : null;
+            string? timeOfDelivery = null;
+            string? termsOfDelivery = null;
+            if (underlyingCustomerOrderIds.Count > 0)
+            {
+                var customerOrderDeliveryInfo = await _dbContext.CustomerOrders
+                    .AsNoTracking()
+                    .Where(x => underlyingCustomerOrderIds.Contains(x.Id))
+                    .Select(x => new { x.DeliveryDate, x.TermsOfDelivery })
+                    .ToListAsync();
+                if (customerOrderDeliveryInfo.Count == underlyingCustomerOrderIds.Count)
+                {
+                    var customerOrderDeliveryDates = customerOrderDeliveryInfo
+                        .Select(x => x.DeliveryDate)
+                        .ToList();
+                    if (customerOrderDeliveryDates.All(x => x.HasValue))
+                    {
+                        var distinctDeliveryDates = customerOrderDeliveryDates
+                            .Select(x => DateOnly.FromDateTime(x!.Value))
+                            .Distinct()
+                            .Take(2)
+                            .ToList();
+                        if (distinctDeliveryDates.Count == 1)
+                        {
+                            timeOfDelivery = distinctDeliveryDates[0]
+                                .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                        }
+                    }
+
+                    var customerOrderTerms = customerOrderDeliveryInfo
+                        .Select(x => x.TermsOfDelivery?.Trim())
+                        .ToList();
+                    if (customerOrderTerms.All(x => !string.IsNullOrWhiteSpace(x)))
+                    {
+                        var firstTerms = customerOrderTerms[0]!;
+                        if (customerOrderTerms.All(x => string.Equals(x, firstTerms, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            termsOfDelivery = firstTerms;
+                        }
+                    }
+                }
+            }
 
             var priceTypeAccounts = await _dbContext.PriceTypes
                 .AsNoTracking()
@@ -1303,6 +1446,8 @@ namespace Econosys.Api.Controllers
                 OurReference = singleCustomerOrder?.OurReference,
                 YourOrderNr = singleCustomerOrder?.YourOrderNr,
                 OurOrderNrFreeInvoice = singleCustomerOrder?.CustomerOrderNr,
+                TimeOfDelivery = timeOfDelivery,
+                TermsOfDelivery = termsOfDelivery,
                 LanguageId = customer.LanguageId,
                 Created = SwedishTime.Now,
                 Edited = SwedishTime.Now,
@@ -2035,6 +2180,7 @@ namespace Econosys.Api.Controllers
                 Construction = invoice.Construction,
                 InvoiceDays = invoice.InvoiceDays,
                 TermsOfPayment = invoice.TermsOfPayment,
+                TermsOfDelivery = invoice.TermsOfDelivery,
                 SalesCurrencyId = invoice.SalesCurrencyId,
                 UnitId = invoice.UnitId,
                 AccountDate = invoice.AccountDate,
@@ -2153,6 +2299,7 @@ namespace Econosys.Api.Controllers
             invoice.SalesCurrencyRate = request.SalesCurrencyRate;
             invoice.SalesCurrencyId = request.SalesCurrencyId;
             invoice.TermsOfPayment = request.TermsOfPayment;
+            invoice.TermsOfDelivery = request.TermsOfDelivery;
             invoice.TimeOfDelivery = request.TimeOfDelivery;
             invoice.UnitId = request.UnitId;
             invoice.VatNr = request.VatNr;

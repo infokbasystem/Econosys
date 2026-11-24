@@ -244,7 +244,7 @@ const Product = () => {
             return;
         }
 
-        navigate('/order/products');
+        window.close();
     };
 
     const handleUnsavedWarningConfirm = () => {

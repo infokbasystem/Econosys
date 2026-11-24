@@ -145,7 +145,11 @@ public static class SupplierOrderPdfDocument
                             material += "\n" + texts.Text(-96);
                         }
                         product.Item().Element(container => Field(container, texts.Text(-3), material));
-                        product.Item().Element(container => Field(container, texts.Text(-5), order.Color));
+                        product.Item().Element(container => Field(container, texts.Text(-5), DocumentProductText.ColorWithVarnish(order.Color, order.Varnish)));
+                        if (!string.IsNullOrWhiteSpace(order.ProductNoteExternal))
+                        {
+                            product.Item().Element(container => Field(container, texts.Text(DocumentPdfTranslations.Note), order.ProductNoteExternal));
+                        }
                         product.Item().Element(container => Field(container, texts.Text(DocumentPdfTranslations.Note), order.Message));
                         product.Item().PaddingTop(4).EnsureSpace(90).CornerRadius(6).Background("#f1f4f3").Padding(12).Column(shipment =>
                         {

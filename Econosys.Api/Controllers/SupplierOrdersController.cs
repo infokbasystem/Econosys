@@ -25,17 +25,20 @@ namespace Econosys.Api.Controllers
         private readonly ILogger<SupplierOrdersController> _logger;
         private readonly ILegacyUserResolutionService _legacyUserResolution;
         private readonly IPalletFormatOptionsService _palletFormatOptionsService;
+        private readonly IDocumentProductSnapshotService _productSnapshots;
 
         public SupplierOrdersController(
             ApplicationDbContext dbContext,
             ILogger<SupplierOrdersController> logger,
             ILegacyUserResolutionService legacyUserResolution,
-            IPalletFormatOptionsService palletFormatOptionsService)
+            IPalletFormatOptionsService palletFormatOptionsService,
+            IDocumentProductSnapshotService? productSnapshots = null)
         {
             _dbContext = dbContext;
             _logger = logger;
             _legacyUserResolution = legacyUserResolution;
             _palletFormatOptionsService = palletFormatOptionsService;
+            _productSnapshots = productSnapshots ?? new DocumentProductSnapshotService(dbContext);
         }
 
         [HttpGet("{id:int}")]
@@ -53,7 +56,7 @@ namespace Econosys.Api.Controllers
         }
 
         [HttpPost]
-        public async Task<ActionResult<SupplierOrderDto>> Create([FromBody] CreateSupplierOrderRequest request)
+        public async Task<ActionResult<SupplierOrderDto>> Create([FromBody] CreateSupplierOrderRequest request, CancellationToken cancellationToken = default)
         {
             if (!ModelState.IsValid)
             {
@@ -81,6 +84,20 @@ namespace Econosys.Api.Controllers
             var entity = new SupplierOrder { CompanyId = legacyUser.CompanyId };
             ApplyCreateRequestToEntity(entity, request);
 
+            if (entity.CalculationId.HasValue)
+            {
+                try
+                {
+                    var snapshot = await _productSnapshots.FromCalculationAsync(
+                        entity.CalculationId.Value, legacyUser.CompanyId, null, entity.SupplierId, null, cancellationToken);
+                    DocumentProductSnapshotService.ApplyValues(entity, snapshot);
+                }
+                catch (DocumentProductSourceException error)
+                {
+                    return BadRequest(new { message = error.Message });
+                }
+            }
+
             entity.Created ??= SwedishTime.Now;
             entity.CreatedBy ??= legacyUser.Id;
             entity.Edited = SwedishTime.Now;
@@ -91,7 +108,7 @@ namespace Econosys.Api.Controllers
             await _dbContext.SaveChangesAsync();
 
             entity.SupplierOrderNr = customer.OrderNrPrefix + entity.Id.ToString(CultureInfo.InvariantCulture);
-            await SyncOrderCostsAsync(entity.Id, request.OrderCosts);
+            await SyncOrderCostsAsync(entity.Id, request.OrderCosts, entity.QuotationId);
             await _dbContext.SaveChangesAsync();
             await transaction.CommitAsync();
 
@@ -307,7 +324,7 @@ namespace Econosys.Api.Controllers
             entity.Edited = SwedishTime.Now;
             entity.EditedBy = legacyUser.Id;
 
-            await SyncOrderCostsAsync(entity.Id, request.OrderCosts);
+            await SyncOrderCostsAsync(entity.Id, request.OrderCosts, entity.QuotationId);
             await _dbContext.SaveChangesAsync();
 
             var saved = await BuildDetailsQuery().FirstAsync(x => x.Id == entity.Id);
@@ -1046,6 +1063,10 @@ namespace Econosys.Api.Controllers
                 MaterialThickness = source.MaterialThickness,
                 Format = source.Format,
                 Color = source.Color,
+                Varnish = source.Varnish,
+                PrintMethod = source.PrintMethod,
+                ProductNoteInternal = source.ProductNoteInternal,
+                ProductNoteExternal = source.ProductNoteExternal,
                 Construction = source.Construction,
                 TimeOfDelivery = source.TimeOfDelivery,
                 TermsOfDelivery = source.TermsOfDelivery,
@@ -1122,7 +1143,7 @@ namespace Econosys.Api.Controllers
                     .ThenInclude(x => x.InvoiceRows);
         }
 
-        private async Task SyncOrderCostsAsync(int supplierOrderId, List<UpsertSupplierOrderOrderCostRequest>? requestedCosts)
+        private async Task SyncOrderCostsAsync(int supplierOrderId, List<UpsertSupplierOrderOrderCostRequest>? requestedCosts, int? quotationId)
         {
             var requested = requestedCosts ?? new List<UpsertSupplierOrderOrderCostRequest>();
 
@@ -1154,7 +1175,7 @@ namespace Econosys.Api.Controllers
                 }
                 else if (req.CostId.HasValue)
                 {
-                    var entity = new OrderCost { SupplierOrderId = supplierOrderId };
+                    var entity = new OrderCost { SupplierOrderId = supplierOrderId, QuotationId = quotationId };
                     ApplyOrderCostRequest(entity, req);
                     entity.SupplierOrderId = supplierOrderId;
                     _dbContext.OrderCosts.Add(entity);
@@ -1165,6 +1186,10 @@ namespace Econosys.Api.Controllers
         private static void ApplyOrderCostRequest(OrderCost entity, UpsertSupplierOrderOrderCostRequest req)
         {
             entity.CustomerOrderId = req.CustomerOrderId;
+            if (req.HasCalculationRowId)
+                entity.CalculationRowId = req.CalculationRowId;
+            if (req.HasSupplierId)
+                entity.SupplierId = req.SupplierId;
             entity.CostId = req.CostId;
             entity.DoDebit = req.DoDebit;
             entity.NrOf = req.NrOf;
@@ -1197,6 +1222,8 @@ namespace Econosys.Api.Controllers
                 Id = source.Id,
                 CustomerOrderId = source.CustomerOrderId,
                 SupplierOrderId = source.SupplierOrderId,
+                CalculationRowId = source.CalculationRowId,
+                SupplierId = source.SupplierId,
                 CostId = source.CostId,
                 DoDebit = source.DoDebit,
                 NrOf = source.NrOf,
@@ -1256,8 +1283,13 @@ namespace Econosys.Api.Controllers
             entity.Product = request.Product;
             entity.ProductCode = request.ProductCode;
             entity.Material = request.Material;
+            entity.MaterialThickness = request.MaterialThickness;
             entity.Format = request.Format;
             entity.Color = request.Color;
+            entity.Varnish = request.Varnish;
+            entity.PrintMethod = request.PrintMethod;
+            entity.ProductNoteInternal = request.ProductNoteInternal;
+            entity.ProductNoteExternal = request.ProductNoteExternal;
             entity.Construction = request.Construction;
             entity.GoodsMarking = request.GoodsMarking;
             entity.Preparation = request.Preparation;
@@ -1338,6 +1370,10 @@ namespace Econosys.Api.Controllers
             entity.Color = request.Color;
             entity.Construction = request.Construction;
             entity.GoodsMarking = request.GoodsMarking;
+            if (request.HasLoadingInstruction)
+            {
+                entity.LoadingInstruction = request.LoadingInstruction;
+            }
             entity.HideCustomerInfoOnPrint = request.HideCustomerInfoOnPrint;
             entity.HideCustomerNameOnPrint = request.HideCustomerNameOnPrint;
             entity.HideProductNameOnPrint = request.HideProductNameOnPrint;
@@ -1351,6 +1387,10 @@ namespace Econosys.Api.Controllers
             entity.PackagingType = request.PackagingType;
             entity.PalletFormatId = request.PalletFormatId;
             entity.EurPallet = request.EurPallet;
+            if (request.HasOneWayPallet)
+            {
+                entity.OneWayPallet = request.OneWayPallet;
+            }
             entity.ProducedEdition = request.ProducedEdition;
             if (request.HasNrOfPallets)
             {
